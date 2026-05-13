@@ -182,6 +182,7 @@ class DateTimePicker(DatePicker):
         self.hour_var.set(now.hour)
         self.min_var.set(now.minute)
         self.tz_var.set(self._system_tz())
+        self._pending_day = now.day
 
     def _pick_day(self):
         if self._pending_day is not None:
