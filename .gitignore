@@ -6,3 +6,4 @@ result
 *.MP4
 *.LRV
 *.THM
+.coverage

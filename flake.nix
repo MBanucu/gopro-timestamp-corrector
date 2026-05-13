@@ -16,9 +16,9 @@
           filter = name: type: let
             base = baseNameOf name;
           in builtins.elem base [
-            "btime.py" "calibration.py" "correct_timestamps.py" "datepicker.py" "dst.py" "gui.py" "media.py" "test_gui.py" "translate.py" "tzcombobox.py"
-            "flake.nix" "flake.lock" "000 - time translation.txt"
-          ] || pkgs.lib.cleanSourceFilter name type;
+            "btime.py" "calibration.py" "correct_timestamps.py" "datepicker.py" "dst.py" "gui.py" "media.py" "translate.py" "tzcombobox.py"
+            "flake.nix" "flake.lock"
+          ] || (builtins.match "test/.*" name) != null || pkgs.lib.cleanSourceFilter name type;
           src = ./.;
         };
       in {
@@ -64,6 +64,25 @@ WRAPPER
           '';
         };
 
+        packages.test = pkgs.stdenvNoCC.mkDerivation {
+          name = "gopro-time-correction-test";
+          inherit src;
+          dontBuild = true;
+          installPhase = ''
+            python_test="${pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ])}/bin/python3"
+            mkdir -p $out/bin
+            cat > $out/bin/run-tests << WRAPPER
+#!${pkgs.bash}/bin/bash
+exec $python_test -m coverage run --source tzcombobox -m unittest discover -v test
+WRAPPER
+            cat > $out/bin/coverage-report << WRAPPER
+#!${pkgs.bash}/bin/bash
+exec $python_test -m coverage report -m --include="*tzcombobox*"
+WRAPPER
+            chmod +x $out/bin/run-tests $out/bin/coverage-report
+          '';
+        };
+
         packages.default = self.packages.${system}.cli;
 
         apps.default = {
@@ -74,6 +93,11 @@ WRAPPER
         apps.gui = {
           type = "app";
           program = "${self.packages.${system}.gui}/bin/gopro-timestamp-gui";
+        };
+
+        apps.test = {
+          type = "app";
+          program = "${self.packages.${system}.test}/bin/run-tests";
         };
       });
 }
