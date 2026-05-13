@@ -4,7 +4,7 @@ import unittest
 import tkinter as tk
 from tkinter import ttk
 
-from gui import CalibrationEditor
+from gui_editor import CalibrationEditor
 
 
 class TestDSTFold(unittest.TestCase):
