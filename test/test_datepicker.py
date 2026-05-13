@@ -1,11 +1,11 @@
-"""Tests for DatePicker grid alignment."""
+"""Tests for DatePicker and DateTimePicker."""
 
 import unittest
 import tkinter as tk
 from tkinter import ttk
-from datetime import date
+from datetime import date, datetime
 
-from datepicker import DatePicker
+from datepicker import DatePicker, DateTimePicker
 
 
 class TestDatePicker(unittest.TestCase):
@@ -74,6 +74,72 @@ class TestDatePicker(unittest.TestCase):
         self.picker.pick(1)
         self.root.update_idletasks()
         self.assertEqual(self.called, [date(2026, 4, 1)])
+
+
+class TestDateTimePicker(unittest.TestCase):
+    def setUp(self):
+        self.root = tk.Tk()
+        self.root.update_idletasks()
+        self.called = []
+        self.picker = DateTimePicker(self.root, self.cb_handler,
+                                      all_zones=['Europe/Berlin'],
+                                      initial_hour=14, initial_minute=30,
+                                      initial_tz='Europe/Berlin')
+        self.picker.withdraw()
+        self.picker.year.set(2026)
+        self.picker.month.set(4)
+        self.picker.draw_days()
+        self.root.update_idletasks()
+
+    def cb_handler(self, dt, tz=''):
+        self.called.append((dt, tz))
+
+    def tearDown(self):
+        self.picker.destroy()
+        self.root.destroy()
+
+    def test_inherits_date_grid(self):
+        grid = list(self.picker.day_frame.winfo_children())
+        self.assertTrue(len(grid) > 0)
+
+    def test_has_hour_spinbox(self):
+        self.assertTrue(hasattr(self.picker, 'hour_var'))
+        self.assertIsInstance(self.picker.hour_var.get(), int)
+
+    def test_has_minute_spinbox(self):
+        self.assertTrue(hasattr(self.picker, 'min_var'))
+        self.assertIsInstance(self.picker.min_var.get(), int)
+
+    def test_has_tz_widget(self):
+        self.assertTrue(hasattr(self.picker, 'tz_var'))
+        self.assertTrue(hasattr(self.picker, 'tz_combo'))
+
+    def test_initial_values(self):
+        self.assertEqual(self.picker.hour_var.get(), 14)
+        self.assertEqual(self.picker.min_var.get(), 30)
+        self.assertEqual(self.picker.tz_var.get(), 'Europe/Berlin')
+
+    def test_callback_returns_datetime_and_tz(self):
+        self.picker.pick(1)
+        self.root.update_idletasks()
+        self.assertEqual(len(self.called), 1)
+        dt, tz = self.called[0]
+        self.assertIsInstance(dt, datetime)
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.month, 4)
+        self.assertEqual(dt.day, 1)
+        self.assertEqual(dt.hour, 14)
+        self.assertEqual(dt.minute, 30)
+        self.assertEqual(tz, 'Europe/Berlin')
+
+    def test_set_now_updates_values(self):
+        self.picker._set_now()
+        self.root.update_idletasks()
+        now = datetime.now()
+        self.assertEqual(self.picker.hour_var.get(), now.hour)
+        self.assertEqual(self.picker.min_var.get(), now.minute)
+        self.assertEqual(self.picker.year.get(), now.year)
+        self.assertEqual(self.picker.month.get(), now.month)
 
 
 if __name__ == '__main__':

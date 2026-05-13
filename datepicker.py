@@ -76,17 +76,14 @@ class DatePicker(tk.Toplevel):
         grid = ttk.Frame(self.day_frame)
         grid.pack()
 
-        # Day-of-week headers
         for col, d in enumerate(('Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su')):
             ttk.Label(grid, text=d, width=4, anchor=tk.CENTER,
                       font=('', 8, 'bold')).grid(row=0, column=col, padx=1)
 
-        # Empty cells before first day
         row = 1
         for col in range(first):
             ttk.Label(grid, width=4).grid(row=row, column=col, padx=1)
 
-        # Day number buttons
         col = first
         for d in range(1, days_in_month + 1):
             btn = ttk.Button(grid, text=str(d), width=4,
@@ -101,3 +98,100 @@ class DatePicker(tk.Toplevel):
         y, m = self.year.get(), self.month.get()
         self.callback(date(y, m, day))
         self.destroy()
+
+
+class DateTimePicker(DatePicker):
+    """A date picker with time and timezone fields."""
+
+    def __init__(self, parent, callback, all_zones=None,
+                 initial_hour=12, initial_minute=0, initial_tz=''):
+        self._hour = initial_hour
+        self._minute = initial_minute
+        self._tz = initial_tz
+        self._all_zones = all_zones or []
+        super().__init__(parent, callback)
+
+    def build(self):
+        super().build()
+
+        body = ttk.Frame(self)
+        body.pack(fill=tk.X, padx=8, pady=(0, 8))
+
+        # Time row
+        row = ttk.Frame(body)
+        row.pack(fill=tk.X, pady=2)
+        ttk.Label(row, text='Time:', width=6).pack(side=tk.LEFT)
+        self.hour_var = tk.IntVar(value=self._hour)
+        self.min_var = tk.IntVar(value=self._minute)
+        ttk.Spinbox(row, textvariable=self.hour_var, from_=0, to=23,
+                    width=3, format='%02.0f').pack(side=tk.LEFT)
+        ttk.Label(row, text=':').pack(side=tk.LEFT)
+        ttk.Spinbox(row, textvariable=self.min_var, from_=0, to=59,
+                    width=3, format='%02.0f').pack(side=tk.LEFT)
+
+        # Timezone row
+        row = ttk.Frame(body)
+        row.pack(fill=tk.X, pady=2)
+        ttk.Label(row, text='TZ:', width=6).pack(side=tk.LEFT)
+        self.tz_var = tk.StringVar(value=self._tz)
+        from tzcombobox import FilteringCombobox
+        self.tz_combo = FilteringCombobox(row, all_values=self._all_zones,
+                                           textvariable=self.tz_var, width=30)
+        self.tz_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Buttons
+        btn_frame = ttk.Frame(body)
+        btn_frame.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(btn_frame, text='Now', width=8,
+                   command=self._set_now).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(btn_frame, text='Pick', width=8,
+                   command=self._pick_day).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(btn_frame, text='Cancel', width=8,
+                   command=self.destroy).pack(side=tk.RIGHT)
+
+        # Pick the clicked day from the calendar
+        self._pending_day = None
+
+    def _set_now(self):
+        now = datetime.now()
+        self.year.set(now.year)
+        self.month.set(now.month)
+        self.draw_days()
+        self.hour_var.set(now.hour)
+        self.min_var.set(now.minute)
+
+    def _pick_day(self):
+        if self._pending_day is not None:
+            self.pick(self._pending_day)
+
+    def pick(self, day):
+        self._pending_day = day
+        y, m = self.year.get(), self.month.get()
+        tz = self.tz_var.get().strip()
+        dt = datetime(y, m, day, self.hour_var.get(), self.min_var.get())
+        self.callback(dt, tz)
+        self.destroy()
+
+    def draw_days(self):
+        old_commands = {}
+        if hasattr(self, '_day_buttons'):
+            old_commands.clear()
+        super().draw_days()
+        # Override day button commands to store the day and enable the Pick button
+        grid_frame = None
+        for w in self.day_frame.winfo_children():
+            if isinstance(w, ttk.Frame):
+                grid_frame = w
+                break
+        if not grid_frame:
+            return
+        for child in grid_frame.winfo_children():
+            if isinstance(child, ttk.Button):
+                try:
+                    d = int(child.cget('text'))
+                    child.configure(command=lambda day=d: self._select_day(day))
+                except ValueError:
+                    pass
+
+    def _select_day(self, day):
+        self._pending_day = day

@@ -17,7 +17,7 @@ except ImportError:
     sys.exit(1)
 
 import calibration
-from datepicker import DatePicker
+from datepicker import DatePicker, DateTimePicker
 from tzcombobox import FilteringCombobox
 
 
@@ -156,10 +156,25 @@ class CalibrationEditor(ttk.LabelFrame):
         self.update_dst()
 
     def pick_date(self):
-        DatePicker(self.master.master, self.on_date_picked)
+        try:
+            h = int(self.hour_var.get())
+        except ValueError:
+            h = 12
+        try:
+            m = int(self.min_var.get())
+        except ValueError:
+            m = 0
+        tz = self.tz_var.get()
+        DateTimePicker(self.master.master, self.on_date_picked,
+                       all_zones=self.all_zones,
+                       initial_hour=h, initial_minute=m, initial_tz=tz)
 
-    def on_date_picked(self, d):
-        self.date_var.set(d.strftime('%Y-%m-%d'))
+    def on_date_picked(self, dt, tz):
+        self.date_var.set(dt.strftime('%Y-%m-%d'))
+        self.hour_var.set(str(dt.hour).zfill(2))
+        self.min_var.set(str(dt.minute).zfill(2))
+        if tz:
+            self.tz_var.set(tz)
 
     def on_tz_change(self, *args):
         if getattr(self, '_tz_sel', False):
