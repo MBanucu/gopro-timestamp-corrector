@@ -24,8 +24,6 @@ class FilteringCombobox(ttk.Frame):
         self.btn.bind('<Button-1>', lambda e: self.toggle_popup())
 
         self.entry.bind('<KeyRelease>', self._on_key)
-        self.entry.bind('<BackSpace>', self._on_backspace)
-        self.entry.bind('<Delete>', self._on_backspace)
         self.entry.bind('<Tab>', self._on_tab)
         self.entry.bind('<FocusOut>', lambda e: self.after(200, self._close_popup))
         self.entry.bind('<Return>', self._pick_selected)
@@ -38,7 +36,6 @@ class FilteringCombobox(ttk.Frame):
         self._popup_listbox = None
         self._sel_index = 0
         self._filtered = []
-        self._typing = ''
 
     def _on_focus_in(self, event):
         self._filtered = list(self._all)
@@ -117,9 +114,6 @@ class FilteringCombobox(ttk.Frame):
         if len(k) == 1 and text and not text.lower().endswith(k.lower()):
             return
         self._do_autocomplete()
-
-    def _on_backspace(self, event):
-        self.after(10, self._do_filter)
 
     def _on_tab(self, event):
         """Tab accepts suggestion (clears selection) or moves to next field."""
