@@ -40,10 +40,10 @@ class CalibrationEditor(ttk.LabelFrame):
         row.pack(fill=tk.X, pady=1)
         ttk.Label(row, text='Date:', width=8).pack(side=tk.LEFT)
         self.date_var = tk.StringVar()
-        self.date_entry = ttk.Entry(row, textvariable=self.date_var, width=16)
+        self.date_entry = ttk.Entry(row, textvariable=self.date_var, width=14)
         self.date_entry.pack(side=tk.LEFT, padx=(0, 2))
         ttk.Button(row, text='📅', width=3, command=self.pick_date).pack(side=tk.LEFT)
-        ttk.Label(row, text='  ISO: YYYY-MM-DD', foreground='gray').pack(side=tk.LEFT)
+        ttk.Label(row, text='  ISO: YYYY-MM-DD', foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
 
         # Time row
         row = ttk.Frame(self)
@@ -56,8 +56,7 @@ class CalibrationEditor(ttk.LabelFrame):
         ttk.Label(row, text=':').pack(side=tk.LEFT)
         ttk.Spinbox(row, textvariable=self.min_var, from_=0, to=59,
                     width=3, format='%02.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text='  HH:MM (24h)', foreground='gray').pack(side=tk.LEFT, padx=(4, 0))
-
+        ttk.Label(row, text='  HH:MM (24h)', foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
         # Timezone row
         row = ttk.Frame(self)
         row.pack(fill=tk.X, pady=1)
@@ -71,7 +70,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.tz_abbr_var = tk.StringVar()
         self.tz_abbr_label = ttk.Label(row, textvariable=self.tz_abbr_var,
                                         foreground='gray', width=14)
-        self.tz_abbr_label.pack(side=tk.LEFT)
+        self.tz_abbr_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         self.date_var.trace_add('write', lambda *a: self.update_abbr())
         self.tz_var.trace_add('write', lambda *a: self.update_abbr())

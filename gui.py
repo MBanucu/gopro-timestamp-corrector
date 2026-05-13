@@ -52,10 +52,12 @@ class ToolGUI:
         cal_frame.pack(fill=tk.X, pady=6)
 
         self.actual_editor = CalibrationEditor(cal_frame, 'Actual local time')
-        self.actual_editor.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.actual_editor.grid(row=0, column=0, sticky='ew', padx=(0, 4))
 
         self.gopro_editor = CalibrationEditor(cal_frame, 'GoPro local time')
-        self.gopro_editor.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.gopro_editor.grid(row=0, column=1, sticky='ew')
+        cal_frame.columnconfigure(0, weight=1, uniform='editor')
+        cal_frame.columnconfigure(1, weight=1, uniform='editor')
 
         # --- Preview / delta ---
         self.preview_var = tk.StringVar()
