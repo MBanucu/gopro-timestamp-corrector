@@ -1,8 +1,8 @@
 try:
     import tkinter as tk
-    from tkinter import ttk
+    from tkinter import ttk, font as tkfont
 except ImportError:
-    tk = ttk = None
+    tk = ttk = tkfont = None
 
 
 class FilteringCombobox(ttk.Frame):
@@ -10,11 +10,20 @@ class FilteringCombobox(ttk.Frame):
 
     def __init__(self, parent, all_values=None, **kw):
         self._all = all_values or []
-        width = kw.pop('width', 35)
         textvariable = kw.pop('textvariable', None)
         super().__init__(parent)
         self._var = textvariable or tk.StringVar()
         self._popup = None
+
+        if self._all:
+            longest = max(self._all, key=len)
+            # Measure pixel width using the default font, convert to Entry char units
+            font = tkfont.Font(font=('TkDefaultFont', 9))
+            px = font.measure(longest)
+            char_w = font.measure('0')
+            width = min(int(px / char_w) + 2, 40)
+        else:
+            width = kw.pop('width', 35)
 
         self.entry = ttk.Entry(self, textvariable=self._var, width=width)
         self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -247,3 +256,9 @@ class FilteringCombobox(ttk.Frame):
     def set_values(self, new_all):
         self._all = list(new_all)
         self._filtered = list(new_all)
+        if self._all:
+            longest = max(self._all, key=len)
+            font = tkfont.Font(font=('TkDefaultFont', 9))
+            px = font.measure(longest)
+            char_w = font.measure('0')
+            self.entry.configure(width=min(int(px / char_w) + 2, 40))

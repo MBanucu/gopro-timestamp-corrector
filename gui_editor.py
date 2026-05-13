@@ -64,7 +64,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.tz_var = tk.StringVar()
         self.all_zones = get_all_tz_ids() if zoneinfo else []
         self.tz_combo = FilteringCombobox(row, all_values=self.all_zones,
-                                           textvariable=self.tz_var, width=35)
+                                           textvariable=self.tz_var)
         self.tz_combo.pack(side=tk.LEFT, padx=(0, 4))
 
         self.tz_abbr_var = tk.StringVar()
