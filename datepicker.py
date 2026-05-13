@@ -1,5 +1,7 @@
 import calendar
+import subprocess
 from datetime import date, datetime
+from pathlib import Path
 
 try:
     import tkinter as tk
@@ -152,6 +154,26 @@ class DateTimePicker(DatePicker):
         # Pick the clicked day from the calendar
         self._pending_day = None
 
+    @staticmethod
+    def _system_tz():
+        try:
+            r = subprocess.run(['timedatectl', 'show', '-p', 'Timezone', '--value'],
+                               capture_output=True, text=True, timeout=5)
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+        except Exception:
+            pass
+        try:
+            p = Path('/etc/localtime')
+            if p.exists():
+                resolved = p.resolve()
+                for i, part in enumerate(resolved.parts):
+                    if part in ('zoneinfo', 'posix'):
+                        return '/'.join(resolved.parts[i+1:])
+        except Exception:
+            pass
+        return 'UTC'
+
     def _set_now(self):
         now = datetime.now()
         self.year.set(now.year)
@@ -159,6 +181,7 @@ class DateTimePicker(DatePicker):
         self.draw_days()
         self.hour_var.set(now.hour)
         self.min_var.set(now.minute)
+        self.tz_var.set(self._system_tz())
 
     def _pick_day(self):
         if self._pending_day is not None:
