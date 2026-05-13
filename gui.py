@@ -10,6 +10,7 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 import calibration
 from gui_editor import CalibrationEditor, get_all_tz_ids, resolve_tz_abbr
+from gui_cal_file import CalibrationFileBar
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -41,15 +42,10 @@ class ToolGUI:
         ttk.Button(row, text='Browse...', command=self.browse_dir, width=10).pack(side=tk.RIGHT)
 
         # --- Calibration file ---
-        row = ttk.Frame(main)
-        row.pack(fill=tk.X, pady=4)
-        ttk.Label(row, text='Calibration:', width=14).pack(side=tk.LEFT)
-        self.cal_var = tk.StringVar()
-        ttk.Entry(row, textvariable=self.cal_var).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        ttk.Button(row, text='Load...', command=self.load_cal, width=8).pack(side=tk.RIGHT, padx=(0, 2))
-        ttk.Button(row, text='Save...', command=self.save_cal, width=8).pack(side=tk.RIGHT, padx=(0, 2))
-        ttk.Button(row, text='Auto', command=self.auto_cal, width=6).pack(side=tk.RIGHT)
+        self.cal_bar = CalibrationFileBar(main, on_set_data=self.set_cal_data,
+                                           log_fn=self.log)
+        self.cal_bar.pack(fill=tk.X, pady=4)
+
 
         # --- Calibration editors ---
         cal_frame = ttk.Frame(main)
@@ -121,27 +117,16 @@ class ToolGUI:
         self.status.pack(fill=tk.X, pady=(4, 0))
 
         root.bind('<Return>', lambda e: self.run_tool())
-        self.load_default_cal()
+        self.cal_bar.load_default()
 
-    # ----- Calibration -----
-    def load_default_cal(self):
-        self.cal_data = calibration.default()
-        self.actual_editor.set_data(self.cal_data['actual'])
-        self.gopro_editor.set_data(self.cal_data['gopro'])
-        self.cal_var.set('')
-        self.update_preview()
-
-    def get_cal_data(self):
-        return {
-            'actual': self.actual_editor.get_data(),
-            'gopro': self.gopro_editor.get_data(),
-        }
-
+    # ----- Calibration file delegation -----
     def set_cal_data(self, data):
-        self.cal_data = data
         self.actual_editor.set_data(data.get('actual', {}))
         self.gopro_editor.set_data(data.get('gopro', {}))
         self.update_preview()
+
+    def get_cal_data(self):
+        return self.cal_bar.get_data()
 
     def update_preview(self):
         data = self.get_cal_data()
@@ -158,68 +143,6 @@ class ToolGUI:
             err = rest[0] if rest else 'Invalid'
             self.delta_var.set('Delta: —')
             self.preview_var.set(f'⚠ {err}')
-
-    def load_cal(self):
-        path = filedialog.askopenfilename(
-            title='Load calibration',
-            filetypes=[('JSON', '*.json'), ('Calibration', '*.txt'), ('All', '*')],
-            initialdir=self.dir_var.get(),
-        )
-        if not path:
-            return
-        try:
-            ext = Path(path).suffix.lower()
-            if ext == '.json':
-                data = calibration.load_json(path)
-            else:
-                data = calibration.from_text(path)
-            self.set_cal_data(data)
-            self.cal_var.set(path)
-            self.log(f'Loaded: {path}')
-        except Exception as e:
-            messagebox.showerror('Load error', str(e))
-
-    def save_cal(self):
-        path = filedialog.asksaveasfilename(
-            title='Save calibration',
-            defaultextension='.json',
-            filetypes=[('JSON', '*.json'), ('All', '*')],
-            initialdir=self.dir_var.get(),
-        )
-        if not path:
-            return
-        try:
-            data = self.get_cal_data()
-            if Path(path).suffix.lower() == '.json':
-                calibration.save_json(path, data)
-            else:
-                Path(path).write_text(calibration.to_text(data))
-            self.cal_var.set(path)
-            self.log(f'Saved: {path}')
-        except Exception as e:
-            messagebox.showerror('Save error', str(e))
-
-    def auto_cal(self):
-        p = Path(self.dir_var.get())
-        for f in p.glob('*time translation*'):
-            try:
-                data = calibration.from_text(f)
-                self.set_cal_data(data)
-                self.cal_var.set(str(f))
-                self.log(f'Auto-loaded: {f.name}')
-                return
-            except Exception:
-                continue
-        for f in p.glob('*.json'):
-            try:
-                data = calibration.load_json(f)
-                self.set_cal_data(data)
-                self.cal_var.set(str(f))
-                self.log(f'Auto-loaded: {f.name}')
-                return
-            except Exception:
-                continue
-        self.log('No calibration file found')
 
     # ----- Run -----
     def run_tool(self):
@@ -249,7 +172,7 @@ class ToolGUI:
         if btime != 'off':
             cmd.append(f'--fix-btime={btime}')
 
-        cal_path = self.cal_var.get().strip()
+        cal_path = self.cal_bar.get_path()
         if cal_path and Path(cal_path).exists():
             cmd.extend(['--translation', cal_path])
         else:
