@@ -12,15 +12,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
         deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime ];
         python = pkgs.python3.withPackages (ps: [ ps.tkinter ]);
-        src = pkgs.lib.cleanSourceWith {
-          filter = name: type: let
-            base = baseNameOf name;
-          in builtins.elem base [
-            "btime.py" "calibration.py" "correct_timestamps.py" "datepicker.py" "dst.py" "gui.py" "media.py" "translate.py" "tzcombobox.py"
-            "flake.nix" "flake.lock"
-          ] || (builtins.match "test/.*" name) != null || pkgs.lib.cleanSourceFilter name type;
-          src = ./.;
-        };
+        src = pkgs.lib.cleanSource ./.;
       in {
         devShells.default = pkgs.mkShell {
           packages = deps ++ [ python ];
