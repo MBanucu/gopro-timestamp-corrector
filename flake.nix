@@ -15,7 +15,7 @@
         src = pkgs.lib.cleanSource ./.;
       in {
         devShells.default = pkgs.mkShell {
-          packages = deps ++ [ python ];
+          packages = deps ++ [ python pkgs.bashInteractive ];
         };
 
         packages.cli = pkgs.stdenvNoCC.mkDerivation {
