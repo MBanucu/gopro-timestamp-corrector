@@ -221,23 +221,19 @@ class TestFileSetTable(unittest.TestCase):
 
 
     def test_thm_target_shows_dst_from_zoneinfo(self):
-        from gui_file_table import _get_iana_id, _local_to_utc, _utc_to_local_with_tz
+        from gui_file_table import _get_iana_id, _utc_to_local_with_tz
         import zoneinfo
 
         iana = _get_iana_id()
         if not iana:
             self.skipTest('IANA timezone not detected')
 
-        # Simulate GX010063.THM from sdcard2.iso:
-        # mtime in May (CEST), GPS delta pushes target to March (CET season)
-        may_mtime = datetime(2026, 5, 14, 21, 6, 18)  # local CEST
+        # Simulate GX010063.THM: mtime and target are now both in UTC
+        may_mtime_utc = datetime(2026, 5, 14, 19, 6, 18)  # UTC
         delta = timedelta(days=-1891, hours=-21, minutes=-59, seconds=0, microseconds=-199000)
-        target_mtime_local = may_mtime + delta  # lands in March
+        target_utc = may_mtime_utc + delta  # lands in March UTC
 
-        # Convert local → UTC → DST-correct local via zoneinfo
-        target_utc = _local_to_utc(target_mtime_local)
         target_local, tz_suffix = _utc_to_local_with_tz(target_utc)
-
         self.assertIsNotNone(target_local)
         self.assertTrue(tz_suffix, 'THM target must have a timezone suffix from zoneinfo')
 

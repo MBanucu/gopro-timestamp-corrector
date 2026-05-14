@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import timezone
 from pathlib import Path
 
 
@@ -86,7 +87,7 @@ def _fix_debugfs(filepath, dt, dry_run):
         print(f"    ! Could not resolve device")
         return
 
-    ts_sec = int(dt.timestamp())
+    ts_sec = int(dt.replace(tzinfo=timezone.utc).timestamp())
 
     if dry_run:
         print(f"    Would set btime via debugfs on inode {st.st_ino}")
@@ -207,7 +208,7 @@ def _teardown_clock(ctx, dry_run):
 
 
 def _fix_clock_set_time(dt, dry_run):
-    ts = int(dt.timestamp())
+    ts = int(dt.replace(tzinfo=timezone.utc).timestamp())
     label = dt.strftime("%Y-%m-%d %H:%M:%S")
     if dry_run:
         print(f"    Would set clock to: {label}")

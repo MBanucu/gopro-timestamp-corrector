@@ -73,13 +73,7 @@ def _utc_to_local_with_tz(utc_dt):
         return utc_dt, ''
 
 
-def _local_to_utc(local_dt):
-    if local_dt is None:
-        return None
-    offset = datetime.now().astimezone().utcoffset()
-    if offset is None:
-        return local_dt
-    return local_dt - offset
+
 
 
 def _fmt(dt, tz_suffix=''):
@@ -240,30 +234,27 @@ class FileSetTable(ttk.Frame):
                 open=True,
             )
 
-            current_tz_abbr = datetime.now().astimezone().tzname() or ''
             for fi, fp in zip(fs.files, pr.file_results if pr else []):
                 is_mp4_lrv = fi.ext in ('.mp4', '.lrv')
+                fmt_mtime, mtime_tz = _utc_to_local_with_tz(fi.mtime)
                 if is_mp4_lrv:
                     cur_emb, emb_tz = _utc_to_local_with_tz(fi.embedded_time)
                     tgt_emb, tgt_tz = _utc_to_local_with_tz(fp.target_embedded)
                 else:
                     cur_emb, emb_tz = fi.embedded_time, ''
-                    tgt_emb, tgt_tz = fp.target_embedded, ''
+                    tgt_emb, tgt_tz = None, ''
                     if fp.target_mtime is not None:
-                        tgt_mtime_utc = _local_to_utc(fp.target_mtime)
-                        tgt_mtime_local, tgt_tz = _utc_to_local_with_tz(tgt_mtime_utc)
-                    else:
-                        tgt_mtime_local, tgt_tz = None, ''
+                        tgt_emb, tgt_tz = _utc_to_local_with_tz(fp.target_mtime)
                 self.tree.insert(set_iid, tk.END,
                     values=(
                         '',
                         fi.path.name,
                         fi.ext.lstrip('.'),
-                        _fmt(fi.mtime, current_tz_abbr),
+                        _fmt(fmt_mtime, mtime_tz),
                         _fmt(cur_emb, emb_tz),
                         _fmt(fi.gps_time, 'UTC'),
                         dec.strategy,
-                        _fmt(tgt_emb or tgt_mtime_local, tgt_tz),
+                        _fmt(tgt_emb, tgt_tz),
                     ),
                     tags=(gps_tag,),
                 )

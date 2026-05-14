@@ -1,7 +1,7 @@
 import os
 import re
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -73,7 +73,8 @@ def read_gps_time(filepath):
 
 
 def read_mtime(filepath):
-    return datetime.fromtimestamp(os.path.getmtime(filepath))
+    ts = os.path.getmtime(filepath)
+    return datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)
 
 
 def write_embedded(filepath, dt):
@@ -106,5 +107,5 @@ def write_embedded(filepath, dt):
 
 
 def write_mtime(filepath, dt):
-    ts = dt.timestamp()
+    ts = dt.replace(tzinfo=timezone.utc).timestamp()
     os.utime(filepath, (ts, ts))
