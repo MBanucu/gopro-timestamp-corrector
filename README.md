@@ -9,26 +9,18 @@ A GoPro with a drained battery resets its clock to **January 1, 2016**.
 Files recorded afterwards get wrong timestamps — both in embedded metadata
 and on the filesystem. This tool corrects them in one pass.
 
-## How it works
-
-Place a **calibration file** (`.json` or `.txt`) in the target directory with
-a reference measurement:
-
-```json
-{
-  "actual": { "date": "2026-04-25", "time": "14:14", "timezone": "CEST" },
-  "gopro":  { "date": "01/04/16",   "time": "00:43", "timezone": "CET"  }
-}
-```
-
-The tool computes the clock offset and applies it to every matching file.
-
 ## Features
 
-- **GPS strategy** — automatically determine clock offset by comparing embedded GPS UTC time with camera clock
+- **Per-file-set strategy** — analyze all files grouped by recording, then
+  decide per-set: use GPS time, a manual calibration delta, or skip entirely
+- **GPS strategy** — automatically determine clock offset from embedded GPS data,
+  either globally (CLI) or per recording (GUI)
+- **Live preview** — see every file's current times (filesystem, EXIF, GPS)
+  and what they will become, with per-entry DST (CET/CEST) computed via
+  `zoneinfo` from the recording date
 - **CLI** for batch-processing entire SD cards
-- **GUI** with searchable timezone picker, calendar date picker, and live
-  delta preview, plus **one-click GPS calibration**
+- **GUI** with searchable timezone picker, calendar date picker, live
+  delta preview, one-click GPS calibration, and an interactive file analysis table
 - Corrects **embedded metadata** via `exiftool`:
   - `QuickTime:CreateDate`, `TrackCreateDate`, `MediaCreateDate`, … (MP4/LRV)
   - `EXIF:DateTimeOriginal` and related tags (THM)
@@ -38,17 +30,17 @@ The tool computes the clock offset and applies it to every matching file.
   - `mount.exfat-fuse` + `faketime` on exFAT
   - direct system‑clock manipulation (fallback)
 - **Daylight‑saving detection** — warns about ambiguous hours (fall‑back /
-  spring‑forward) and shows fold selectors for precise timezone handling
+  spring‑forward) and shows fold selectors
 - **Idempotent** — a manifest file prevents double‑correction on re‑runs
-- **Smart recovery** — detects over‑corrected, already‑corrected, and
-  original files and handles each correctly
 - **ISO 8601** date format throughout the GUI
 - **Common‑prefix autocomplete** for timezone entry with **Tab‑to‑accept**
+- **All internal times are UTC** — timezone conversion happens only at the
+  display layer, via `zoneinfo`. No DST ambiguity in calculations.
 
 ## Requirements
 
 - [Nix](https://nixos.org) with flakes enabled (recommended), **or**
-- Python 3.9+, `exiftool`, and optionally `e2fsprogs`, `exfat`, `libfaketime`
+- Python 3.10+, `exiftool`, and optionally `e2fsprogs`, `exfat`, `libfaketime`
 
 ## Quick start
 
@@ -73,17 +65,17 @@ nix run . -- /run/media/user/SD_CARD/DCIM/100GOPRO
 # Preview without making changes
 nix run . -- /path/to/files --dry-run
 
+# Use GPS time to determine the correction delta
+nix run . -- /path/to/files --gps
+
 # Also fix creation time (birth time)
 nix run . -- --fix-btime /path/to/files
 
-# Reprocess already-corrected files with UTC timezone handling
-nix run . -- --reprocess /path/to/files
+# Per-set strategies via a strategy manifest JSON
+nix run . -- /path/to/files --strategy-manifest strategies.json --gps
 
-# Specify a custom translation file
+# Specify a custom calibration file
 nix run . -- --translation /path/to/calibration.json /path/to/files
-
-# Use GPS time from media files (requires a locked GPS signal during recording)
-nix run . -- --gps --timezone Europe/Berlin /path/to/files
 ```
 
 ### Options
@@ -91,12 +83,36 @@ nix run . -- --gps --timezone Europe/Berlin /path/to/files
 | Flag | Description |
 |---|---|
 | `--dry-run` | Preview changes without writing |
-| `--gps` | Determine delta automatically using the first file with GPS data |
+| `--gps` | Determine delta using the first file with GPS data |
 | `--timezone` | Target timezone for GPS correction (e.g. `Europe/Berlin`) |
+| `--strategy-manifest` | JSON file with per-set strategies (`gps`, `manual`, `skip`) |
 | `--fix-btime` | Fix filesystem birth time (auto‑detects ext4 vs exFAT) |
 | `--reprocess` | Re‑write all files with proper UTC handling |
 | `--force` | Ignore the manifest and re‑process all files |
 | `--translation` | Path to a calibration `.json` or `.txt` file |
+
+### Strategy manifest
+
+```json
+{
+  "version": 1,
+  "sets": {
+    "010063": { "strategy": "gps" },
+    "010064": { "strategy": "gps" },
+    "010065": { "strategy": "manual" },
+    "010066": { "strategy": "skip" }
+  }
+}
+```
+
+Each set is identified by the numeric stem of its filenames (e.g. `010063`
+matches `GX010063.MP4`, `GL010063.LRV`, `GX010063.THM`).
+
+- **`gps`**: compute delta from GPS data within that set (ignores the global delta)
+- **`manual`**: apply the global delta (from `--gps` or `--translation`)
+- **`skip`**: leave the set unmodified
+
+Sets not listed in the manifest default to `manual`.
 
 ## GUI
 
@@ -104,24 +120,51 @@ nix run . -- --gps --timezone Europe/Berlin /path/to/files
 nix run .#gui
 ```
 
-The GUI provides a clean interface to:
+The GUI provides a complete workflow:
 
-1. **Select the target directory**
-2. **Load, save, or auto‑detect** a calibration file (JSON / plain text)
-3. **Edit calibration values directly** — ISO date, 24h time, IANA timezone
-4. **See the delta** update live as you type
-5. **Get DST warnings** when the entered time falls in an ambiguous
-   transition period, with fold selectors (CET vs CEST)
-6. **Pick dates** from a calendar popup
-7. **Run** with Dry run / Reprocess / Force options
-8. **View output** in an integrated terminal panel
+### 1. Calibration
 
-### Tab navigation (GUI timezone field)
+Set the reference times in the **Actual** and **GoPro** editors. Times are
+entered in the chosen IANA timezone; the delta updates live.
 
-- Type to filter — autocomplete fills the **common prefix** when multiple
-  entries match, or the **full entry** when only one match exists
-- **Tab** accepts the suggestion and moves to the next field
-- A second **Tab** (no selection active) moves focus to the next widget
+- Type or pick a date from the calendar popup
+- Search and autocomplete for IANA timezone IDs
+- DST warnings appear at transition hours with fold (CET/CEST) radio buttons
+- Click **Extract from GPS…** to auto-fill from the first file with GPS data
+
+### 2. Analysis
+
+Click **Analyze** to scan the directory. Files are grouped by recording set
+(e.g. `GX010063.MP4` + `GL010063.LRV` + `GX010063.THM`).
+
+The table shows every file with its current times:
+
+| Column | Timezone | Source |
+|---|---|---|
+| FS mtime | Current system TZ (e.g. CEST) | filesystem modification time |
+| EXIF time | Per-entry DST via zoneinfo (CET/CEST) | embedded metadata, raw UTC |
+| GPS time | UTC | GPS satellite data |
+| Target | Per-entry DST via zoneinfo (CET/CEST) | result of correction |
+
+An info line below the table shows the detected IANA ID and the two possible
+DST abbreviations (e.g. `CET (Jan) / CEST (Jul)`).
+
+### 3. Strategy selection
+
+Right-click any set row to choose its correction strategy:
+
+- **Use GPS time** — compute the delta from GPS data within that set
+- **Use Manual calibration** — apply the global calibration delta
+- **Skip** — leave files untouched
+
+Sets with GPS data default to `gps`; sets without default to `manual`.
+The **Target** column updates live with every strategy change.
+
+### 4. Apply
+
+Click **Apply** to write the corrected times. The plan is computed once and
+reused — no recalculation happens on apply. Dry-run mode shows what would
+be done without writing.
 
 ## Calibration file
 
@@ -136,7 +179,7 @@ The GUI provides a clean interface to:
     "date_format": "YYYY-MM-DD",
     "time": "14:14",
     "time_format": "HH:MM",
-    "timezone": "CEST"
+    "timezone": "Europe/Berlin"
   },
   "gopro": {
     "date": "2016-01-04",
@@ -168,8 +211,20 @@ date: 01/04/16
 format: month/day/year
 ```
 
-The plain text format uses the GoPro's native `MM/DD/YY` date format.
-The JSON format uses ISO 8601 (`YYYY-MM-DD`) for both sides.
+## Daylight saving and DST-correct display
+
+All internal times are **naive UTC**. Embedded metadata is read without
+`QuickTimeUTC` conversion (raw stored value, which modern GoPros store as
+UTC). GPS times are inherently UTC. All arithmetic (deltas, target
+computation) happens in UTC space — **no DST ambiguity in calculations**.
+
+Display conversion happens only at the GUI layer: `zoneinfo.ZoneInfo(iana_id)`
+converts UTC wall-clock values to the correct local time for each entry's
+date. A January video shows `CET`, a July video shows `CEST` — correctly,
+without pinning one DST to the whole column.
+
+The filesystem mtime column uses the current system timezone (since mtime is
+a local timestamp), annotated with the current DST abbreviation.
 
 ## Birth time (btime) support
 
@@ -182,6 +237,36 @@ The JSON format uses ISO 8601 (`YYYY-MM-DD`) for both sides.
 When `--fix-btime` is used, the tool auto‑detects the filesystem and picks
 the best method. On exFAT without FUSE tools it falls back gracefully to the
 clock method.
+
+## Architecture
+
+```
+  ┌──────────┐
+  │  media   │  Low-level file I/O (exiftool, os.utime)
+  │ btime    │
+  └────┬─────┘
+       │ reads / writes
+  ┌────▼─────┐
+  │ analysis │  Collects files, reads all metadata into FileInfo objects
+  └────┬─────┘
+       │
+  ┌────▼──────┐
+  │  preview  │  Calculator — pure computation on in-memory data
+  │  resolve  │  target_time(), gps_delta() — stdlib only, no I/O
+  └────┬──────┘
+       │ plan (list of FilePreview / WriteJob)
+  ┌────▼──────┐
+  │  writer   │  Pure I/O — dispatches WriteJobs to media + btime
+  └───────────┘
+```
+
+- **Calculator** (`resolve.py` + `preview.py`): pure math, no file I/O,
+  no `media` import. `resolve` has only `target_time()` and `gps_delta()`.
+- **Writer** (`writer.py`): receives a pre-computed list of `WriteJob` objects,
+  dispatches to `media.write_*` and `btime.fix_file`. No calculator import.
+- **Orchestrator** (`correct_timestamps.py` / `gui.py`): reads files via
+  `analysis.analyze()`, calls the calculator to build a plan, passes the
+  same plan to the writer. No recalculation on apply.
 
 ## Tests
 
@@ -201,21 +286,36 @@ $COV/bin/coverage-report
 ## Project structure
 
 ```
-├── correct_timestamps.py   # CLI entry point
+├── correct_timestamps.py   # CLI orchestrator
 ├── gui.py                  # Tkinter GUI
+├── analysis.py             # File scanning, grouping, metadata extraction
+├── preview.py              # Calculator — computes the correction plan
+├── resolve.py              # Pure math helpers (target_time, gps_delta)
+├── writer.py               # Pure I/O dispatcher (takes WriteJob list)
+├── gui_file_table.py       # FileSetTable widget (Treeview + strategy menu)
+├── gui_editor.py           # Calibration editor widget
+├── gui_cal_file.py         # Calibration file management bar
 ├── tzcombobox.py           # FilteringCombobox widget
+├── datepicker.py           # Calendar popup widget
 ├── media.py                # EXIF/QuickTime read/write via exiftool
 ├── calibration.py          # JSON calibration load/save/parse
 ├── translate.py            # Plain‑text calibration parser
 ├── btime.py                # Birth‑time fixing methods
 ├── dst.py                  # DST ambiguity detection
-├── datepicker.py           # Calendar popup widget
 ├── flake.nix               # Nix flake (dev shell + apps)
-├── test/                   # 41 automated tests (unittest)
+├── test/
+│   ├── sdcard.iso          # Test FAT32 image (3 synthetic files)
+│   ├── sdcard2.iso         # Test FAT32 image (12 real GoPro files with GPS)
+│   ├── test_analysis.py    # Analysis module tests (8)
+│   ├── test_preview.py     # Preview/calculator tests (11)
+│   ├── test_file_table.py  # GUI table widget tests (12)
+│   ├── test_strategy.py    # Strategy manifest integration tests (6)
+│   ├── test_iso.py         # End-to-end CLI integration test
+│   ├── test_gps.py         # GPS time parsing tests
+│   ├── test_dst_fold.py    # DST detection tests
+│   ├── test_datepicker.py  # Calendar widget tests
 │   ├── test_autocomplete.py
 │   ├── test_common_prefix.py
-│   ├── test_proposals.py
-│   ├── test_dst_fold.py
-│   └── test_datepicker.py
+│   └── test_proposals.py
 └── .gitignore
 ```
