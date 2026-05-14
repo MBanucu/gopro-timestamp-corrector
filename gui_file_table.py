@@ -22,7 +22,38 @@ def _fmt(dt):
 
 def _local_tz_info():
     now = datetime.now().astimezone()
-    return f'{now.tzname()} (UTC{now.strftime("%z")})'
+    abbr = now.tzname() or ''
+    offset = now.strftime('%z')
+    offset = f'UTC{offset[:3]}:{offset[3:]}' if offset else 'UTC'
+    iana = _detect_iana_id()
+    if iana:
+        return f'{iana} ({abbr}, {offset})'
+    return f'{abbr} ({offset})'
+
+
+def _detect_iana_id():
+    import os, subprocess
+    tz = os.environ.get('TZ', '').strip()
+    if tz and '/' in tz:
+        return tz
+    try:
+        r = subprocess.run(
+            ['timedatectl', 'show', '--property=Timezone', '--value'],
+            capture_output=True, text=True, timeout=2)
+        if r.returncode == 0 and '/' in r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
+    try:
+        p = Path('/etc/localtime').resolve()
+        for parent in p.parents:
+            if parent.name == 'zoneinfo':
+                rel = str(p.relative_to(parent))
+                if '/' in rel:
+                    return rel
+    except Exception:
+        pass
+    return None
 
 
 def _fmt_delta(delta):
@@ -98,7 +129,7 @@ class FileSetTable(ttk.Frame):
         self.menu.add_command(label='Skip', command=lambda: self._set_strategy(STRATEGY_SKIP))
         self.tree.bind('<Button-3>', self._show_menu)
 
-        self._tz_var = tk.StringVar(value=f'System timezone: {_local_tz_info()}  |  GPS time is UTC')
+        self._tz_var = tk.StringVar(value=f'Timezone: {_local_tz_info()}  |  GPS time is UTC')
         tz_label = ttk.Label(self, textvariable=self._tz_var,
                               foreground='#888', anchor=tk.W, padding=(4, 0), font=('', 8))
         tz_label.pack(fill=tk.X)
