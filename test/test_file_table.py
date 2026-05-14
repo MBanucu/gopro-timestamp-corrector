@@ -3,7 +3,7 @@
 import unittest
 import tkinter as tk
 from tkinter import ttk
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from analysis import AnalysisResult, FileSet, FileInfo
@@ -218,6 +218,71 @@ class TestFileSetTable(unittest.TestCase):
                 self.assertRegex(target,
                     r'\d{2}:\d{2}:\d{2} [A-Z]{2,}$',
                     f'THM target should have timezone suffix: {target}')
+
+
+    def test_thm_target_shows_dst_from_zoneinfo(self):
+        from gui_file_table import _get_iana_id, _local_to_utc, _utc_to_local_with_tz
+        import zoneinfo
+
+        iana = _get_iana_id()
+        if not iana:
+            self.skipTest('IANA timezone not detected')
+
+        # Simulate GX010063.THM from sdcard2.iso:
+        # mtime in May (CEST), GPS delta pushes target to March (CET season)
+        may_mtime = datetime(2026, 5, 14, 21, 6, 18)  # local CEST
+        delta = timedelta(days=-1891, hours=-21, minutes=-59, seconds=0, microseconds=-199000)
+        target_mtime_local = may_mtime + delta  # lands in March
+
+        # Convert local → UTC → DST-correct local via zoneinfo
+        target_utc = _local_to_utc(target_mtime_local)
+        target_local, tz_suffix = _utc_to_local_with_tz(target_utc)
+
+        self.assertIsNotNone(target_local)
+        self.assertTrue(tz_suffix, 'THM target must have a timezone suffix from zoneinfo')
+
+        # zoneinfo for a March date in Europe/Berlin must produce CET
+        if iana == 'Europe/Berlin':
+            z = zoneinfo.ZoneInfo('Europe/Berlin')
+            target_aware = target_utc.replace(tzinfo=timezone.utc).astimezone(z)
+            self.assertEqual(target_aware.tzname(), 'CET',
+                             f'March target should be CET, got {target_aware.tzname()}')
+
+    def test_thm_target_in_gui_shows_cet_for_march(self):
+        from gui_file_table import _get_iana_id
+        iana = _get_iana_id()
+        if iana != 'Europe/Berlin':
+            self.skipTest(f'Test requires Europe/Berlin, got {iana}')
+
+        # Create a set with GPS delta that pushes THM target to March (CET)
+        now_may = datetime(2026, 5, 14, 18, 0, 0)
+        gps_march = datetime(2021, 3, 11, 12, 0, 0)  # UTC
+        emb_may = datetime(2026, 5, 14, 16, 0, 0)     # UTC
+
+        mp4 = FileInfo(
+            path=Path('/d/GX010063.MP4'), stem='GX010063', ext='.mp4',
+            mtime=now_may, embedded_time=emb_may, gps_time=gps_march)
+        lrv = FileInfo(
+            path=Path('/d/GL010063.LRV'), stem='GL010063', ext='.lrv',
+            mtime=now_may, embedded_time=emb_may, gps_time=gps_march)
+        thm = FileInfo(
+            path=Path('/d/GX010063.THM'), stem='GX010063', ext='.thm',
+            mtime=now_may, embedded_time=None, gps_time=None)
+
+        fs = FileSet(id='010063', files=[mp4, lrv, thm])
+        ar = AnalysisResult(directory='/d', sets=[fs])
+        self.table.load_analysis(ar)
+        self.root.update_idletasks()
+
+        children = [(iid, vals) for iid, p, vals in self._tree_rows() if p]
+        thm_row = next((vals for iid, vals in children if vals[2] == 'thm'), None)
+        self.assertIsNotNone(thm_row, 'THM row not found')
+
+        target = thm_row[7]  # Target column
+        self.assertIn('CET', target.upper(),
+                      f'THM target for March should show CET: {target}')
+        self.assertNotIn('CEST', target.upper(),
+                         f'THM target for March should NOT show CEST: {target}')
 
 
 if __name__ == '__main__':

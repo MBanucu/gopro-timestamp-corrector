@@ -73,6 +73,15 @@ def _utc_to_local_with_tz(utc_dt):
         return utc_dt, ''
 
 
+def _local_to_utc(local_dt):
+    if local_dt is None:
+        return None
+    offset = datetime.now().astimezone().utcoffset()
+    if offset is None:
+        return local_dt
+    return local_dt - offset
+
+
 def _fmt(dt, tz_suffix=''):
     if dt is None:
         return '—'
@@ -240,6 +249,11 @@ class FileSetTable(ttk.Frame):
                 else:
                     cur_emb, emb_tz = fi.embedded_time, ''
                     tgt_emb, tgt_tz = fp.target_embedded, ''
+                    if fp.target_mtime is not None:
+                        tgt_mtime_utc = _local_to_utc(fp.target_mtime)
+                        tgt_mtime_local, tgt_tz = _utc_to_local_with_tz(tgt_mtime_utc)
+                    else:
+                        tgt_mtime_local, tgt_tz = None, ''
                 self.tree.insert(set_iid, tk.END,
                     values=(
                         '',
@@ -249,7 +263,7 @@ class FileSetTable(ttk.Frame):
                         _fmt(cur_emb, emb_tz),
                         _fmt(fi.gps_time, 'UTC'),
                         dec.strategy,
-                        _fmt(tgt_emb or fp.target_mtime, tgt_tz or current_tz_abbr),
+                        _fmt(tgt_emb or tgt_mtime_local, tgt_tz),
                     ),
                     tags=(gps_tag,),
                 )
