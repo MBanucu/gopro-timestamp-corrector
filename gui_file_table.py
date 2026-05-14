@@ -249,7 +249,7 @@ class FileSetTable(ttk.Frame):
                         _fmt(cur_emb, emb_tz),
                         _fmt(fi.gps_time, 'UTC'),
                         dec.strategy,
-                        _fmt(tgt_emb or fp.target_mtime, tgt_tz or ''),
+                        _fmt(tgt_emb or fp.target_mtime, tgt_tz or current_tz_abbr),
                     ),
                     tags=(gps_tag,),
                 )

@@ -212,8 +212,12 @@ class TestFileSetTable(unittest.TestCase):
                     r'\d{2}:\d{2}:\d{2} [A-Z]{3,}$',
                     f'Target should have timezone suffix: {target}')
             else:
-                # THM: no embedded time → shows '—'; no timezone check needed
+                # THM: no embedded time → shows '—'
                 self.assertEqual(exif, '\u2014')
+                # THM target falls back to target_mtime → has TZ suffix
+                self.assertRegex(target,
+                    r'\d{2}:\d{2}:\d{2} [A-Z]{2,}$',
+                    f'THM target should have timezone suffix: {target}')
 
 
 if __name__ == '__main__':
