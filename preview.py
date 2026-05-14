@@ -51,7 +51,7 @@ def compute_preview(
             file_previews = [_gps_preview(fs, f) for f in fs.files]
         else:
             delta = decision.manual_delta or global_manual_delta or timedelta()
-            file_previews = [_manual_preview(f, delta) for f in fs.files]
+            file_previews = [_manual_preview(f, delta, fs) for f in fs.files]
 
         results.append(PreviewResult(
             set_id=fs.id,
@@ -59,6 +59,15 @@ def compute_preview(
             file_results=file_previews,
         ))
     return results
+
+
+def _partner_embedded(fs: FileSet, fi: FileInfo) -> datetime | None:
+    if fi.embedded_time is not None:
+        return fi.embedded_time
+    for f in fs.files:
+        if f.embedded_time is not None:
+            return f.embedded_time
+    return None
 
 
 def _skip_preview(fi: FileInfo) -> FilePreview:
@@ -99,7 +108,8 @@ def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:
 
     current_emb = fi.embedded_time
     current_mtime = fi.mtime
-    target_emb = current_emb + delta if current_emb else None
+    ref_emb = _partner_embedded(fs, fi)
+    target_emb = ref_emb + delta if ref_emb else None
     target_mtime = current_mtime + delta if current_mtime else None
 
     return FilePreview(
@@ -112,8 +122,9 @@ def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:
     )
 
 
-def _manual_preview(fi: FileInfo, delta: timedelta) -> FilePreview:
-    target_emb = fi.embedded_time + delta if fi.embedded_time else None
+def _manual_preview(fi: FileInfo, delta: timedelta, fs: FileSet | None = None) -> FilePreview:
+    ref_emb = _partner_embedded(fs, fi) if fs else fi.embedded_time
+    target_emb = ref_emb + delta if ref_emb else None
     target_mtime = fi.mtime + delta if fi.mtime else None
     return FilePreview(
         path=fi.path,
