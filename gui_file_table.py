@@ -47,6 +47,17 @@ def _get_iana_id():
     return _IANA_ID
 
 
+def _tz_abbrs(iana_id):
+    import zoneinfo
+    try:
+        z = zoneinfo.ZoneInfo(iana_id)
+        winter = datetime(2026, 1, 1, 12, 0, 0).replace(tzinfo=z).tzname() or ''
+        summer = datetime(2026, 7, 1, 12, 0, 0).replace(tzinfo=z).tzname() or ''
+        return winter, summer
+    except Exception:
+        return '', ''
+
+
 def _local_tz_info():
     now = datetime.now().astimezone()
     abbr = now.tzname() or ''
@@ -158,7 +169,14 @@ class FileSetTable(ttk.Frame):
         self.tree.bind('<Button-3>', self._show_menu)
 
         iana = _get_iana_id() or 'local'
-        self._tz_var = tk.StringVar(value=f'TZ: {iana} — per-entry: CET (winter) / CEST (summer)  |  GPS is UTC')
+        winter, summer = _tz_abbrs(iana) if iana else ('', '')
+        if winter and summer and winter != summer:
+            info = f'TZ: {iana} — per-entry: {winter} (Jan) / {summer} (Jul)'
+        elif winter:
+            info = f'TZ: {iana} — per-entry: {winter} (no DST)'
+        else:
+            info = f'TZ: {iana}' if iana else 'TZ: local'
+        self._tz_var = tk.StringVar(value=f'{info}  |  GPS is UTC')
         tz_label = ttk.Label(self, textvariable=self._tz_var,
                               foreground='#888', anchor=tk.W, padding=(4, 0), font=('', 8))
         tz_label.pack(fill=tk.X)
