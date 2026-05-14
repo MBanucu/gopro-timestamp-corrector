@@ -78,7 +78,7 @@ class TestISOIntegration(unittest.TestCase):
         self.assertIn("Using GPS from GL010061.LRV", res.stdout)
         self.assertIn("DRY RUN - 3 would be processed", res.stdout)
         self.assertIn("GX010061.MP4", res.stdout)
-        self.assertIn("2026-05-14 14:13:11.499000", res.stdout)
+        self.assertIn("2026-05-14 12:13:11.499000", res.stdout)
 
 if __name__ == '__main__':
     unittest.main()

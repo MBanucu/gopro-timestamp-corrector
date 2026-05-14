@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from analysis import AnalysisResult, FileInfo, FileSet
@@ -89,11 +89,7 @@ def _gps_delta_for_set(fs: FileSet) -> timedelta | None:
     if ref_file is None:
         return None
 
-    gps_utc = gps_source.gps_time
-    gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
-    local_tz = datetime.now().astimezone().tzinfo
-    actual_dt = gps_utc_tz.astimezone(local_tz).replace(tzinfo=None)
-    return actual_dt - ref_file.embedded_time
+    return gps_source.gps_time - ref_file.embedded_time
 
 
 def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:

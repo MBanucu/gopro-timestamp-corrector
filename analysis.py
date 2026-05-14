@@ -71,7 +71,7 @@ def analyze(directory: str | Path) -> AnalysisResult:
             stem=f.stem,
             ext=f.suffix.lower(),
             mtime=media.read_mtime(f),
-            embedded_time=media.read_embedded(f),
+            embedded_time=media.read_embedded(f, use_qt_utc=False),
             gps_time=media.read_gps_time(f),
         )
         groups.setdefault(key, []).append(info)

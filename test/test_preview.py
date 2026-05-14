@@ -41,9 +41,8 @@ class TestGpsDeltaForSet(unittest.TestCase):
 
         delta = _gps_delta_for_set(fs)
         self.assertIsNotNone(delta)
-        # GPS UTC = 13:00, local (CEST) = 15:00, emb = 17:00
-        # delta = 15:00 - 17:00 = -2h
-        self.assertEqual(delta, timedelta(hours=-2))
+        # Both GPS and emb are UTC: delta = 13:00 - 17:00 = -4h
+        self.assertEqual(delta, timedelta(hours=-4))
 
     def test_no_gps_returns_none(self):
         fs = _make_fs('010001', ['.mp4'], gps_times=[None], emb_times=[datetime(2026, 5, 14, 17, 0, 0)])
@@ -118,8 +117,8 @@ class TestComputePreview(unittest.TestCase):
         pr = next(r for r in results if r.set_id == '010001')
         for fp in pr.file_results:
             if fp.current_embedded:
-                # GPS UTC=12:00 local=CEST=14:00, emb=16:00, delta=-2h
-                self.assertEqual(fp.target_embedded, fp.current_embedded + timedelta(hours=-2))
+                # GPS UTC=12:00, emb UTC=16:00, delta=-4h
+                self.assertEqual(fp.target_embedded, fp.current_embedded + timedelta(hours=-4))
 
     def test_gps_strategy_thm_fallback(self):
         decisions = {'010001': SetDecision(strategy=STRATEGY_GPS)}

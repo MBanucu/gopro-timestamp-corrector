@@ -29,7 +29,7 @@ def _group_by_stem(files):
 
 
 def _resolve_current(f, resolved_map, reprocess):
-    current = media.read_embedded(f, use_qt_utc=not reprocess)
+    current = media.read_embedded(f, use_qt_utc=False)
     source = 'embedded'
     if current is None:
         if f.suffix.lower() == '.thm':
@@ -121,17 +121,14 @@ def resolve_with_strategies(files, delta, actual_dt, manifest, reprocess=False):
         if strategy == 'gps':
             gps_time, gps_file = _find_gps_in_group(group_files)
             if gps_time is not None:
-                gps_utc_tz = gps_time.replace(tzinfo=timezone.utc)
-                local_tz = datetime.now().astimezone().tzinfo
-                actual_dt_local = gps_utc_tz.astimezone(local_tz).replace(tzinfo=None)
                 first_emb = None
                 for f in group_files:
-                    emb = media.read_embedded(f, use_qt_utc=not reprocess)
+                    emb = media.read_embedded(f, use_qt_utc=False)
                     if emb:
                         first_emb = emb
                         break
                 if first_emb is not None:
-                    set_delta = actual_dt_local - first_emb
+                    set_delta = gps_time - first_emb
                 else:
                     set_delta = delta
                 source_tag = 'gps'
@@ -168,11 +165,9 @@ def resolve_gps_delta(gps_file, reprocess, timezone_arg=None):
         gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
         actual_dt = gps_utc_tz.astimezone(tz).replace(tzinfo=None)
     else:
-        local_tz = datetime.now().astimezone().tzinfo
-        gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
-        actual_dt = gps_utc_tz.astimezone(local_tz).replace(tzinfo=None)
+        actual_dt = gps_utc
 
-    gopro_dt = media.read_embedded(gps_file, use_qt_utc=not reprocess)
+    gopro_dt = media.read_embedded(gps_file, use_qt_utc=False)
     if not gopro_dt:
         return None, None, None
 

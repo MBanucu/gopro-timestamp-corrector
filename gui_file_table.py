@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from analysis import AnalysisResult, FileInfo
 from preview import (
@@ -11,24 +12,7 @@ from preview import (
 
 _COLUMNS = ('set', 'file', 'type', 'mtime', 'exif', 'gps', 'strategy', 'target')
 
-
-def _fmt(dt):
-    if dt is None:
-        return '—'
-    if isinstance(dt, datetime):
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
-    return str(dt)
-
-
-def _local_tz_info():
-    now = datetime.now().astimezone()
-    abbr = now.tzname() or ''
-    offset = now.strftime('%z')
-    offset = f'UTC{offset[:3]}:{offset[3:]}' if offset else 'UTC'
-    iana = _detect_iana_id()
-    if iana:
-        return f'{iana} ({abbr}, {offset})'
-    return f'{abbr} ({offset})'
+_IANA_ID: str | None = None
 
 
 def _detect_iana_id():
@@ -54,6 +38,46 @@ def _detect_iana_id():
     except Exception:
         pass
     return None
+
+
+def _get_iana_id():
+    global _IANA_ID
+    if _IANA_ID is None:
+        _IANA_ID = _detect_iana_id()
+    return _IANA_ID
+
+
+def _local_tz_info():
+    now = datetime.now().astimezone()
+    abbr = now.tzname() or ''
+    offset = now.strftime('%z')
+    offset = f'UTC{offset[:3]}:{offset[3:]}' if offset else 'UTC'
+    iana = _get_iana_id()
+    if iana:
+        return f'{iana} ({abbr}, {offset})'
+    return f'{abbr} ({offset})'
+
+
+def _utc_to_local(utc_dt):
+    if utc_dt is None:
+        return None
+    iana = _get_iana_id()
+    if not iana:
+        return utc_dt
+    import zoneinfo
+    try:
+        z = zoneinfo.ZoneInfo(iana)
+        return utc_dt.replace(tzinfo=timezone.utc).astimezone(z).replace(tzinfo=None)
+    except Exception:
+        return utc_dt
+
+
+def _fmt(dt):
+    if dt is None:
+        return '—'
+    if isinstance(dt, datetime):
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    return str(dt)
 
 
 def _fmt_delta(delta):
@@ -206,16 +230,19 @@ class FileSetTable(ttk.Frame):
             )
 
             for fi, fp in zip(fs.files, pr.file_results if pr else []):
+                is_mp4_lrv = fi.ext in ('.mp4', '.lrv')
+                cur_emb = _utc_to_local(fi.embedded_time) if is_mp4_lrv else fi.embedded_time
+                tgt_emb = _utc_to_local(fp.target_embedded) if (is_mp4_lrv and fp.target_embedded) else fp.target_embedded
                 self.tree.insert(set_iid, tk.END,
                     values=(
                         '',
                         fi.path.name,
                         fi.ext.lstrip('.'),
                         _fmt(fi.mtime),
-                        _fmt(fi.embedded_time),
+                        _fmt(cur_emb),
                         _fmt(fi.gps_time),
                         dec.strategy,
-                        _fmt(fp.target_embedded or fp.target_mtime),
+                        _fmt(tgt_emb or fp.target_mtime),
                     ),
                     tags=(gps_tag,),
                 )
