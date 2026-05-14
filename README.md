@@ -87,7 +87,7 @@ nix run . -- --translation /path/to/calibration.json /path/to/files
 | `--timezone` | Target timezone for GPS correction (e.g. `Europe/Berlin`) |
 | `--strategy-manifest` | JSON file with per-set strategies (`gps`, `manual`, `skip`) |
 | `--fix-btime` | Fix filesystem birth time (auto‑detects ext4 vs exFAT) |
-| `--reprocess` | Re‑write all files with delta=0 (ignores manifest) |
+
 | `--force` | Ignore the manifest and re‑process all files |
 | `--translation` | Path to a calibration `.json` or `.txt` file |
 

@@ -118,8 +118,6 @@ class ToolGUI:
         flags1.pack(fill=tk.X, pady=2)
         self.dry_run_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(flags1, text='Dry run', variable=self.dry_run_var).pack(side=tk.LEFT, padx=(0, 16))
-        self.reprocess_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(flags1, text='Re-write (no delta)', variable=self.reprocess_var).pack(side=tk.LEFT, padx=(0, 16))
         self.force_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(flags1, text='Force (ignore manifest)', variable=self.force_var).pack(side=tk.LEFT)
 
@@ -331,8 +329,6 @@ class ToolGUI:
                            self.dir_var.get()]
                     if dry_run:
                         cmd.append('--dry-run')
-                    if self.reprocess_var.get():
-                        cmd.append('--reprocess')
                     btime = self.btime_var.get()
                     if btime != 'off':
                         cmd.append(f'--fix-btime={btime}')

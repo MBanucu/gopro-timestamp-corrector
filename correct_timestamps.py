@@ -80,8 +80,6 @@ def main():
     parser.add_argument('--gps', action='store_true', help='Use GPS time from the first file to determine delta')
     parser.add_argument('--timezone', help='Timezone for GPS correction (e.g. Europe/Berlin)')
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')
-    parser.add_argument('--reprocess', action='store_true',
-                        help='Re-write all files with delta=0 (ignores manifest)')
     parser.add_argument('--strategy-manifest', help='JSON file with per-set strategy decisions')
     args = parser.parse_args()
 
@@ -165,16 +163,8 @@ def main():
         print("No media files found.")
         return
 
-    if args.reprocess:
-        print("REPROCESS mode: re-writing all files with no delta applied")
-        print()
-
     # ── 3. Build decisions + compute plan (calculator) ─────────
-    if args.reprocess:
-        # In reprocess mode, target = current → use delta=0 for all
-        decisions = {fs.id: preview.SetDecision(strategy='manual', manual_delta=timedelta())
-                     for fs in analysis_result.sets}
-    elif args.strategy_manifest:
+    if args.strategy_manifest:
         decisions = _build_decisions_from_manifest(analysis_result, strategy_manifest_raw, global_delta)
     else:
         # Default: all sets use the global delta
@@ -185,7 +175,7 @@ def main():
     plan = preview.compute_preview(analysis_result, decisions, global_delta)
 
     # ── 4. Display plan (same for dry-run and normal) ──────────
-    manifest = set() if (args.force or args.reprocess) else load_manifest(target)
+    manifest = set() if args.force else load_manifest(target)
     if manifest:
         print(f"Manifest: {len(manifest)} files previously processed")
     print()
