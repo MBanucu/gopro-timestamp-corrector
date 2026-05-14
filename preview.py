@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from analysis import AnalysisResult, FileInfo, FileSet
+import resolve
 
 
 STRATEGY_GPS = 'gps'
@@ -98,7 +99,7 @@ def _gps_delta_for_set(fs: FileSet) -> timedelta | None:
     if ref_file is None:
         return None
 
-    return gps_source.gps_time - ref_file.embedded_time
+    return resolve.gps_delta(gps_source.gps_time, ref_file.embedded_time)
 
 
 def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:
@@ -109,8 +110,8 @@ def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:
     current_emb = fi.embedded_time
     current_mtime = fi.mtime
     ref_emb = _partner_embedded(fs, fi)
-    target_emb = ref_emb + delta if ref_emb else None
-    target_mtime = current_mtime + delta if current_mtime else None
+    target_emb = resolve.target_time(ref_emb, delta)
+    target_mtime = resolve.target_time(current_mtime, delta)
 
     return FilePreview(
         path=fi.path,
@@ -124,8 +125,8 @@ def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:
 
 def _manual_preview(fi: FileInfo, delta: timedelta, fs: FileSet | None = None) -> FilePreview:
     ref_emb = _partner_embedded(fs, fi) if fs else fi.embedded_time
-    target_emb = ref_emb + delta if ref_emb else None
-    target_mtime = fi.mtime + delta if fi.mtime else None
+    target_emb = resolve.target_time(ref_emb, delta)
+    target_mtime = resolve.target_time(fi.mtime, delta)
     return FilePreview(
         path=fi.path,
         current_embedded=fi.embedded_time,

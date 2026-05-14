@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import resolve
 import translate
 import media
 import btime
@@ -29,20 +30,7 @@ def _group_by_stem(files):
 
 
 def _resolve_current(f, resolved_map, reprocess):
-    current = media.read_embedded(f, use_qt_utc=False)
-    source = 'embedded'
-    if current is None:
-        if f.suffix.lower() == '.thm':
-            for c in (f.with_suffix('.MP4'), f.with_suffix('.mp4'),
-                      f.with_suffix('.LRV'), f.with_suffix('.lrv')):
-                if c.exists() and c in resolved_map:
-                    current = resolved_map[c][0]
-                    source = f'matched {c.name}'
-                    break
-    if current is None:
-        current = media.read_mtime(f)
-        source = 'mtime'
-    return current, source
+    return resolve.read_current(f, resolved_map)
 
 
 def _find_gps_in_group(files):
@@ -88,7 +76,7 @@ def save_manifest(target, entry):
 
 
 def resolve_target(current, delta, actual_dt):
-    return current + delta
+    return resolve.target_time(current, delta)
 
 
 def resolve_orig(files, delta, actual_dt, reprocess=False):
@@ -128,7 +116,7 @@ def resolve_with_strategies(files, delta, actual_dt, manifest, reprocess=False):
                         first_emb = emb
                         break
                 if first_emb is not None:
-                    set_delta = gps_time - first_emb
+                    set_delta = resolve.gps_delta(gps_time, first_emb)
                 else:
                     set_delta = delta
                 source_tag = 'gps'
@@ -171,7 +159,7 @@ def resolve_gps_delta(gps_file, reprocess, timezone_arg=None):
     if not gopro_dt:
         return None, None, None
 
-    delta = actual_dt - gopro_dt
+    delta = resolve.gps_delta(actual_dt, gopro_dt)
     return delta, actual_dt, gopro_dt
 
 
