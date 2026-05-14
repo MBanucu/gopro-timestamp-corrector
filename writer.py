@@ -66,6 +66,28 @@ class Writer:
             btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
         return ok
 
+    def write_embedded_only(self, job: WriteJob) -> bool:
+        """Write only embedded EXIF/QuickTime metadata."""
+        if self.dry_run or not job.target_embedded:
+            return False
+        return media.write_embedded(job.path, job.target_embedded)
+
+    def write_mtime_only(self, job: WriteJob) -> bool:
+        """Write only filesystem modification time."""
+        if self.dry_run or job.target_mtime is None:
+            return False
+        media.write_mtime(job.path, job.target_mtime)
+        return True
+
+    def write_btime_only(self, job: WriteJob) -> bool:
+        """Write only filesystem birth time (needs btime setup done externally)."""
+        if self.dry_run or job.target_mtime is None:
+            return False
+        if self._b_method:
+            btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
+            return True
+        return False
+
     def write_all(self, jobs: list[WriteJob]) -> WriteSummary:
         """Write multiple jobs. Returns summary."""
         summary = WriteSummary()

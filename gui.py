@@ -13,6 +13,7 @@ import calibration
 from gui_editor import CalibrationEditor, get_all_tz_ids, resolve_tz_abbr
 from gui_cal_file import CalibrationFileBar
 from gui_file_table import FileSetTable, _fmt_delta
+from writer import Writer, WriteJob
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -122,13 +123,19 @@ class ToolGUI:
         self.force_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(flags1, text='Force (ignore manifest)', variable=self.force_var).pack(side=tk.LEFT)
 
-        # --- Run button ---
+        # --- Run buttons ---
         btn_row = ttk.Frame(main)
         btn_row.pack(fill=tk.X, pady=4)
-        self.run_btn = ttk.Button(btn_row, text='Apply', command=self.run_tool, width=12)
+        self.run_btn = ttk.Button(btn_row, text='Apply All', command=self.run_tool, width=12)
         self.run_btn.pack(side=tk.LEFT)
-        self.cancel_btn = ttk.Button(btn_row, text='Cancel', command=self.cancel_run, width=12, state=tk.DISABLED)
-        self.cancel_btn.pack(side=tk.LEFT, padx=(8, 0))
+        self.exif_btn = ttk.Button(btn_row, text='Run exiftool', command=self.run_exif, width=12)
+        self.exif_btn.pack(side=tk.LEFT, padx=(4, 0))
+        self.mtime_btn = ttk.Button(btn_row, text='Adapt mtime', command=self.run_mtime, width=12)
+        self.mtime_btn.pack(side=tk.LEFT, padx=(4, 0))
+        self.btime_btn = ttk.Button(btn_row, text='Adapt btime', command=self.run_btime, width=12)
+        self.btime_btn.pack(side=tk.LEFT, padx=(4, 0))
+        self.cancel_btn = ttk.Button(btn_row, text='Cancel', command=self.cancel_run, width=10, state=tk.DISABLED)
+        self.cancel_btn.pack(side=tk.RIGHT)
 
         # --- Output ---
         out_frame = ttk.LabelFrame(main, text='Output', padding=4)
@@ -284,7 +291,7 @@ class ToolGUI:
             dry_run_warn = ''
 
         self.running = True
-        self.run_btn.config(state=tk.DISABLED)
+        self._set_buttons(tk.DISABLED)
         self.cancel_btn.config(state=tk.NORMAL)
         self.output.config(state=tk.NORMAL)
         self.output.delete(1.0, tk.END)
@@ -353,6 +360,50 @@ class ToolGUI:
 
         threading.Thread(target=run, daemon=True).start()
 
+    def _run_single_writer(self, label: str, write_fn):
+        """Run a single write operation in a background thread."""
+        if self.running:
+            return
+        jobs = self.file_table.get_write_jobs()
+        if not jobs:
+            self.log('No files to process.')
+            return
+
+        self.running = True
+        self._set_buttons(tk.DISABLED)
+        self.cancel_btn.config(state=tk.NORMAL)
+        self.output.config(state=tk.NORMAL)
+        self.output.delete(1.0, tk.END)
+        self.output.config(state=tk.DISABLED)
+
+        self.log(f'{label}...')
+        self.set_status('Running...')
+
+        def run():
+            try:
+                target_dir = Path(self.dir_var.get())
+                delta = _compute_delta(self.actual_editor, self.gopro_editor)
+                with Writer(target_dir, fix_btime='off', delta=delta, dry_run=False) as w:
+                    for job in jobs:
+                        self.root.after(0, self.log, str(job.path.name))
+                        write_fn(w, job)
+                self.root.after(0, self.log, f'\n{label} done — {len(jobs)} files')
+                self.root.after(0, self.on_finish, 0)
+            except Exception as e:
+                self.root.after(0, self.log, f'Error: {e}')
+                self.root.after(0, self.on_finish, -1)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def run_exif(self):
+        self._run_single_writer('Exiftool', lambda w, j: w.write_embedded_only(j))
+
+    def run_mtime(self):
+        self._run_single_writer('mtime', lambda w, j: w.write_mtime_only(j))
+
+    def run_btime(self):
+        self._run_single_writer('btime', lambda w, j: w.write_btime_only(j))
+
     def validate_cal(self):
         data = self.get_cal_data()
         ok, *rest = calibration.try_parse(data)
@@ -363,10 +414,14 @@ class ToolGUI:
                               f'Invalid calibration values:\n{err}')
         return False
 
+    def _set_buttons(self, state):
+        for btn in (self.run_btn, self.exif_btn, self.mtime_btn, self.btime_btn):
+            btn.config(state=state)
+
     def on_finish(self, code):
         self.running = False
         self.process = None
-        self.run_btn.config(state=tk.NORMAL)
+        self._set_buttons(tk.NORMAL)
         self.cancel_btn.config(state=tk.DISABLED)
         if code == 0:
             self.set_status('Completed')
