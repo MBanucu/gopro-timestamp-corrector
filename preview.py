@@ -34,6 +34,8 @@ class FilePreview:
     current_gps: datetime | None
     target_embedded: datetime | None
     target_mtime: datetime | None
+    source: str = ''  # 'embedded', 'matched <partner>', 'mtime'
+    strategy_label: str = ''  # strategy prefix for CLI display
 
 
 def compute_preview(
@@ -47,7 +49,7 @@ def compute_preview(
         strategy = decision.strategy
 
         if strategy == STRATEGY_SKIP:
-            file_previews = [_skip_preview(f) for f in fs.files]
+            file_previews = [_skip_preview(f, fs) for f in fs.files]
         elif strategy == STRATEGY_GPS:
             file_previews = [_gps_preview(fs, f) for f in fs.files]
         else:
@@ -71,7 +73,17 @@ def _partner_embedded(fs: FileSet, fi: FileInfo) -> datetime | None:
     return None
 
 
-def _skip_preview(fi: FileInfo) -> FilePreview:
+def _source_label(fi: FileInfo, fs: FileSet) -> str:
+    if fi.embedded_time is not None:
+        return 'embedded'
+    if fi.ext == '.thm':
+        for f in fs.files:
+            if f.embedded_time is not None:
+                return f'matched {f.path.name}'
+    return 'mtime'
+
+
+def _skip_preview(fi: FileInfo, fs: FileSet) -> FilePreview:
     return FilePreview(
         path=fi.path,
         current_embedded=fi.embedded_time,
@@ -79,6 +91,8 @@ def _skip_preview(fi: FileInfo) -> FilePreview:
         current_gps=fi.gps_time,
         target_embedded=fi.embedded_time,
         target_mtime=fi.mtime,
+        source=_source_label(fi, fs),
+        strategy_label='skip',
     )
 
 
@@ -105,7 +119,7 @@ def _gps_delta_for_set(fs: FileSet) -> timedelta | None:
 def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:
     delta = _gps_delta_for_set(fs)
     if delta is None:
-        return _skip_preview(fi)
+        return _skip_preview(fi, fs)
 
     current_emb = fi.embedded_time
     current_mtime = fi.mtime
@@ -120,6 +134,8 @@ def _gps_preview(fs: FileSet, fi: FileInfo) -> FilePreview:
         current_gps=fi.gps_time,
         target_embedded=target_emb,
         target_mtime=target_mtime,
+        source=_source_label(fi, fs),
+        strategy_label='gps',
     )
 
 
@@ -134,4 +150,6 @@ def _manual_preview(fi: FileInfo, delta: timedelta, fs: FileSet | None = None) -
         current_gps=fi.gps_time,
         target_embedded=target_emb,
         target_mtime=target_mtime,
+        source=_source_label(fi, fs) if fs else 'embedded',
+        strategy_label='manual',
     )

@@ -216,6 +216,18 @@ class FileSetTable(ttk.Frame):
             for sid, d in self.decisions.items()
         }
 
+    def get_write_jobs(self):
+        """Return WriteJob list from current plan — no recalculation of targets."""
+        if not self.analysis:
+            return []
+        import preview as pr_mod
+        from writer import WriteJob
+        plan = pr_mod.compute_preview(self.analysis, self.decisions, self._manual_delta)
+        return [
+            WriteJob(path=fp.path, target_embedded=fp.target_embedded, target_mtime=fp.target_mtime)
+            for pr in plan for fp in pr.file_results
+        ]
+
     def clear(self):
         self.analysis = None
         self.decisions = {}

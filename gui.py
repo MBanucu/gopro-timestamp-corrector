@@ -274,12 +274,14 @@ class ToolGUI:
     def run_tool(self):
         if self.running:
             return
-        if not self.validate_cal():
-            return
         if self.file_table.analysis is None:
             if not messagebox.askyesno('No Analysis',
-                                       'No file analysis was performed.\nRun correction with global settings anyway?'):
+                                       'No file analysis was performed.\nRun correction anyway?'):
                 return
+        if self.file_table.analysis and not self.dry_run_var.get():
+            dry_run_warn = 'No analysis data available.\n'
+        else:
+            dry_run_warn = ''
 
         self.running = True
         self.run_btn.config(state=tk.DISABLED)
@@ -288,53 +290,63 @@ class ToolGUI:
         self.output.delete(1.0, tk.END)
         self.output.config(state=tk.DISABLED)
 
-        data = self.get_cal_data()
-        cmd = [sys.executable, str(SCRIPT_DIR / 'correct_timestamps.py'), self.dir_var.get()]
-
-        if self.dry_run_var.get():
-            cmd.append('--dry-run')
-        if self.reprocess_var.get():
-            cmd.append('--reprocess')
-        if self.force_var.get():
-            cmd.append('--force')
-
-        btime = self.btime_var.get()
-        if btime != 'off':
-            cmd.append(f'--fix-btime={btime}')
-
-        cal_path = self.cal_bar.get_path()
-        if cal_path and Path(cal_path).exists():
-            cmd.extend(['--translation', cal_path])
-        else:
-            tmp = Path(self.dir_var.get()) / '.gui_calibration.json'
-            calibration.save_json(tmp, data)
-            cmd.extend(['--translation', str(tmp)])
-
-        # Write strategy manifest if analysis was performed
-        manifest_path = Path(self.dir_var.get()) / '.gui_strategy.json'
-        if self.file_table.analysis is not None:
-            manifest = {
-                'version': 1,
-                'sets': self.file_table.get_decisions(),
-            }
-            manifest_path.write_text(json.dumps(manifest, indent=2))
-            cmd.extend(['--strategy-manifest', str(manifest_path)])
-        else:
-            manifest_path = None
-
-        self.log(f'$ {" ".join(cmd)}\n')
+        self.log('Applying corrections...')
         self.set_status('Running...')
 
         def run():
             try:
-                self.process = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1,
-                )
-                for line in self.process.stdout:
-                    self.root.after(0, self.log, line.rstrip())
-                self.process.wait()
-                self.root.after(0, self.on_finish, self.process.returncode)
+                target_dir = Path(self.dir_var.get())
+                dry_run = self.dry_run_var.get()
+
+                if self.file_table.analysis is not None:
+                    # Use cached plan — no recalculation
+                    jobs = self.file_table.get_write_jobs()
+                    if not jobs:
+                        self.root.after(0, self.log, 'No files to process.')
+                        self.root.after(0, self.on_finish, 0)
+                        return
+
+                    for job in jobs:
+                        self.root.after(0, self.log, str(job.path.name))
+
+                    if dry_run:
+                        self.root.after(0, self.log, f'\nDRY RUN - {len(jobs)} would be processed')
+                    else:
+                        delta = _compute_delta(self.actual_editor, self.gopro_editor)
+                        with Writer(target_dir, fix_btime=self.btime_var.get(),
+                                    delta=delta, dry_run=False) as w:
+                            summary = w.write_all(jobs)
+                        self.root.after(0, self.log, f'\n{summary.written} corrected')
+                else:
+                    # No analysis — fallback to CLI subprocess (legacy path)
+                    data = self.get_cal_data()
+                    cmd = [sys.executable, str(SCRIPT_DIR / 'correct_timestamps.py'),
+                           self.dir_var.get()]
+                    if dry_run:
+                        cmd.append('--dry-run')
+                    if self.reprocess_var.get():
+                        cmd.append('--reprocess')
+                    btime = self.btime_var.get()
+                    if btime != 'off':
+                        cmd.append(f'--fix-btime={btime}')
+                    cal_path = self.cal_bar.get_path()
+                    if cal_path and Path(cal_path).exists():
+                        cmd.extend(['--translation', cal_path])
+                    else:
+                        tmp = target_dir / '.gui_calibration.json'
+                        calibration.save_json(tmp, data)
+                        cmd.extend(['--translation', str(tmp)])
+                    self.root.after(0, self.log, f'$ {" ".join(cmd)}\n')
+                    self.process = subprocess.Popen(
+                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, bufsize=1)
+                    for line in self.process.stdout:
+                        self.root.after(0, self.log, line.rstrip())
+                    self.process.wait()
+                    self.root.after(0, self.on_finish, self.process.returncode)
+                    return
+
+                self.root.after(0, self.on_finish, 0)
             except Exception as e:
                 self.root.after(0, self.log, f'Error: {e}')
                 self.root.after(0, self.on_finish, -1)

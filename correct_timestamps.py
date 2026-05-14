@@ -1,55 +1,23 @@
 #!/usr/bin/env python3
+"""
+Orchestrator: reads files, calls calculator, passes result to writer.
+"""
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import analysis as an_mod
+import preview
 import resolve
 import translate
 import media
 import btime
+from writer import Writer, WriteJob
 
 
 MANIFEST_NAME = '.timestamp_correction_log'
-
-
-def _group_key(path):
-    m = re.search(r'(\d{6,})', path.stem)
-    return m.group(1) if m else None
-
-
-def _group_by_stem(files):
-    groups = {}
-    for f in files:
-        key = _group_key(f)
-        if key:
-            groups.setdefault(key, []).append(f)
-    return groups
-
-
-def _resolve_current(f, resolved_map, reprocess):
-    dt = media.read_embedded(f, use_qt_utc=False)
-    if dt is not None:
-        return dt, 'embedded'
-    if f.suffix.lower() == '.thm' and resolved_map is not None:
-        for ext in ('.MP4', '.mp4', '.LRV', '.lrv'):
-            partner = f.with_suffix(ext)
-            if partner.exists() and partner in resolved_map:
-                return resolved_map[partner][0], f'matched {partner.name}'
-    dt = media.read_mtime(f)
-    if dt is not None:
-        return dt, 'mtime'
-    return None, 'none'
-
-
-def _find_gps_in_group(files):
-    for f in files:
-        gps = media.read_gps_time(f)
-        if gps:
-            return gps, f
-    return None, None
 
 
 def clean_exiftool_temp(target):
@@ -86,92 +54,19 @@ def save_manifest(target, entry):
         f.write(entry + '\n')
 
 
-def resolve_target(current, delta, actual_dt):
-    return resolve.target_time(current, delta)
-
-
-def resolve_orig(files, delta, actual_dt, reprocess=False):
-    map = {}
-    for f in files:
-        current, source = _resolve_current(f, map, reprocess)
-        if reprocess:
-            target = current
-        else:
-            target = resolve_target(current, delta, actual_dt)
-        map[f] = (current, source, target)
-    return map
-
-
-def resolve_with_strategies(files, delta, actual_dt, manifest, reprocess=False):
-    strategies = manifest.get('sets', {})
-    groups = _group_by_stem(files)
-    result = {}
-
-    for stem_id, group_files in sorted(groups.items()):
-        strat_info = strategies.get(stem_id, {'strategy': 'manual'})
-        strategy = strat_info.get('strategy', 'manual')
-
-        if strategy == 'skip':
-            for f in group_files:
-                current, source = _resolve_current(f, result, reprocess)
-                result[f] = (current, f'skip ({source})', current)
-            continue
-
-        if strategy == 'gps':
-            gps_time, gps_file = _find_gps_in_group(group_files)
-            if gps_time is not None:
-                first_emb = None
-                for f in group_files:
-                    emb = media.read_embedded(f, use_qt_utc=False)
-                    if emb:
-                        first_emb = emb
-                        break
-                if first_emb is not None:
-                    set_delta = resolve.gps_delta(gps_time, first_emb)
-                else:
-                    set_delta = delta
-                source_tag = 'gps'
-            else:
-                set_delta = delta
-                source_tag = 'gps_fallback'
-        else:
-            set_delta = delta
-            source_tag = 'manual'
-
-        for f in group_files:
-            current, source = _resolve_current(f, result, reprocess)
-            if reprocess:
-                target = current
-            else:
-                target = resolve_target(current, set_delta, actual_dt)
-            result[f] = (current, f'{source_tag} ({source})', target)
-
-    return result
-
-
-def resolve_gps_delta(gps_file, reprocess, timezone_arg=None):
-    gps_utc = media.read_gps_time(gps_file)
-    if not gps_utc:
-        return None, None, None
-
-    if timezone_arg:
-        import zoneinfo
-        try:
-            tz = zoneinfo.ZoneInfo(timezone_arg)
-        except Exception as e:
-            print(f"Error: Invalid timezone: {timezone_arg} ({e})")
-            sys.exit(1)
-        gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
-        actual_dt = gps_utc_tz.astimezone(tz).replace(tzinfo=None)
-    else:
-        actual_dt = gps_utc
-
-    gopro_dt = media.read_embedded(gps_file, use_qt_utc=False)
-    if not gopro_dt:
-        return None, None, None
-
-    delta = resolve.gps_delta(actual_dt, gopro_dt)
-    return delta, actual_dt, gopro_dt
+def _build_decisions_from_manifest(analysis_result, strategy_manifest, global_delta):
+    """Build per-set strategy decisions, using global_delta as default for 'manual' sets."""
+    overrides = strategy_manifest.get('sets', {})
+    decisions = {}
+    for fs in analysis_result.sets:
+        override = overrides.get(fs.id, {})
+        strategy = override.get('strategy', 'manual')
+        if strategy == 'gps' and not fs.has_any_gps:
+            strategy = 'manual'
+        decisions[fs.id] = preview.SetDecision(
+            strategy=strategy,
+            manual_delta=global_delta if strategy == 'manual' else None)
+    return decisions
 
 
 def main():
@@ -201,12 +96,12 @@ def main():
 
     clean_exiftool_temp(target)
 
-    # Parse strategy manifest early to know if we need a global delta
-    strategy_manifest = None
+    # ── 1. Compute global delta ─────────────────────────────────
     needs_global_delta = args.gps or not args.strategy_manifest
+    strategy_manifest_raw = None
     if args.strategy_manifest:
-        strategy_manifest = json.loads(Path(args.strategy_manifest).read_text())
-        sets = strategy_manifest.get('sets', {})
+        strategy_manifest_raw = json.loads(Path(args.strategy_manifest).read_text())
+        sets = strategy_manifest_raw.get('sets', {})
         if not needs_global_delta:
             needs_global_delta = any(s.get('strategy', 'manual') == 'manual' for s in sets.values())
 
@@ -220,39 +115,53 @@ def main():
                 if gps_utc:
                     gps_file = f
                     break
-
             if not gps_file:
                 print("Error: No file with GPS data found.")
                 sys.exit(1)
 
             print(f"Using GPS from {gps_file.name}")
 
-            delta, actual_dt, gopro_dt = resolve_gps_delta(gps_file, args.reprocess, args.timezone)
-            if delta is None:
-                print(f"Error: Could not read GPS or embedded time from {gps_file.name}")
+            gps_utc = media.read_gps_time(gps_file)
+            if not gps_utc:
+                print(f"Error: Could not read GPS from {gps_file.name}")
                 sys.exit(1)
+
+            if args.timezone:
+                import zoneinfo
+                try:
+                    tz = zoneinfo.ZoneInfo(args.timezone)
+                except Exception as e:
+                    print(f"Error: Invalid timezone: {args.timezone} ({e})")
+                    sys.exit(1)
+                gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
+                actual_dt = gps_utc_tz.astimezone(tz).replace(tzinfo=None)
+            else:
+                actual_dt = gps_utc
+
+            gopro_dt = media.read_embedded(gps_file, use_qt_utc=False)
+            if not gopro_dt:
+                print(f"Error: Could not read embedded time from {gps_file.name}")
+                sys.exit(1)
+
+            global_delta = resolve.gps_delta(actual_dt, gopro_dt)
         else:
             tf = find_translation(target, args.translation)
             actual_dt, gopro_dt = translate.parse(tf)
-            delta = actual_dt - gopro_dt
+            global_delta = actual_dt - gopro_dt
 
         print(f"Actual: {actual_dt}")
         print(f"GoPro:  {gopro_dt}")
-        print(f"Delta:  {delta.days}d {(delta.seconds // 3600)}h {(delta.seconds % 3600) // 60}m")
+        print(f"Delta:  {global_delta.days}d {(global_delta.seconds // 3600)}h {(global_delta.seconds % 3600) // 60}m")
     else:
-        delta = timedelta()
+        global_delta = timedelta()
         actual_dt = datetime.now()
         gopro_dt = actual_dt
 
     print()
 
-    manifest = set() if (args.force or args.reprocess) else load_manifest(target)
-    if manifest:
-        print(f"Manifest: {len(manifest)} files previously processed")
-    print()
-
-    files = media.collect(target)
-    if not files:
+    # ── 2. Read all files via shared analysis ──────────────────
+    analysis_result = an_mod.analyze(target)
+    if not analysis_result.total_files:
         print("No media files found.")
         return
 
@@ -260,91 +169,88 @@ def main():
         print("REPROCESS mode: rewriting all files with UTC timezone handling")
         print()
 
-    if args.strategy_manifest:
-        sm = json.loads(Path(args.strategy_manifest).read_text())
-        resolved = resolve_with_strategies(files, delta, actual_dt, sm, reprocess=args.reprocess)
+    # ── 3. Build decisions + compute plan (calculator) ─────────
+    if args.reprocess:
+        # In reprocess mode, target = current → use delta=0 for all
+        decisions = {fs.id: preview.SetDecision(strategy='manual', manual_delta=timedelta())
+                     for fs in analysis_result.sets}
+    elif args.strategy_manifest:
+        decisions = _build_decisions_from_manifest(analysis_result, strategy_manifest_raw, global_delta)
     else:
-        resolved = resolve_orig(files, delta, actual_dt, reprocess=args.reprocess)
+        # Default: all sets use the global delta
+        decisions = {fs.id: preview.SetDecision(strategy='manual', manual_delta=global_delta)
+                     for fs in analysis_result.sets}
+
+    # The plan is computed ONCE and reused for display + writing
+    plan = preview.compute_preview(analysis_result, decisions, global_delta)
+
+    # ── 4. Display plan (same for dry-run and normal) ──────────
+    manifest = set() if (args.force or args.reprocess) else load_manifest(target)
+    if manifest:
+        print(f"Manifest: {len(manifest)} files previously processed")
+    print()
 
     if args.dry_run:
         print("DRY RUN\n")
 
-    b_ctx = {}
-    b_method = None
-    if args.fix_btime:
-        fs = btime.detect_fs(target)
-        b_method = btime.resolve_method(args.fix_btime, fs)
-        print(f"FS: {fs}  |  btime: {b_method}\n")
-
-        if btime.needs_processing_before(b_method):
-            b_ctx = btime.setup(b_method, target, delta, args.dry_run) or {}
-            if not b_ctx and b_method == 'fuse':
-                b_method = 'clock'
-                b_ctx = btime.setup(b_method, target, delta, args.dry_run) or {}
-
-        if b_method == 'clock':
-            b_ctx = btime.setup(b_method, target, delta, args.dry_run) or {}
-            first_dt = list(resolved.values())[1] if resolved else None
-            if isinstance(first_dt, tuple) and len(first_dt) == 3:
-                btime.fix_file(b_method, None, first_dt[2], b_ctx, args.dry_run)
-
     processed = 0
     would_process = 0
-    skipped_manifest_count = 0
+    skipped_manifest = 0
     skipped_correct = 0
 
-    for f in files:
-        if f not in resolved:
-            continue
-        current, source, target_dt = resolved[f]
+    # Collect plan items that need writing
+    pending_jobs: list[WriteJob] = []
 
-        if f.name in manifest:
-            skipped_manifest_count += 1
-            continue
+    for pr in plan:
+        for fp in pr.file_results:
+            in_manifest = fp.path.name in manifest
 
-        if not args.reprocess and target_dt == current:
-            skipped_correct += 1
-            continue
+            current_dt = fp.current_embedded or fp.current_mtime
+            target_dt = fp.target_embedded or fp.target_mtime
 
-        print(f"  {f.name}")
-        print(f"    {current}  ({source})  \u2192  {target_dt}")
-        would_process += 1
+            if in_manifest:
+                skipped_manifest += 1
+                continue
 
-        if args.dry_run:
-            continue
+            if target_dt is not None and current_dt is not None and target_dt == current_dt:
+                skipped_correct += 1
+                continue
 
-        if media.write_embedded(f, target_dt):
-            print(f"    \u2713  Embedded metadata")
-        else:
-            print(f"    \u2717  Embedded metadata skipped")
+            print(f"  {fp.path.name}")
+            source_str = f'{pr.strategy} ({fp.source})' if pr.strategy != fp.source else fp.source
+            print(f"    {current_dt}  ({source_str})  \u2192  {target_dt}")
+            would_process += 1
 
-        media.write_mtime(f, target_dt)
-        print(f"    \u2713  mtime")
-        processed += 1
+            if not args.dry_run:
+                pending_jobs.append(WriteJob(
+                    path=fp.path,
+                    target_embedded=fp.target_embedded,
+                    target_mtime=fp.target_mtime,
+                ))
 
-        save_manifest(target, f.name)
-
-        if btime.needs_processing_after(b_method):
-            btime.fix_file(b_method, f, target_dt, b_ctx, args.dry_run)
-
-    if b_method and (btime.needs_processing_before(b_method) or b_method == 'clock'):
-        btime.teardown(b_method, b_ctx, args.dry_run)
+    # ── 5. Write plan via writer (shared module, no recalculation) ──
+    if pending_jobs and not args.dry_run:
+        with Writer(target, fix_btime=args.fix_btime, delta=global_delta, dry_run=False) as w:
+            summary = w.write_all(pending_jobs)
+        for job in pending_jobs:
+            save_manifest(target, job.path.name)
+        processed = len(pending_jobs)
 
     print()
-    summary = []
+    summary_parts = []
     if args.dry_run:
         if would_process:
-            summary.append(f"{would_process} would be processed")
+            summary_parts.append(f"{would_process} would be processed")
     elif processed:
-        summary.append(f"{processed} corrected")
-    if skipped_manifest_count:
-        summary.append(f"{skipped_manifest_count} already in manifest")
-    if would_process == 0 and skipped_correct and not skipped_manifest_count:
+        summary_parts.append(f"{processed} corrected")
+    if skipped_manifest:
+        summary_parts.append(f"{skipped_manifest} already in manifest")
+    if would_process == 0 and skipped_correct and not skipped_manifest:
         summary_str = 'No changes needed.'
     else:
         if skipped_correct:
-            summary.append(f"{skipped_correct} already correct")
-        summary_str = ', '.join(summary)
+            summary_parts.append(f"{skipped_correct} already correct")
+        summary_str = ', '.join(summary_parts)
     print(f"{'DRY RUN - ' if args.dry_run else ''}{summary_str}")
 
 
