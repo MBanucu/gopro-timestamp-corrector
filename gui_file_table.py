@@ -58,25 +58,27 @@ def _local_tz_info():
     return f'{abbr} ({offset})'
 
 
-def _utc_to_local(utc_dt):
+def _utc_to_local_with_tz(utc_dt):
     if utc_dt is None:
-        return None
+        return None, ''
     iana = _get_iana_id()
     if not iana:
-        return utc_dt
+        return utc_dt, ''
     import zoneinfo
     try:
         z = zoneinfo.ZoneInfo(iana)
-        return utc_dt.replace(tzinfo=timezone.utc).astimezone(z).replace(tzinfo=None)
+        local_dt = utc_dt.replace(tzinfo=timezone.utc).astimezone(z)
+        return local_dt.replace(tzinfo=None), local_dt.tzname() or ''
     except Exception:
-        return utc_dt
+        return utc_dt, ''
 
 
-def _fmt(dt):
+def _fmt(dt, tz_suffix=''):
     if dt is None:
         return '—'
     if isinstance(dt, datetime):
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
+        base = dt.strftime('%Y-%m-%d %H:%M:%S')
+        return f'{base} {tz_suffix}' if tz_suffix else base
     return str(dt)
 
 
@@ -120,17 +122,16 @@ class FileSetTable(ttk.Frame):
 
         col_widths = {
             'set': 70, 'file': 130, 'type': 50,
-            'mtime': 160, 'exif': 160, 'gps': 160,
-            'strategy': 80, 'target': 160,
+            'mtime': 180, 'exif': 180, 'gps': 180,
+            'strategy': 80, 'target': 180,
         }
-        tz_label = _local_tz_info()
         headings = {
             'set': 'Set', 'file': 'File', 'type': 'Type',
-            'mtime': f'FS mtime ({tz_label})',
-            'exif': f'EXIF time ({tz_label})',
+            'mtime': 'FS mtime',
+            'exif': 'EXIF time',
             'gps': 'GPS time (UTC)',
             'strategy': 'Strategy',
-            'target': f'Target ({tz_label})',
+            'target': 'Target',
         }
         for col in _COLUMNS:
             self.tree.heading(col, text=headings[col], anchor=tk.W)
@@ -153,7 +154,8 @@ class FileSetTable(ttk.Frame):
         self.menu.add_command(label='Skip', command=lambda: self._set_strategy(STRATEGY_SKIP))
         self.tree.bind('<Button-3>', self._show_menu)
 
-        self._tz_var = tk.StringVar(value=f'Timezone: {_local_tz_info()}  |  GPS time is UTC')
+        iana = _get_iana_id() or 'local'
+        self._tz_var = tk.StringVar(value=f'TZ: {iana} — per-entry: CET (winter) / CEST (summer)  |  GPS is UTC')
         tz_label = ttk.Label(self, textvariable=self._tz_var,
                               foreground='#888', anchor=tk.W, padding=(4, 0), font=('', 8))
         tz_label.pack(fill=tk.X)
@@ -231,18 +233,22 @@ class FileSetTable(ttk.Frame):
 
             for fi, fp in zip(fs.files, pr.file_results if pr else []):
                 is_mp4_lrv = fi.ext in ('.mp4', '.lrv')
-                cur_emb = _utc_to_local(fi.embedded_time) if is_mp4_lrv else fi.embedded_time
-                tgt_emb = _utc_to_local(fp.target_embedded) if (is_mp4_lrv and fp.target_embedded) else fp.target_embedded
+                if is_mp4_lrv:
+                    cur_emb, emb_tz = _utc_to_local_with_tz(fi.embedded_time)
+                    tgt_emb, tgt_tz = _utc_to_local_with_tz(fp.target_embedded)
+                else:
+                    cur_emb, emb_tz = fi.embedded_time, ''
+                    tgt_emb, tgt_tz = fp.target_embedded, ''
                 self.tree.insert(set_iid, tk.END,
                     values=(
                         '',
                         fi.path.name,
                         fi.ext.lstrip('.'),
                         _fmt(fi.mtime),
-                        _fmt(cur_emb),
-                        _fmt(fi.gps_time),
+                        _fmt(cur_emb, emb_tz),
+                        _fmt(fi.gps_time, 'UTC'),
                         dec.strategy,
-                        _fmt(tgt_emb or fp.target_mtime),
+                        _fmt(tgt_emb or fp.target_mtime, tgt_tz or ''),
                     ),
                     tags=(gps_tag,),
                 )
