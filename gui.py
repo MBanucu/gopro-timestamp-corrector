@@ -119,7 +119,7 @@ class ToolGUI:
         self.dry_run_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(flags1, text='Dry run', variable=self.dry_run_var).pack(side=tk.LEFT, padx=(0, 16))
         self.reprocess_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(flags1, text='Reprocess (UTC fix)', variable=self.reprocess_var).pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Checkbutton(flags1, text='Re-write (no delta)', variable=self.reprocess_var).pack(side=tk.LEFT, padx=(0, 16))
         self.force_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(flags1, text='Force (ignore manifest)', variable=self.force_var).pack(side=tk.LEFT)
 
@@ -264,7 +264,7 @@ class ToolGUI:
         else:
             actual_dt = gps_utc_tz.astimezone()
 
-        gopro_dt = media.read_embedded(gps_file, use_qt_utc=not self.reprocess_var.get())
+        gopro_dt = media.read_embedded(gps_file, use_qt_utc=False)
 
         if not gopro_dt:
             messagebox.showerror("GPS", f"Could not read GoPro time from {gps_file.name}")

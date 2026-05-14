@@ -81,7 +81,7 @@ def main():
     parser.add_argument('--timezone', help='Timezone for GPS correction (e.g. Europe/Berlin)')
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')
     parser.add_argument('--reprocess', action='store_true',
-                        help='Rewrite all files with UTC timezone handling (for already-corrected files)')
+                        help='Re-write all files with delta=0 (ignores manifest)')
     parser.add_argument('--strategy-manifest', help='JSON file with per-set strategy decisions')
     args = parser.parse_args()
 
@@ -166,7 +166,7 @@ def main():
         return
 
     if args.reprocess:
-        print("REPROCESS mode: rewriting all files with UTC timezone handling")
+        print("REPROCESS mode: re-writing all files with no delta applied")
         print()
 
     # ── 3. Build decisions + compute plan (calculator) ─────────
