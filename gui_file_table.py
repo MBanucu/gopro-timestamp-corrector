@@ -20,6 +20,11 @@ def _fmt(dt):
     return str(dt)
 
 
+def _local_tz_info():
+    now = datetime.now().astimezone()
+    return f'{now.tzname()} (UTC{now.strftime("%z")})'
+
+
 def _fmt_delta(delta):
     if delta is None:
         return '—'
@@ -60,13 +65,17 @@ class FileSetTable(ttk.Frame):
 
         col_widths = {
             'set': 70, 'file': 130, 'type': 50,
-            'mtime': 150, 'exif': 150, 'gps': 150,
-            'strategy': 80, 'target': 150,
+            'mtime': 160, 'exif': 160, 'gps': 160,
+            'strategy': 80, 'target': 160,
         }
+        tz_label = _local_tz_info()
         headings = {
             'set': 'Set', 'file': 'File', 'type': 'Type',
-            'mtime': 'FS mtime', 'exif': 'EXIF time', 'gps': 'GPS time',
-            'strategy': 'Strategy', 'target': 'Target',
+            'mtime': f'FS mtime ({tz_label})',
+            'exif': 'EXIF time (UTC)',
+            'gps': 'GPS time (UTC)',
+            'strategy': 'Strategy',
+            'target': f'Target ({tz_label})',
         }
         for col in _COLUMNS:
             self.tree.heading(col, text=headings[col], anchor=tk.W)
@@ -88,6 +97,11 @@ class FileSetTable(ttk.Frame):
         self.menu.add_command(label='Use Manual calibration', command=lambda: self._set_strategy(STRATEGY_MANUAL))
         self.menu.add_command(label='Skip', command=lambda: self._set_strategy(STRATEGY_SKIP))
         self.tree.bind('<Button-3>', self._show_menu)
+
+        self._tz_var = tk.StringVar(value=f'System: {_local_tz_info()}  |  EXIF: exiftool QuickTimeUTC=1')
+        tz_label = ttk.Label(self, textvariable=self._tz_var,
+                              foreground='#888', anchor=tk.W, padding=(4, 0), font=('', 8))
+        tz_label.pack(fill=tk.X)
 
         self._status_var = tk.StringVar(value='No files analyzed yet')
         status_bar = ttk.Label(self, textvariable=self._status_var,
@@ -170,7 +184,7 @@ class FileSetTable(ttk.Frame):
                         _fmt(fi.embedded_time),
                         _fmt(fi.gps_time),
                         dec.strategy,
-                        _fmt(fp.target_embedded),
+                        _fmt(fp.target_embedded or fp.target_mtime),
                     ),
                     tags=(gps_tag,),
                 )
