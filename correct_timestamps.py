@@ -47,11 +47,7 @@ def save_manifest(target, entry):
 
 
 def resolve_target(current, delta, actual_dt):
-    if current.year > 2030:
-        return current - delta
-    if current.year < 2020:
-        return current + delta
-    return current
+    return current + delta
 
 
 def resolve_orig(files, delta, actual_dt, reprocess=False):
@@ -86,6 +82,8 @@ def main():
                         choices=['auto', 'debugfs', 'fuse', 'clock'],
                         help='Fix creation time: auto (best for FS), debugfs, fuse, clock')
     parser.add_argument('--translation', help='Path to time translation file')
+    parser.add_argument('--gps', action='store_true', help='Use GPS time from the first file to determine delta')
+    parser.add_argument('--timezone', help='Timezone for GPS correction (e.g. Europe/Berlin)')
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')
     parser.add_argument('--reprocess', action='store_true',
                         help='Rewrite all files with UTC timezone handling (for already-corrected files)')
@@ -102,9 +100,52 @@ def main():
 
     clean_exiftool_temp(target)
 
-    tf = find_translation(target, args.translation)
-    actual_dt, gopro_dt = translate.parse(tf)
-    delta = actual_dt - gopro_dt
+    if args.gps:
+        files = media.collect(target)
+        gps_file = None
+        gps_utc = None
+        for f in files:
+            gps_utc = media.read_gps_time(f)
+            if gps_utc:
+                gps_file = f
+                break
+
+        if not gps_file:
+            print("Error: No file with GPS data found.")
+            sys.exit(1)
+
+        print(f"Using GPS from {gps_file.name}")
+
+        if args.timezone:
+            import zoneinfo
+            try:
+                tz = zoneinfo.ZoneInfo(args.timezone)
+            except Exception as e:
+                print(f"Error: Invalid timezone: {args.timezone} ({e})")
+                sys.exit(1)
+            # Use a dummy UTC timezone for the naive gps_utc
+            from datetime import timezone
+            gps_utc = gps_utc.replace(tzinfo=timezone.utc)
+            actual_dt = gps_utc.astimezone(tz).replace(tzinfo=None)
+        else:
+            # Use local system timezone
+            now = datetime.now()
+            local_tz = now.astimezone().tzinfo
+            # gps_utc is naive but represents UTC
+            # We want to know what the local time was at that UTC moment
+            from datetime import timezone
+            gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
+            actual_dt = gps_utc_tz.astimezone(local_tz).replace(tzinfo=None)
+
+        gopro_dt = media.read_embedded(gps_file, use_qt_utc=not args.reprocess)
+        if not gopro_dt:
+            print(f"Error: Could not read embedded time from {gps_file.name}")
+            sys.exit(1)
+        delta = actual_dt - gopro_dt
+    else:
+        tf = find_translation(target, args.translation)
+        actual_dt, gopro_dt = translate.parse(tf)
+        delta = actual_dt - gopro_dt
 
     print(f"Actual: {actual_dt}")
     print(f"GoPro:  {gopro_dt}")

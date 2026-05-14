@@ -25,9 +25,10 @@ The tool computes the clock offset and applies it to every matching file.
 
 ## Features
 
+- **GPS strategy** — automatically determine clock offset by comparing embedded GPS UTC time with camera clock
 - **CLI** for batch-processing entire SD cards
 - **GUI** with searchable timezone picker, calendar date picker, and live
-  delta preview
+  delta preview, plus **one-click GPS calibration**
 - Corrects **embedded metadata** via `exiftool`:
   - `QuickTime:CreateDate`, `TrackCreateDate`, `MediaCreateDate`, … (MP4/LRV)
   - `EXIF:DateTimeOriginal` and related tags (THM)
@@ -80,6 +81,9 @@ nix run . -- --reprocess /path/to/files
 
 # Specify a custom translation file
 nix run . -- --translation /path/to/calibration.json /path/to/files
+
+# Use GPS time from media files (requires a locked GPS signal during recording)
+nix run . -- --gps --timezone Europe/Berlin /path/to/files
 ```
 
 ### Options
@@ -87,6 +91,8 @@ nix run . -- --translation /path/to/calibration.json /path/to/files
 | Flag | Description |
 |---|---|
 | `--dry-run` | Preview changes without writing |
+| `--gps` | Determine delta automatically using the first file with GPS data |
+| `--timezone` | Target timezone for GPS correction (e.g. `Europe/Berlin`) |
 | `--fix-btime` | Fix filesystem birth time (auto‑detects ext4 vs exFAT) |
 | `--reprocess` | Re‑write all files with proper UTC handling |
 | `--force` | Ignore the manifest and re‑process all files |

@@ -59,6 +59,11 @@ class ToolGUI:
         cal_frame.columnconfigure(0, weight=1, uniform='editor')
         cal_frame.columnconfigure(1, weight=1, uniform='editor')
 
+        # --- GPS Button ---
+        gps_row = ttk.Frame(main)
+        gps_row.pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(gps_row, text='Extract from GPS...', command=self.auto_gps).pack(side=tk.RIGHT)
+
         # --- Preview / delta ---
         self.preview_var = tk.StringVar()
         self.delta_var = tk.StringVar(value='Delta: —')
@@ -145,6 +150,68 @@ class ToolGUI:
             err = rest[0] if rest else 'Invalid'
             self.delta_var.set('Delta: —')
             self.preview_var.set(f'⚠ {err}')
+
+    def auto_gps(self):
+        target_dir = self.dir_var.get()
+        if not target_dir:
+            return
+
+        target = Path(target_dir)
+        if not target.is_dir():
+            return
+
+        import media
+        files = media.collect(target)
+        if not files:
+            messagebox.showinfo("GPS", "No media files found in this directory.")
+            return
+
+        self.set_status('Searching for GPS data...')
+        self.root.update_idletasks()
+
+        gps_file = None
+        gps_utc = None
+        for f in files:
+            gps_utc = media.read_gps_time(f)
+            if gps_utc:
+                gps_file = f
+                break
+
+        if not gps_file:
+            messagebox.showinfo("GPS", "No files with GPS data found in this directory.")
+            self.set_status('Ready')
+            return
+
+        # Determine local time from GPS UTC
+        # We use the timezone currently selected in the 'Actual local time' editor
+        tz_id = self.actual_editor.tz_var.get()
+
+        from datetime import timezone
+        import zoneinfo
+        try:
+            tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
+        except Exception:
+            tz = None
+
+        gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
+        if tz:
+            actual_dt = gps_utc_tz.astimezone(tz)
+        else:
+            actual_dt = gps_utc_tz.astimezone() # System local
+
+        gopro_dt = media.read_embedded(gps_file, use_qt_utc=not self.reprocess_var.get())
+
+        if not gopro_dt:
+            messagebox.showerror("GPS", f"Could not read GoPro time from {gps_file.name}")
+            self.set_status('Ready')
+            return
+
+        # Fill editors
+        self.actual_editor.on_date_picked(actual_dt, tz_id)
+        self.gopro_editor.on_date_picked(gopro_dt, '')
+
+        self.log(f"Extracted calibration from GPS: {gps_file.name}")
+        self.set_status('Ready')
 
     # ----- Run -----
     def run_tool(self):

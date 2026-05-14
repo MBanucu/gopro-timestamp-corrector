@@ -25,7 +25,7 @@ def collect(directory):
 
 
 def _strip_tz(val):
-    return re.sub(r'\s*[+-]\d{2}:\d{2}$', '', val).strip()
+    return re.sub(r'(\s*[+-]\d{2}:\d{2}|Z)$', '', val).strip()
 
 
 def _read_tag(filepath, tag, use_qt_utc=False):
@@ -48,6 +48,28 @@ def read_embedded(filepath, use_qt_utc=True):
     elif ext == '.thm':
         return _read_tag(filepath, '-EXIF:DateTimeOriginal')
     return None
+
+
+def read_gps_time(filepath):
+    """Reads the first GPSDateTime from the file using exiftool -ee."""
+    cmd = ['exiftool', '-ee', '-s3', '-GPSDateTime', str(filepath)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    # GPSDateTime often looks like "2021:03:11 12:51:00.199Z" or similar
+    # We take the first one if there are multiple
+    line = result.stdout.strip().splitlines()[0].strip()
+    val = _strip_tz(line)
+    try:
+        if '.' in val:
+            # Handle variable number of digits in fractional seconds
+            main, frac = val.split('.')
+            frac = (frac + '000000')[:6]
+            val = f"{main}.{frac}"
+            return datetime.strptime(val, "%Y:%m:%d %H:%M:%S.%f")
+        return datetime.strptime(val, "%Y:%m:%d %H:%M:%S")
+    except (ValueError, IndexError):
+        return None
 
 
 def read_mtime(filepath):
