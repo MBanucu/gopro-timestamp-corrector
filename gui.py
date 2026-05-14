@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+import json
 import subprocess
 import sys
 import threading
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
@@ -11,17 +12,28 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 import calibration
 from gui_editor import CalibrationEditor, get_all_tz_ids, resolve_tz_abbr
 from gui_cal_file import CalibrationFileBar
+from gui_file_table import FileSetTable, _fmt_delta
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+
+
+def _compute_delta(actual_editor, gopro_editor):
+    actual = actual_editor.get_data()
+    gopro = gopro_editor.get_data()
+    data = {'actual': actual, 'gopro': gopro}
+    ok, *rest = calibration.try_parse(data)
+    if ok:
+        return rest[0] - rest[1]
+    return None
 
 
 class ToolGUI:
     def __init__(self, root):
         self.root = root
         root.title('GoPro Timestamp Corrector')
-        root.geometry('820x750')
-        root.minsize(700, 580)
+        root.geometry('1000x800')
+        root.minsize(850, 650)
 
         self.process = None
         self.running = False
@@ -39,13 +51,14 @@ class ToolGUI:
         self.dir_var = tk.StringVar(value=str(Path.cwd()))
         ttk.Entry(row, textvariable=self.dir_var).pack(
             side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        ttk.Button(row, text='Browse...', command=self.browse_dir, width=10).pack(side=tk.RIGHT)
+        ttk.Button(row, text='Browse...', command=self.browse_dir, width=10).pack(side=tk.RIGHT, padx=(0, 2))
+        self.analyze_btn = ttk.Button(row, text='Analyze', command=self.analyze_files, width=10)
+        self.analyze_btn.pack(side=tk.RIGHT)
 
         # --- Calibration file ---
         self.cal_bar = CalibrationFileBar(main, on_set_data=self.set_cal_data,
                                            log_fn=self.log)
         self.cal_bar.pack(fill=tk.X, pady=4)
-
 
         # --- Calibration editors ---
         cal_frame = ttk.Frame(main)
@@ -76,8 +89,15 @@ class ToolGUI:
             for var in (ed.date_var, ed.hour_var, ed.min_var, ed.tz_var):
                 var.trace_add('write', lambda *a: self.update_preview())
 
-        # --- Separator ---
-        ttk.Separator(main, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=4)
+        # --- File Analysis Table ---
+        sep = ttk.Separator(main, orient=tk.HORIZONTAL)
+        sep.pack(fill=tk.X, pady=4)
+
+        table_frame = ttk.LabelFrame(main, text='File Analysis', padding=4)
+        table_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
+
+        self.file_table = FileSetTable(table_frame, manual_delta_changed_cb=self._on_strategy_changed)
+        self.file_table.pack(fill=tk.BOTH, expand=True)
 
         # --- Options ---
         opt = ttk.LabelFrame(main, text='Options', padding=8)
@@ -105,17 +125,18 @@ class ToolGUI:
         # --- Run button ---
         btn_row = ttk.Frame(main)
         btn_row.pack(fill=tk.X, pady=4)
-        self.run_btn = ttk.Button(btn_row, text='Run', command=self.run_tool, width=12)
+        self.run_btn = ttk.Button(btn_row, text='Apply', command=self.run_tool, width=12)
         self.run_btn.pack(side=tk.LEFT)
         self.cancel_btn = ttk.Button(btn_row, text='Cancel', command=self.cancel_run, width=12, state=tk.DISABLED)
         self.cancel_btn.pack(side=tk.LEFT, padx=(8, 0))
 
         # --- Output ---
         out_frame = ttk.LabelFrame(main, text='Output', padding=4)
-        out_frame.pack(fill=tk.BOTH, expand=True)
+        out_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 2))
 
         self.output = scrolledtext.ScrolledText(out_frame, wrap=tk.WORD, font=('Consolas', 10),
-                                                 bg='#1e1e1e', fg='#d4d4d4', insertbackground='white')
+                                                 bg='#1e1e1e', fg='#d4d4d4', insertbackground='white',
+                                                 height=6)
         self.output.pack(fill=tk.BOTH, expand=True)
         self.output.config(state=tk.DISABLED)
 
@@ -136,21 +157,62 @@ class ToolGUI:
         return self.cal_bar.get_data()
 
     def update_preview(self):
-        data = self.get_cal_data()
-        ok, *rest = calibration.try_parse(data)
-        if ok:
-            actual_dt, gopro_dt = rest
-            delta = actual_dt - gopro_dt
-            self.delta_var.set(
-                f'Delta: {delta.days}d {delta.seconds // 3600}h '
-                f'{(delta.seconds % 3600) // 60}m'
-            )
+        delta = _compute_delta(self.actual_editor, self.gopro_editor)
+        if delta is not None:
+            self.delta_var.set(f'Delta: {_fmt_delta(delta)}')
             self.preview_var.set('')
+            self.file_table.manual_delta = delta
         else:
-            err = rest[0] if rest else 'Invalid'
             self.delta_var.set('Delta: —')
-            self.preview_var.set(f'⚠ {err}')
+            data = self.get_cal_data()
+            ok, *rest = calibration.try_parse(data)
+            err = rest[0] if rest else 'Invalid'
+            self.preview_var.set(f'\u26a0 {err}')
 
+    def _on_strategy_changed(self):
+        delta = _compute_delta(self.actual_editor, self.gopro_editor)
+        if delta is not None:
+            self.file_table.manual_delta = delta
+
+    # ----- Analyze -----
+    def analyze_files(self):
+        target_dir = self.dir_var.get()
+        if not target_dir:
+            return
+        target = Path(target_dir)
+        if not target.is_dir():
+            messagebox.showerror('Error', 'Directory does not exist.')
+            return
+
+        import media
+        if not media.exiftool_available():
+            messagebox.showerror('Error', 'exiftool not found.')
+            return
+
+        self.set_status('Analyzing files...')
+        self.root.update_idletasks()
+
+        import analysis as an_mod
+        try:
+            result = an_mod.analyze(target)
+            if result.total_files == 0:
+                messagebox.showinfo('Analysis', 'No media files found in this directory.')
+                self.set_status('Ready')
+                return
+            self.file_table.load_analysis(result)
+            delta = _compute_delta(self.actual_editor, self.gopro_editor)
+            if delta is not None:
+                self.file_table.manual_delta = delta
+            self.log(f'Analysis: {len(result.sets)} file sets, {result.total_files} files')
+            for fs in result.sets:
+                gps = 'GPS' if fs.has_any_gps else 'no GPS'
+                self.log(f'  Set {fs.id}: {fs.kind} ({gps})')
+            self.set_status(f'Ready — {len(result.sets)} sets, {result.total_files} files')
+        except Exception as e:
+            messagebox.showerror('Analysis Error', str(e))
+            self.set_status('Error during analysis')
+
+    # ----- GPS -----
     def auto_gps(self):
         target_dir = self.dir_var.get()
         if not target_dir:
@@ -182,11 +244,7 @@ class ToolGUI:
             self.set_status('Ready')
             return
 
-        # Determine local time from GPS UTC
-        # We use the timezone currently selected in the 'Actual local time' editor
         tz_id = self.actual_editor.tz_var.get()
-
-        from datetime import timezone
         import zoneinfo
         try:
             tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
@@ -197,7 +255,7 @@ class ToolGUI:
         if tz:
             actual_dt = gps_utc_tz.astimezone(tz)
         else:
-            actual_dt = gps_utc_tz.astimezone() # System local
+            actual_dt = gps_utc_tz.astimezone()
 
         gopro_dt = media.read_embedded(gps_file, use_qt_utc=not self.reprocess_var.get())
 
@@ -206,7 +264,6 @@ class ToolGUI:
             self.set_status('Ready')
             return
 
-        # Fill editors
         self.actual_editor.on_date_picked(actual_dt, tz_id)
         self.gopro_editor.on_date_picked(gopro_dt, '')
 
@@ -219,6 +276,10 @@ class ToolGUI:
             return
         if not self.validate_cal():
             return
+        if self.file_table.analysis is None:
+            if not messagebox.askyesno('No Analysis',
+                                       'No file analysis was performed.\nRun correction with global settings anyway?'):
+                return
 
         self.running = True
         self.run_btn.config(state=tk.DISABLED)
@@ -249,6 +310,18 @@ class ToolGUI:
             calibration.save_json(tmp, data)
             cmd.extend(['--translation', str(tmp)])
 
+        # Write strategy manifest if analysis was performed
+        manifest_path = Path(self.dir_var.get()) / '.gui_strategy.json'
+        if self.file_table.analysis is not None:
+            manifest = {
+                'version': 1,
+                'sets': self.file_table.get_decisions(),
+            }
+            manifest_path.write_text(json.dumps(manifest, indent=2))
+            cmd.extend(['--strategy-manifest', str(manifest_path)])
+        else:
+            manifest_path = None
+
         self.log(f'$ {" ".join(cmd)}\n')
         self.set_status('Running...')
 
@@ -275,7 +348,7 @@ class ToolGUI:
             return True
         err = rest[0] if rest else 'Invalid values'
         messagebox.showerror('Calibration error',
-                             f'Invalid calibration values:\n{err}')
+                              f'Invalid calibration values:\n{err}')
         return False
 
     def on_finish(self, code):
@@ -292,9 +365,11 @@ class ToolGUI:
         self.cleanup_temp()
 
     def cleanup_temp(self):
-        tmp = Path(self.dir_var.get()) / '.gui_calibration.json'
-        if tmp.exists():
-            tmp.unlink()
+        d = Path(self.dir_var.get())
+        for name in ('.gui_calibration.json', '.gui_strategy.json'):
+            p = d / name
+            if p.exists():
+                p.unlink()
 
     def cancel_run(self):
         if self.process:
@@ -319,7 +394,7 @@ class ToolGUI:
         d = filedialog.askdirectory(initialdir=self.dir_var.get())
         if d:
             self.dir_var.set(d)
-            self.auto_cal()
+            self.cal_bar.auto(d)
 
 
 def main():

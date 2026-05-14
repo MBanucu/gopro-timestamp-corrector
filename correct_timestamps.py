@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
+import json
+import re
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import translate
@@ -10,6 +12,45 @@ import btime
 
 
 MANIFEST_NAME = '.timestamp_correction_log'
+
+
+def _group_key(path):
+    m = re.search(r'(\d{6,})', path.stem)
+    return m.group(1) if m else None
+
+
+def _group_by_stem(files):
+    groups = {}
+    for f in files:
+        key = _group_key(f)
+        if key:
+            groups.setdefault(key, []).append(f)
+    return groups
+
+
+def _resolve_current(f, resolved_map, reprocess):
+    current = media.read_embedded(f, use_qt_utc=not reprocess)
+    source = 'embedded'
+    if current is None:
+        if f.suffix.lower() == '.thm':
+            for c in (f.with_suffix('.MP4'), f.with_suffix('.mp4'),
+                      f.with_suffix('.LRV'), f.with_suffix('.lrv')):
+                if c.exists() and c in resolved_map:
+                    current = resolved_map[c][0]
+                    source = f'matched {c.name}'
+                    break
+    if current is None:
+        current = media.read_mtime(f)
+        source = 'mtime'
+    return current, source
+
+
+def _find_gps_in_group(files):
+    for f in files:
+        gps = media.read_gps_time(f)
+        if gps:
+            return gps, f
+    return None, None
 
 
 def clean_exiftool_temp(target):
@@ -53,25 +94,90 @@ def resolve_target(current, delta, actual_dt):
 def resolve_orig(files, delta, actual_dt, reprocess=False):
     map = {}
     for f in files:
-        current = media.read_embedded(f, use_qt_utc=not reprocess)
-        source = 'embedded'
-        if current is None:
-            if f.suffix.lower() == '.thm':
-                for c in (f.with_suffix('.MP4'), f.with_suffix('.mp4'),
-                          f.with_suffix('.LRV'), f.with_suffix('.lrv')):
-                    if c.exists() and c in map:
-                        current = map[c][0]
-                        source = f'matched {c.name}'
-                        break
-        if current is None:
-            current = media.read_mtime(f)
-            source = 'mtime'
+        current, source = _resolve_current(f, map, reprocess)
         if reprocess:
             target = current
         else:
             target = resolve_target(current, delta, actual_dt)
         map[f] = (current, source, target)
     return map
+
+
+def resolve_with_strategies(files, delta, actual_dt, manifest, reprocess=False):
+    strategies = manifest.get('sets', {})
+    groups = _group_by_stem(files)
+    result = {}
+
+    for stem_id, group_files in sorted(groups.items()):
+        strat_info = strategies.get(stem_id, {'strategy': 'manual'})
+        strategy = strat_info.get('strategy', 'manual')
+
+        if strategy == 'skip':
+            for f in group_files:
+                current, source = _resolve_current(f, result, reprocess)
+                result[f] = (current, f'skip ({source})', current)
+            continue
+
+        if strategy == 'gps':
+            gps_time, gps_file = _find_gps_in_group(group_files)
+            if gps_time is not None:
+                gps_utc_tz = gps_time.replace(tzinfo=timezone.utc)
+                local_tz = datetime.now().astimezone().tzinfo
+                actual_dt_local = gps_utc_tz.astimezone(local_tz).replace(tzinfo=None)
+                first_emb = None
+                for f in group_files:
+                    emb = media.read_embedded(f, use_qt_utc=not reprocess)
+                    if emb:
+                        first_emb = emb
+                        break
+                if first_emb is not None:
+                    set_delta = actual_dt_local - first_emb
+                else:
+                    set_delta = delta
+                source_tag = 'gps'
+            else:
+                set_delta = delta
+                source_tag = 'gps_fallback'
+        else:
+            set_delta = delta
+            source_tag = 'manual'
+
+        for f in group_files:
+            current, source = _resolve_current(f, result, reprocess)
+            if reprocess:
+                target = current
+            else:
+                target = resolve_target(current, set_delta, actual_dt)
+            result[f] = (current, f'{source_tag} ({source})', target)
+
+    return result
+
+
+def resolve_gps_delta(gps_file, reprocess, timezone_arg=None):
+    gps_utc = media.read_gps_time(gps_file)
+    if not gps_utc:
+        return None, None, None
+
+    if timezone_arg:
+        import zoneinfo
+        try:
+            tz = zoneinfo.ZoneInfo(timezone_arg)
+        except Exception as e:
+            print(f"Error: Invalid timezone: {timezone_arg} ({e})")
+            sys.exit(1)
+        gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
+        actual_dt = gps_utc_tz.astimezone(tz).replace(tzinfo=None)
+    else:
+        local_tz = datetime.now().astimezone().tzinfo
+        gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
+        actual_dt = gps_utc_tz.astimezone(local_tz).replace(tzinfo=None)
+
+    gopro_dt = media.read_embedded(gps_file, use_qt_utc=not reprocess)
+    if not gopro_dt:
+        return None, None, None
+
+    delta = actual_dt - gopro_dt
+    return delta, actual_dt, gopro_dt
 
 
 def main():
@@ -87,6 +193,7 @@ def main():
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')
     parser.add_argument('--reprocess', action='store_true',
                         help='Rewrite all files with UTC timezone handling (for already-corrected files)')
+    parser.add_argument('--strategy-manifest', help='JSON file with per-set strategy decisions')
     args = parser.parse_args()
 
     target = Path(args.directory).resolve()
@@ -100,56 +207,49 @@ def main():
 
     clean_exiftool_temp(target)
 
-    if args.gps:
-        files = media.collect(target)
-        gps_file = None
-        gps_utc = None
-        for f in files:
-            gps_utc = media.read_gps_time(f)
-            if gps_utc:
-                gps_file = f
-                break
+    # Parse strategy manifest early to know if we need a global delta
+    strategy_manifest = None
+    needs_global_delta = args.gps or not args.strategy_manifest
+    if args.strategy_manifest:
+        strategy_manifest = json.loads(Path(args.strategy_manifest).read_text())
+        sets = strategy_manifest.get('sets', {})
+        if not needs_global_delta:
+            needs_global_delta = any(s.get('strategy', 'manual') == 'manual' for s in sets.values())
 
-        if not gps_file:
-            print("Error: No file with GPS data found.")
-            sys.exit(1)
+    if needs_global_delta:
+        if args.gps:
+            files = media.collect(target)
+            gps_file = None
+            gps_utc = None
+            for f in files:
+                gps_utc = media.read_gps_time(f)
+                if gps_utc:
+                    gps_file = f
+                    break
 
-        print(f"Using GPS from {gps_file.name}")
-
-        if args.timezone:
-            import zoneinfo
-            try:
-                tz = zoneinfo.ZoneInfo(args.timezone)
-            except Exception as e:
-                print(f"Error: Invalid timezone: {args.timezone} ({e})")
+            if not gps_file:
+                print("Error: No file with GPS data found.")
                 sys.exit(1)
-            # Use a dummy UTC timezone for the naive gps_utc
-            from datetime import timezone
-            gps_utc = gps_utc.replace(tzinfo=timezone.utc)
-            actual_dt = gps_utc.astimezone(tz).replace(tzinfo=None)
+
+            print(f"Using GPS from {gps_file.name}")
+
+            delta, actual_dt, gopro_dt = resolve_gps_delta(gps_file, args.reprocess, args.timezone)
+            if delta is None:
+                print(f"Error: Could not read GPS or embedded time from {gps_file.name}")
+                sys.exit(1)
         else:
-            # Use local system timezone
-            now = datetime.now()
-            local_tz = now.astimezone().tzinfo
-            # gps_utc is naive but represents UTC
-            # We want to know what the local time was at that UTC moment
-            from datetime import timezone
-            gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
-            actual_dt = gps_utc_tz.astimezone(local_tz).replace(tzinfo=None)
+            tf = find_translation(target, args.translation)
+            actual_dt, gopro_dt = translate.parse(tf)
+            delta = actual_dt - gopro_dt
 
-        gopro_dt = media.read_embedded(gps_file, use_qt_utc=not args.reprocess)
-        if not gopro_dt:
-            print(f"Error: Could not read embedded time from {gps_file.name}")
-            sys.exit(1)
-        delta = actual_dt - gopro_dt
+        print(f"Actual: {actual_dt}")
+        print(f"GoPro:  {gopro_dt}")
+        print(f"Delta:  {delta.days}d {(delta.seconds // 3600)}h {(delta.seconds % 3600) // 60}m")
     else:
-        tf = find_translation(target, args.translation)
-        actual_dt, gopro_dt = translate.parse(tf)
-        delta = actual_dt - gopro_dt
+        delta = timedelta()
+        actual_dt = datetime.now()
+        gopro_dt = actual_dt
 
-    print(f"Actual: {actual_dt}")
-    print(f"GoPro:  {gopro_dt}")
-    print(f"Delta:  {delta.days}d {(delta.seconds // 3600)}h {(delta.seconds % 3600) // 60}m")
     print()
 
     manifest = set() if (args.force or args.reprocess) else load_manifest(target)
@@ -166,7 +266,11 @@ def main():
         print("REPROCESS mode: rewriting all files with UTC timezone handling")
         print()
 
-    resolved = resolve_orig(files, delta, actual_dt, reprocess=args.reprocess)
+    if args.strategy_manifest:
+        sm = json.loads(Path(args.strategy_manifest).read_text())
+        resolved = resolve_with_strategies(files, delta, actual_dt, sm, reprocess=args.reprocess)
+    else:
+        resolved = resolve_orig(files, delta, actual_dt, reprocess=args.reprocess)
 
     if args.dry_run:
         print("DRY RUN\n")
@@ -192,14 +296,16 @@ def main():
 
     processed = 0
     would_process = 0
-    skipped_manifest = 0
+    skipped_manifest_count = 0
     skipped_correct = 0
 
     for f in files:
+        if f not in resolved:
+            continue
         current, source, target_dt = resolved[f]
 
         if f.name in manifest:
-            skipped_manifest += 1
+            skipped_manifest_count += 1
             continue
 
         if not args.reprocess and target_dt == current:
@@ -237,11 +343,15 @@ def main():
             summary.append(f"{would_process} would be processed")
     elif processed:
         summary.append(f"{processed} corrected")
-    if skipped_manifest:
-        summary.append(f"{skipped_manifest} already in manifest")
-    if skipped_correct:
-        summary.append(f"{skipped_correct} already correct")
-    print(f"{'DRY RUN - ' if args.dry_run else ''}{', '.join(summary) if summary else 'No changes needed.'}")
+    if skipped_manifest_count:
+        summary.append(f"{skipped_manifest_count} already in manifest")
+    if would_process == 0 and skipped_correct and not skipped_manifest_count:
+        summary_str = 'No changes needed.'
+    else:
+        if skipped_correct:
+            summary.append(f"{skipped_correct} already correct")
+        summary_str = ', '.join(summary)
+    print(f"{'DRY RUN - ' if args.dry_run else ''}{summary_str}")
 
 
 if __name__ == '__main__':
