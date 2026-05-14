@@ -72,7 +72,7 @@ class FileSetTable(ttk.Frame):
         headings = {
             'set': 'Set', 'file': 'File', 'type': 'Type',
             'mtime': f'FS mtime ({tz_label})',
-            'exif': 'EXIF time (UTC)',
+            'exif': f'EXIF time ({tz_label})',
             'gps': 'GPS time (UTC)',
             'strategy': 'Strategy',
             'target': f'Target ({tz_label})',
@@ -98,7 +98,7 @@ class FileSetTable(ttk.Frame):
         self.menu.add_command(label='Skip', command=lambda: self._set_strategy(STRATEGY_SKIP))
         self.tree.bind('<Button-3>', self._show_menu)
 
-        self._tz_var = tk.StringVar(value=f'System: {_local_tz_info()}  |  EXIF: exiftool QuickTimeUTC=1')
+        self._tz_var = tk.StringVar(value=f'System timezone: {_local_tz_info()}  |  GPS time is UTC')
         tz_label = ttk.Label(self, textvariable=self._tz_var,
                               foreground='#888', anchor=tk.W, padding=(4, 0), font=('', 8))
         tz_label.pack(fill=tk.X)
