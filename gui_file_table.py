@@ -260,9 +260,12 @@ class FileSetTable(ttk.Frame):
                     tgt_emb, tgt_tz = _utc_to_local_with_tz(fp.target_embedded)
                 else:
                     cur_emb, emb_tz = fi.embedded_time, ''
-                    tgt_emb, tgt_tz = None, ''
-                    if fp.target_mtime is not None:
+                    if fp.target_embedded is not None:
+                        tgt_emb, tgt_tz = _utc_to_local_with_tz(fp.target_embedded)
+                    elif fp.target_mtime is not None:
                         tgt_emb, tgt_tz = _utc_to_local_with_tz(fp.target_mtime)
+                    else:
+                        tgt_emb, tgt_tz = None, ''
                 self.tree.insert(set_iid, tk.END,
                     values=(
                         '',

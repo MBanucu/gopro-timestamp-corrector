@@ -280,6 +280,48 @@ class TestFileSetTable(unittest.TestCase):
         self.assertNotIn('CEST', target.upper(),
                          f'THM target for March should NOT show CEST: {target}')
 
+    def test_thm_target_equals_mp4_lrv_with_gps_strategy(self):
+        from gui_file_table import _get_iana_id
+        iana = _get_iana_id()
+        if iana != 'Europe/Berlin':
+            self.skipTest(f'Test requires Europe/Berlin, got {iana}')
+
+        now = datetime(2026, 5, 14, 18, 0, 0)  # UTC
+        gps_utc = datetime(2021, 3, 11, 12, 0, 0)
+        emb_utc = datetime(2026, 5, 14, 16, 0, 0)
+
+        mp4 = FileInfo(path=Path('/d/GX010001.MP4'), stem='GX010001', ext='.mp4',
+                       mtime=now, embedded_time=emb_utc, gps_time=gps_utc)
+        lrv = FileInfo(path=Path('/d/GL010001.LRV'), stem='GL010001', ext='.lrv',
+                       mtime=now, embedded_time=emb_utc, gps_time=gps_utc)
+        thm = FileInfo(path=Path('/d/GX010001.THM'), stem='GX010001', ext='.thm',
+                       mtime=now, embedded_time=None, gps_time=None)
+
+        fs = FileSet(id='010001', files=[mp4, lrv, thm])
+        ar = AnalysisResult(directory='/d', sets=[fs])
+        self.table.load_analysis(ar)
+        self.root.update_idletasks()
+
+        children = [(iid, vals) for iid, p, vals in self._tree_rows() if p]
+        targets = {}
+        for iid, vals in children:
+            ext = vals[2]
+            target = vals[7]
+            targets[ext] = target
+
+        # All three must have a target with timezone suffix
+        for ext in ('mp4', 'lrv', 'thm'):
+            self.assertIn(ext, targets, f'Missing row for {ext}')
+            self.assertRegex(targets[ext],
+                r'\d{2}:\d{2}:\d{2} [A-Z]{2,}$',
+                f'{ext} target should have timezone suffix: {targets[ext]}')
+
+        # THM target must match MP4 and LRV
+        self.assertEqual(targets['thm'], targets['mp4'],
+                         'THM target should equal MP4 target')
+        self.assertEqual(targets['thm'], targets['lrv'],
+                         'THM target should equal LRV target')
+
 
 if __name__ == '__main__':
     unittest.main()
