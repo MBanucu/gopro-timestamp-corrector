@@ -176,6 +176,48 @@ class TestFileSetTable(unittest.TestCase):
         self.assertEqual(parents[1][1][0], '010002')
         self.assertEqual(parents[1][1][6], 'manual')
 
+    def test_timezone_suffixes_on_cell_values(self):
+        fs = _make_fs('010001', ['.mp4', '.lrv', '.thm'])
+        ar = AnalysisResult(directory='/d', sets=[fs])
+        self.table.load_analysis(ar)
+
+        # Child rows only (index 1,2,3 = mp4, lrv, thm)
+        children = [(iid, vals) for iid, p, vals in self._tree_rows() if p]
+
+        for iid, vals in children:
+            mtime = vals[3]  # FS mtime column
+            exif = vals[4]   # EXIF time column
+            gps = vals[5]    # GPS time column
+            target = vals[7]  # Target column
+            ext = vals[2]    # file type
+
+            # FS mtime: must NOT contain timezone suffixes
+            self.assertNotIn('CET', mtime.upper(), f'FS mtime should not contain CET/CEST: {mtime}')
+            self.assertNotIn('UTC', mtime.upper(), f'FS mtime should not contain UTC: {mtime}')
+            # FS mtime should be bare datetime like "2026-05-14 18:00:00"
+            self.assertRegex(mtime,
+                r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$',
+                f'FS mtime should have no timezone suffix: {mtime}')
+
+            # GPS time for MP4/LRV: must contain UTC suffix
+            if ext in ('mp4', 'lrv'):
+                self.assertIn('UTC', gps.upper(), f'GPS time should contain UTC: {gps}')
+            else:
+                self.assertEqual(gps, '\u2014')
+
+            # EXIF time for MP4/LRV: should have a timezone suffix (CET/CEST)
+            if ext in ('mp4', 'lrv'):
+                self.assertRegex(exif,
+                    r'\d{2}:\d{2}:\d{2} [A-Z]{3,}$',
+                    f'EXIF time should have timezone suffix: {exif}')
+                # Target should also have timezone suffix
+                self.assertRegex(target,
+                    r'\d{2}:\d{2}:\d{2} [A-Z]{3,}$',
+                    f'Target should have timezone suffix: {target}')
+            else:
+                # THM: no embedded time → shows '—'; no timezone check needed
+                self.assertEqual(exif, '\u2014')
+
 
 if __name__ == '__main__':
     unittest.main()
