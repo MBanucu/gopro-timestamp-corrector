@@ -30,7 +30,18 @@ def _group_by_stem(files):
 
 
 def _resolve_current(f, resolved_map, reprocess):
-    return resolve.read_current(f, resolved_map)
+    dt = media.read_embedded(f, use_qt_utc=False)
+    if dt is not None:
+        return dt, 'embedded'
+    if f.suffix.lower() == '.thm' and resolved_map is not None:
+        for ext in ('.MP4', '.mp4', '.LRV', '.lrv'):
+            partner = f.with_suffix(ext)
+            if partner.exists() and partner in resolved_map:
+                return resolved_map[partner][0], f'matched {partner.name}'
+    dt = media.read_mtime(f)
+    if dt is not None:
+        return dt, 'mtime'
+    return None, 'none'
 
 
 def _find_gps_in_group(files):
