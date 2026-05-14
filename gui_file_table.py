@@ -231,6 +231,7 @@ class FileSetTable(ttk.Frame):
                 open=True,
             )
 
+            current_tz_abbr = datetime.now().astimezone().tzname() or ''
             for fi, fp in zip(fs.files, pr.file_results if pr else []):
                 is_mp4_lrv = fi.ext in ('.mp4', '.lrv')
                 if is_mp4_lrv:
@@ -244,7 +245,7 @@ class FileSetTable(ttk.Frame):
                         '',
                         fi.path.name,
                         fi.ext.lstrip('.'),
-                        _fmt(fi.mtime),
+                        _fmt(fi.mtime, current_tz_abbr),
                         _fmt(cur_emb, emb_tz),
                         _fmt(fi.gps_time, 'UTC'),
                         dec.strategy,

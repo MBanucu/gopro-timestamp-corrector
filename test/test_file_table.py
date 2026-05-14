@@ -191,13 +191,10 @@ class TestFileSetTable(unittest.TestCase):
             target = vals[7]  # Target column
             ext = vals[2]    # file type
 
-            # FS mtime: must NOT contain timezone suffixes
-            self.assertNotIn('CET', mtime.upper(), f'FS mtime should not contain CET/CEST: {mtime}')
-            self.assertNotIn('UTC', mtime.upper(), f'FS mtime should not contain UTC: {mtime}')
-            # FS mtime should be bare datetime like "2026-05-14 18:00:00"
+            # FS mtime: should have a timezone suffix (current system TZ, e.g. CEST)
             self.assertRegex(mtime,
-                r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$',
-                f'FS mtime should have no timezone suffix: {mtime}')
+                r'\d{2}:\d{2}:\d{2} [A-Z]{2,}$',
+                f'FS mtime should have timezone suffix, got: {mtime}')
 
             # GPS time for MP4/LRV: must contain UTC suffix
             if ext in ('mp4', 'lrv'):
