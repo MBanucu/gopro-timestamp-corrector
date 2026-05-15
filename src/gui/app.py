@@ -76,7 +76,8 @@ class ToolGUI:
         # --- GPS Button ---
         gps_row = ttk.Frame(main)
         gps_row.pack(fill=tk.X, pady=(0, 4))
-        ttk.Button(gps_row, text='Extract from GPS...', command=self.auto_gps).pack(side=tk.RIGHT)
+        ttk.Button(gps_row, text='Single GPS...', command=self.auto_gps, width=13).pack(side=tk.RIGHT, padx=(2, 0))
+        ttk.Button(gps_row, text='Auto calibrate', command=self.auto_calibrate_from_gps, width=13).pack(side=tk.RIGHT)
 
         # --- Preview / delta ---
         self.preview_var = tk.StringVar()
@@ -273,6 +274,98 @@ class ToolGUI:
         self.gopro_editor.on_date_picked(gopro_dt, '')
 
         self.log(f"Extracted calibration from GPS: {gps_file.name}")
+        self.set_status('Ready')
+
+    def auto_calibrate_from_gps(self):
+        """Aggregate GPS deltas across all files using weighted median.
+
+        Reads GPS time and embedded time for every file, filters out
+        poor-quality GPS fixes via GPSHPositioningError, computes the
+        weighted median delta, and sets the calibration editors to the
+        file whose per-file delta is closest to the aggregate median.
+        """
+        target_dir = self.dir_var.get()
+        if not target_dir:
+            return
+        target = Path(target_dir)
+        if not target.is_dir():
+            return
+
+        import media
+        files = media.collect(target)
+        if not files:
+            messagebox.showinfo('Auto Calibrate', 'No media files found.')
+            return
+
+        self.set_status('Reading GPS data from all files...')
+        self.root.update_idletasks()
+
+        batch = media.read_tags_batch(files)
+        accuracy = media.read_gps_accuracy_batch(files)
+
+        # Compute per-file deltas with weights
+        candidates = []
+        for f in files:
+            embedded, gps = batch.get(f, (None, None))
+            if embedded is None or gps is None:
+                continue
+
+            acc = accuracy.get(f, 99.99)
+            if acc is None:
+                acc = 99.99
+            # Skip no-fix files (HPositioningError = 99.99 is GoPro's default)
+            if acc >= 25.0 or acc == 99.99:
+                continue
+
+            delta = gps - embedded
+            weight = 1.0 / (acc + 1.0)
+            candidates.append((delta, weight, f, gps, embedded))
+
+        if not candidates:
+            self.log('No files with valid GPS fix found (need GPSHPositioningError < 25 m).')
+            self.log('Falling back to single-file GPS extraction.')
+            self.set_status('Ready')
+            self.auto_gps()
+            return
+
+        from resolve import weighted_median_delta
+        deltas = [c[0] for c in candidates]
+        weights = [c[1] for c in candidates]
+        median = weighted_median_delta(deltas, weights)
+
+        if median is None:
+            self.log('Could not compute weighted median — falling back to single GPS.')
+            self.set_status('Ready')
+            self.auto_gps()
+            return
+
+        # Find the candidate file whose delta is closest to the median
+        best = min(candidates, key=lambda c: abs((c[0] - median).total_seconds()))
+        delta_best, _, best_file, best_gps, best_emb = best
+
+        tz_id = self.actual_editor.tz_var.get()
+        import zoneinfo
+        try:
+            tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
+        except Exception:
+            tz = None
+
+        gps_utc_tz = best_gps.replace(tzinfo=timezone.utc)
+        if tz:
+            actual_dt = gps_utc_tz.astimezone(tz)
+        else:
+            actual_dt = gps_utc_tz.astimezone()
+
+        self.actual_editor.on_date_picked(actual_dt, tz_id)
+        self.gopro_editor.on_date_picked(best_emb, '')
+
+        # Statistics
+        mean_delta = sum(deltas, timedelta()) / len(deltas) if deltas else median
+        self.log(f'Auto calibrate: {len(candidates)} files with valid GPS fix')
+        self.log(f'  Deltas range: {min(deltas)} … {max(deltas)}')
+        self.log(f'  Weighted median: {median}')
+        self.log(f'  Mean: ~{mean_delta}')
+        self.log(f'  Using: {best_file.name} (delta ~{delta_best})')
         self.set_status('Ready')
 
     # ----- Run -----

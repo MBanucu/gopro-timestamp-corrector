@@ -20,3 +20,28 @@ def gps_delta(gps_utc: datetime | None, embedded_utc: datetime | None) -> timede
     if gps_utc is None or embedded_utc is None:
         return None
     return gps_utc - embedded_utc
+
+
+def weighted_median_delta(
+    deltas: list[timedelta],
+    weights: list[float],
+) -> timedelta | None:
+    """Weighted median of timedelta list — robust against outliers.
+
+    Sorts by delta, then walks accumulating weight until the cumulative
+    sum reaches half of the total weight.  Returns ``None`` if the input
+    is empty or total weight is zero.
+    """
+    if not deltas:
+        return None
+    pairs = sorted(zip(deltas, weights), key=lambda x: x[0])
+    total = sum(weights)
+    if total <= 0:
+        return None
+    cumulative = 0.0
+    half = total / 2.0
+    for delta, w in pairs:
+        cumulative += w
+        if cumulative >= half:
+            return delta
+    return pairs[-1][0]

@@ -139,6 +139,41 @@ def read_tags_batch(filepaths: list[Path]) -> dict[Path, tuple[datetime | None, 
     return out
 
 
+def read_gps_accuracy_batch(filepaths: list[Path]) -> dict[Path, float | None]:
+    """Read GPSHPositioningError for all *filepaths* in a single exiftool call.
+
+    Returns ``{path: error_in_meters_or_None}``. A return value of ``99.99``
+    typically means no GPS fix. ``None`` means no accuracy data was written.
+    """
+    if not filepaths:
+        return {}
+
+    cmd = (['exiftool', '-json', '-GPSHPositioningError', '-ee']
+           + [str(p) for p in filepaths])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return {}
+
+    import json as _json
+    records = _json.loads(result.stdout)
+    out: dict[Path, float | None] = {}
+
+    for rec in records:
+        src = rec.get('SourceFile')
+        if not src:
+            continue
+        raw = rec.get('GPSHPositioningError')
+        if raw is not None:
+            try:
+                out[Path(src)] = float(raw)
+            except (ValueError, TypeError):
+                out[Path(src)] = None
+        else:
+            out[Path(src)] = None
+
+    return out
+
+
 def read_mtime(filepath):
     ts = os.path.getmtime(filepath)
     return datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)
