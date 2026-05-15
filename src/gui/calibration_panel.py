@@ -228,6 +228,9 @@ class CalibrationPanel(ttk.Frame):
             return
 
         tz_id = self.actual_editor.tz_var.get()
+        if not tz_id:
+            from gui.tz_info import get_iana_id
+            tz_id = get_iana_id() or ''
         import zoneinfo
         try:
             tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
@@ -304,6 +307,9 @@ class CalibrationPanel(ttk.Frame):
         best = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
         _, _, best_file, best_gps, best_emb = best
         tz_id = self.actual_editor.tz_var.get()
+        if not tz_id:
+            from gui.tz_info import get_iana_id
+            tz_id = get_iana_id() or ''
         import zoneinfo
         try:
             tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
