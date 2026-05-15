@@ -16,6 +16,9 @@
       in {
         devShells.default = pkgs.mkShell {
           packages = deps ++ [ python pkgs.bashInteractive ];
+          shellHook = ''
+            export PYTHONPATH="${src}/src:$PYTHONPATH"
+          '';
         };
 
         packages.cli = pkgs.stdenvNoCC.mkDerivation {
@@ -24,7 +27,7 @@
           dontBuild = true;
           installPhase = ''
             mkdir -p $out/bin $out/lib
-            cp *.py $out/lib/
+            cp src/*.py $out/lib/
             python_lib="$out/lib"
             python_bin="${python}/bin/python3"
             cat > $out/bin/correct-gopro-timestamps << WRAPPER
@@ -43,7 +46,7 @@ WRAPPER
           dontBuild = true;
           installPhase = ''
             mkdir -p $out/bin $out/lib
-            cp *.py $out/lib/
+            cp src/*.py $out/lib/
             python_lib="$out/lib"
             python_bin="${python}/bin/python3"
             cat > $out/bin/gopro-timestamp-gui << WRAPPER
@@ -65,6 +68,7 @@ WRAPPER
             mkdir -p $out/bin
             cat > $out/bin/run-tests << WRAPPER
 #!${pkgs.bash}/bin/bash
+export PYTHONPATH="\$PYTHONPATH:${pkgs.lib.makeBinPath deps}:$out/lib"
 exec $python_test -m coverage run --source tzcombobox -m unittest discover -v test
 WRAPPER
             cat > $out/bin/coverage-report << WRAPPER

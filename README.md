@@ -292,24 +292,29 @@ $COV/bin/coverage-report
 ```
 ├── correct_timestamps.py   # CLI orchestrator
 ├── gui.py                  # Tkinter GUI
-├── analysis.py             # File scanning, grouping, metadata extraction
-├── preview.py              # Calculator — computes the correction plan
-├── resolve.py              # Pure math helpers (target_time, gps_delta)
-├── writer.py               # Pure I/O dispatcher (takes WriteJob list)
-├── gui_file_table.py       # FileSetTable widget (Treeview + strategy menu)
-├── gui_editor.py           # Calibration editor widget
-├── gui_cal_file.py         # Calibration file management bar
-├── tzcombobox.py           # FilteringCombobox widget
-├── datepicker.py           # Calendar popup widget
-├── media.py                # EXIF/QuickTime read/write via exiftool
-├── calibration.py          # JSON calibration load/save/parse
-├── translate.py            # Plain‑text calibration parser
-├── btime.py                # Birth‑time fixing methods
-├── dst.py                  # DST ambiguity detection
+├── src/
+│   ├── analysis.py         # File scanning, grouping, metadata extraction
+│   ├── preview.py          # Calculator — computes the correction plan
+│   ├── resolve.py          # Pure math helpers (target_time, gps_delta)
+│   ├── writer.py           # Pure I/O dispatcher (takes WriteJob list)
+│   ├── gui_file_table.py   # FileSetTable widget (Treeview + strategy menu)
+│   ├── gui_editor.py       # Calibration editor widget
+│   ├── gui_cal_file.py     # Calibration file management bar
+│   ├── gui_tz_info.py      # IANA timezone database parser + TzInfoPanel
+│   ├── tzcombobox.py       # FilteringCombobox widget
+│   ├── datepicker.py       # Calendar popup widget
+│   ├── media.py            # EXIF/QuickTime read/write via exiftool
+│   ├── calibration.py      # JSON calibration load/save/parse
+│   ├── translate.py        # Plain‑text calibration parser
+│   ├── btime.py            # Birth‑time fixing methods
+│   ├── dst.py              # DST ambiguity detection
+│   ├── gui.py              # Tkinter GUI application
+│   └── correct_timestamps.py  # CLI orchestrator
 ├── flake.nix               # Nix flake (dev shell + apps)
 ├── test/
 │   ├── sdcard.img     # Sparse exFAT disk image (12 real GoPro files)
 │   ├── SPARSE_EXFAT_REPORT.md
+│   ├── perf_decompress.py  # Benchmark decompress + mount pipeline
 │   ├── test_analysis.py    # Analysis module tests (8)
 │   ├── test_preview.py     # Preview/calculator tests (11)
 │   ├── test_file_table.py  # GUI table widget tests (12)

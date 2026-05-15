@@ -75,7 +75,7 @@ class TestStrategyManifestISO(unittest.TestCase):
         return p
 
     def _run_cli(self, args):
-        cmd = ['python3', 'correct_timestamps.py'] + args
+        cmd = ['python3', 'src/correct_timestamps.py'] + args
         return subprocess.run(cmd, capture_output=True, text=True)
 
     def test_all_gps_strategy(self):
