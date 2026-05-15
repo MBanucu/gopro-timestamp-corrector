@@ -112,43 +112,72 @@ def _load_tzif(key):
     }
 
 
-def _dst_transitions(iana_id, year=2026):
-    """Return DST transition (spring, fall) for *iana_id* in *year*.
+def _zone_all_transitions(iana_id):
+    """Return ALL historical IANA transitions for *iana_id*.
 
-    Reads the actual IANA transition data from the compiled TZif file.
-
-    Returns ``(spring, fall)`` where each is a ``(datetime, tzname_before,
-    tzname_after)``, or ``(None, None)`` if the zone has no DST.
+    Returns a list of ``(local_datetime, abbr_before, abbr_after,
+    offset_after_s, is_dst)`` tuples, sorted chronologically.
+    Returns an empty list if the zone has no transitions or is not found.
     """
     data = _load_tzif(iana_id)
     if data is None:
-        return None, None
+        return []
 
-    year_start = datetime(year, 1, 1, tzinfo=timezone.utc).timestamp()
-    year_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp()
-
-    spring = None
-    fall = None
+    result = []
     tt = data['ttinfo']
     trans = data['trans_times']
     idx = data['trans_idx']
 
     for i, (ts, ti) in enumerate(zip(trans, idx)):
-        if not (year_start <= ts < year_end):
-            continue
-        cur_abbr = tt[ti][2]
+        cur_off, cur_dst, cur_abbr = tt[ti]
         prev_abbr = tt[idx[i - 1]][2] if i > 0 else tt[idx[0]][2]
         dt_utc = datetime.fromtimestamp(ts, tz=timezone.utc)
-        cur_off = tt[ti][0]
         dt_local = dt_utc + timedelta(seconds=cur_off)
+        result.append((dt_local.replace(tzinfo=None), prev_abbr, cur_abbr,
+                       cur_off, cur_dst))
+    return result
 
-        if spring is None:
-            spring = (dt_local.replace(tzinfo=None), prev_abbr, cur_abbr)
-        else:
-            fall = (dt_local.replace(tzinfo=None), prev_abbr, cur_abbr)
-            break
 
-    return spring, fall
+def _build_tz_info_text(iana_id):
+    """Build a multi-line string with the full IANA transition history."""
+    if not iana_id:
+        return 'TZ: local'
+
+    tt = _load_tzif(iana_id)
+    if tt is None:
+        return f'TZ: {iana_id}'
+
+    lines = [f'TZ: {iana_id}']
+    trans = _zone_all_transitions(iana_id)
+
+    if not trans:
+        # Fixed-offset zone: show the single ttinfo
+        off, dst, abbr = tt['ttinfo'][0]
+        off_h = f'UTC{off//3600:+03d}:{(abs(off)%3600)//60:02d}'
+        lines.append(f'  Fixed offset  {off_h}  {abbr}  (no DST)')
+        return '\n'.join(lines)
+
+    # Group by year
+    by_year: dict[int, list] = {}
+    for t in trans:
+        y = t[0].year
+        by_year.setdefault(y, []).append(t)
+
+    for year in sorted(by_year):
+        entries = by_year[year]
+        year_parts = []
+        for dt_local, before, after, off, dst in entries:
+            off_s = f'UTC{off//3600:+03d}:{(abs(off)%3600)//60:02d}'
+            if before != after:
+                year_parts.append(
+                    f'{dt_local.strftime("%d %b %H:%M")}  '
+                    f'{before}\u2192{after}  {off_s}')
+            else:
+                year_parts.append(
+                    f'{dt_local.strftime("%d %b %H:%M")}  {off_s}  {after}')
+        lines.append(f'  {year}:  {" | ".join(year_parts)}')
+
+    return '\n'.join(lines)
 
 
 def _local_tz_info():
@@ -262,28 +291,53 @@ class FileSetTable(ttk.Frame):
         self.tree.bind('<Button-3>', self._show_menu)
 
         iana = _get_iana_id() or 'local'
-        spring, fall = _dst_transitions(iana) if iana else (None, None)
-        if spring and fall:
-            sp_dt, sp_before, sp_after = spring
-            fa_dt, fa_before, fa_after = fall
-            info = (f'TZ: {iana} — \u2191 {sp_dt.strftime("%d %b %H:%M")} '
-                    f'{sp_before}\u2192{sp_after}  '
-                    f'\u2193 {fa_dt.strftime("%d %b %H:%M")} '
-                    f'{fa_before}\u2192{fa_after}')
-        elif spring:
-            dt, before, after = spring
-            info = f'TZ: {iana} — \u2191 {dt.strftime("%d %b %H:%M")} {before}\u2192{after} (no fall DST)'
-        else:
-            info = f'TZ: {iana}' if iana else 'TZ: local'
-        self._tz_var = tk.StringVar(value=f'{info}  |  GPS is UTC')
-        tz_label = ttk.Label(self, textvariable=self._tz_var,
-                              foreground='#888', anchor=tk.W, padding=(4, 0), font=('', 8))
-        tz_label.pack(fill=tk.X)
+        tz_text = _build_tz_info_text(iana)
+        tz_lines = tz_text.split('\n', 1)
+        heading = tz_lines[0]
+        detail = tz_lines[1] if len(tz_lines) > 1 else ''
+
+        style = ttk.Style(self)
+        style.configure('TZ.TButton', font=('', 8), foreground='#888',
+                        borderwidth=0, padding=(4, 0), anchor=tk.W,
+                        relief=tk.FLAT)
+        style.map('TZ.TButton', background=[('!active', self.master.cget('bg') if hasattr(self.master, 'cget') else '#f0f0f0'),
+                                             ('active', '#e8e8e8')])
+
+        self._tz_expanded = False
+        self._tz_toggle = ttk.Button(self, style='TZ.TButton',
+                                     command=self._toggle_tz)
+        self._tz_toggle.configure(text=f'\u25b6  {heading}  |  GPS is UTC')
+        self._tz_toggle.pack(fill=tk.X, padx=2, pady=(0, 0))
+
+        self._tz_detail_frame = ttk.Frame(self)
+        self._tz_detail_text = tk.Text(self._tz_detail_frame, height=6, wrap=tk.WORD,
+                                        font=('', 8), fg='#666', bg='#fafafa',
+                                        relief=tk.FLAT, padx=6, pady=2)
+        self._tz_detail_text.insert('1.0', detail)
+        self._tz_detail_text.configure(state=tk.DISABLED)
+        self._tz_detail_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        tz_scroll = ttk.Scrollbar(self._tz_detail_frame, orient=tk.VERTICAL,
+                                   command=self._tz_detail_text.yview)
+        self._tz_detail_text.configure(yscrollcommand=tz_scroll.set)
+        tz_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._tz_detail_frame.pack(fill=tk.X, padx=(16, 0))
+        self._tz_detail_frame.pack_forget()
 
         self._status_var = tk.StringVar(value='No files analyzed yet')
         status_bar = ttk.Label(self, textvariable=self._status_var,
                                 foreground='gray', anchor=tk.W, padding=(4, 1))
         status_bar.pack(fill=tk.X)
+
+    def _toggle_tz(self):
+        self._tz_expanded = not self._tz_expanded
+        if self._tz_expanded:
+            self._tz_detail_frame.pack(fill=tk.X, padx=(16, 0))
+            self._tz_toggle.configure(text=self._tz_toggle.cget('text').replace('\u25b6', '\u25bc'))
+        else:
+            self._tz_detail_frame.pack_forget()
+            self._tz_toggle.configure(text=self._tz_toggle.cget('text').replace('\u25bc', '\u25b6'))
 
     # ---- Public API ----
 
