@@ -132,6 +132,15 @@ class FileSetTable(ttk.Frame):
 
         TzInfoPanel(self).pack(fill=tk.X)
 
+        btn_row = ttk.Frame(self)
+        btn_row.pack(fill=tk.X, pady=(2, 0))
+        ttk.Button(btn_row, text='All manual', width=11,
+                   command=lambda: self.set_all_strategies(STRATEGY_MANUAL)).pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Button(btn_row, text='All GPS', width=11,
+                   command=lambda: self.set_all_strategies(STRATEGY_GPS)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_row, text='All skip', width=11,
+                   command=lambda: self.set_all_strategies(STRATEGY_SKIP)).pack(side=tk.LEFT, padx=(2, 0))
+
         self._status_var = tk.StringVar(value='No files analyzed yet')
         status_bar = ttk.Label(self, textvariable=self._status_var,
                                 foreground='gray', anchor=tk.W, padding=(4, 1))
@@ -266,6 +275,27 @@ class FileSetTable(ttk.Frame):
         set_id = self._get_set_id_from_selection()
         if set_id and set_id in self.decisions:
             self.menu.tk_popup(event.x_root, event.y_root)
+
+    def set_all_strategies(self, strategy: str):
+        for sid in self.decisions:
+            if strategy == STRATEGY_GPS and not self._set_has_gps(sid):
+                continue
+            if strategy == STRATEGY_MANUAL:
+                self.decisions[sid] = SetDecision(
+                    strategy=strategy, manual_delta=self._manual_delta)
+            else:
+                self.decisions[sid] = SetDecision(strategy=strategy)
+        self._rebuild_tree()
+        if self._delta_changed_cb:
+            self._delta_changed_cb()
+
+    def _set_has_gps(self, set_id: str) -> bool:
+        if not self.analysis:
+            return False
+        for fs in self.analysis.sets:
+            if fs.id == set_id:
+                return fs.has_any_gps
+        return False
 
     def set_strategy_for_set(self, set_id: str, strategy: str):
         if set_id not in self.decisions:
