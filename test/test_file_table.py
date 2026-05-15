@@ -123,10 +123,9 @@ class TestFileSetTable(unittest.TestCase):
         self.table.manual_delta = timedelta(hours=5)
         self.root.update_idletasks()
 
-        # strategy should still be 'manual'
         rows = self._tree_rows()
         parent = rows[0]
-        self.assertEqual(parent[2][6], 'manual')
+        self.assertEqual(parent[2][6], 'manual +5h')
 
     def test_set_strategy_updates_decision(self):
         fs = _make_fs('010001', ['.mp4'], has_gps=True)

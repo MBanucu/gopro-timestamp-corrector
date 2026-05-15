@@ -196,6 +196,11 @@ class FileSetTable(ttk.Frame):
 
     # ---- Internal ----
 
+    def _strategy_label(self, dec):
+        if dec.strategy == STRATEGY_MANUAL and self._manual_delta:
+            return f'{dec.strategy} {_fmt_delta(self._manual_delta)}'
+        return dec.strategy
+
     def _rebuild_tree(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -216,7 +221,7 @@ class FileSetTable(ttk.Frame):
                     f'GPS: {"\u2713" if fs.has_any_gps else "\u2014"}',
                     f'EMB: {"\u2713" if fs.has_any_embedded else "\u2014"}',
                     '',
-                    dec.strategy,
+                    self._strategy_label(dec),
                     '',
                 ),
                 tags=('set_row', gps_tag),
