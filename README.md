@@ -305,11 +305,11 @@ $COV/bin/coverage-report
 │   ├── correct_timestamps.py  # CLI orchestrator
 │   ├── gui/
 │   │   ├── __init__.py
-│   │   ├── gui.py              # Tkinter GUI application
-│   │   ├── gui_file_table.py   # FileSetTable widget
-│   │   ├── gui_editor.py       # Calibration editor widget
-│   │   ├── gui_cal_file.py     # Calibration file management bar
-│   │   ├── gui_tz_info.py      # IANA timezone parser + TzInfoPanel
+│   │   ├── app.py              # Tkinter GUI application
+│   │   ├── file_table.py       # FileSetTable widget
+│   │   ├── editor.py           # Calibration editor widget
+│   │   ├── cal_file.py         # Calibration file management bar
+│   │   ├── tz_info.py          # IANA timezone parser + TzInfoPanel
 │   │   ├── tzcombobox.py       # FilteringCombobox widget
 │   │   └── datepicker.py       # Calendar popup widget
 ├── flake.nix               # Nix flake (dev shell + apps)

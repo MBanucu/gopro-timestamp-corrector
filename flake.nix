@@ -55,7 +55,7 @@ WRAPPER
 #!${pkgs.bash}/bin/bash
 export PATH="${pkgs.lib.makeBinPath deps}:\$PATH"
 export PYTHONPATH="$python_lib:\$PYTHONPATH"
-exec $python_bin "$python_lib/gui.py" "\$@"
+exec $python_bin "$python_lib/gui/app.py" "\$@"
 WRAPPER
             chmod +x $out/bin/gopro-timestamp-gui
           '';
