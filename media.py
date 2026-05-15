@@ -72,6 +72,73 @@ def read_gps_time(filepath):
         return None
 
 
+def read_tags_batch(filepaths: list[Path]) -> dict[Path, tuple[datetime | None, datetime | None]]:
+    """Read embedded time and GPS time for all *filepaths* in a single exiftool call.
+
+    Returns ``{path: (embedded_time, gps_time)}``.
+    """
+    if not filepaths:
+        return {}
+
+    cmd = (
+        ['exiftool', '-json',
+         '-QuickTime:CreateDate', '-QuickTime:MediaCreateDate',
+         '-EXIF:DateTimeOriginal',
+         '-GPSDateTime', '-ee']
+        + [str(p) for p in filepaths]
+    )
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return {}
+
+    import json as _json
+    records = _json.loads(result.stdout)
+    out: dict[Path, tuple[datetime | None, datetime | None]] = {}
+
+    for rec in records:
+        src = rec.get('SourceFile')
+        if not src:
+            continue
+        path = Path(src)
+
+        embedded: datetime | None = None
+        for tag in ('CreateDate', 'MediaCreateDate', 'DateTimeOriginal'):
+            raw = rec.get(tag)
+            if raw:
+                try:
+                    val = _strip_tz(str(raw))
+                except Exception:
+                    continue
+                try:
+                    if '.' in val:
+                        main, frac = val.split('.')
+                        frac = (frac + '000000')[:6]
+                        embedded = datetime.strptime(f'{main}.{frac}', '%Y:%m:%d %H:%M:%S.%f')
+                    else:
+                        embedded = datetime.strptime(val, '%Y:%m:%d %H:%M:%S')
+                    break
+                except (ValueError, IndexError):
+                    continue
+
+        gps_time: datetime | None = None
+        gps_raw = rec.get('GPSDateTime')
+        if gps_raw:
+            try:
+                val = _strip_tz(str(gps_raw))
+                if '.' in val:
+                    main, frac = val.split('.')
+                    frac = (frac + '000000')[:6]
+                    gps_time = datetime.strptime(f'{main}.{frac}', '%Y:%m:%d %H:%M:%S.%f')
+                else:
+                    gps_time = datetime.strptime(val, '%Y:%m:%d %H:%M:%S')
+            except (ValueError, IndexError):
+                pass
+
+        out[path] = (embedded, gps_time)
+
+    return out
+
+
 def read_mtime(filepath):
     ts = os.path.getmtime(filepath)
     return datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)

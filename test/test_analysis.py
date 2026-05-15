@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import analysis
 
@@ -32,18 +32,23 @@ class TestAnalyze(unittest.TestCase):
             Path('/d/GX010063.THM'),
             Path('/d/GL010064.LRV'),
             Path('/d/GX010064.MP4'),
-            Path('/d/GX010065.MP4'),  # no LRV or THM pair
+            Path('/d/GX010065.MP4'),
         ]
+
+    def _make_batch(self, emb_val, gps_val):
+        gps_063 = gps_val if callable(gps_val) else (lambda p: gps_val)
+        return {p: (emb_val, gps_063(p)) for p in self.fake_files}
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_embedded')
-    @patch('media.read_gps_time')
-    def test_analyze_groups_by_stem(self, mock_gps, mock_emb, mock_mtime, mock_collect):
+    @patch('media.read_tags_batch')
+    def test_analyze_groups_by_stem(self, mock_batch, mock_mtime, mock_collect):
         mock_collect.return_value = self.fake_files
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 0, 0)
-        mock_emb.return_value = datetime(2026, 5, 14, 16, 0, 0)
-        mock_gps.return_value = datetime(2021, 3, 11, 12, 51, 0)
+        mock_batch.return_value = self._make_batch(
+            datetime(2026, 5, 14, 16, 0, 0),
+            datetime(2021, 3, 11, 12, 51, 0),
+        )
 
         result = analysis.analyze('/d')
         self.assertEqual(result.total_files, 6)
@@ -54,13 +59,15 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_embedded')
-    @patch('media.read_gps_time')
-    def test_set_has_gps(self, mock_gps, mock_emb, mock_mtime, mock_collect):
+    @patch('media.read_tags_batch')
+    def test_set_has_gps(self, mock_batch, mock_mtime, mock_collect):
         mock_collect.return_value = self.fake_files
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 0, 0)
-        mock_emb.return_value = datetime(2026, 5, 14, 16, 0, 0)
-        mock_gps.side_effect = lambda p: datetime(2021, 3, 11, 12, 51, 0) if '063' in str(p) else None
+        mock_batch.return_value = {
+            p: (datetime(2026, 5, 14, 16, 0, 0),
+                datetime(2021, 3, 11, 12, 51, 0) if '063' in str(p) else None)
+            for p in self.fake_files
+        }
 
         result = analysis.analyze('/d')
         set_063 = next(s for s in result.sets if s.id == '010063')
@@ -71,13 +78,12 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_embedded')
-    @patch('media.read_gps_time')
-    def test_set_kind(self, mock_gps, mock_emb, mock_mtime, mock_collect):
+    @patch('media.read_tags_batch')
+    def test_set_kind(self, mock_batch, mock_mtime, mock_collect):
         mock_collect.return_value = self.fake_files
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 0, 0)
-        mock_emb.return_value = datetime(2026, 5, 14, 16, 0, 0)
-        mock_gps.return_value = None
+        mock_batch.return_value = self._make_batch(
+            datetime(2026, 5, 14, 16, 0, 0), None)
 
         result = analysis.analyze('/d')
         set_063 = next(s for s in result.sets if s.id == '010063')
@@ -88,9 +94,8 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_embedded')
-    @patch('media.read_gps_time')
-    def test_empty_directory(self, mock_gps, mock_emb, mock_mtime, mock_collect):
+    @patch('media.read_tags_batch')
+    def test_empty_directory(self, mock_batch, mock_mtime, mock_collect):
         mock_collect.return_value = []
         result = analysis.analyze('/empty')
         self.assertEqual(result.total_files, 0)
@@ -98,13 +103,13 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_embedded')
-    @patch('media.read_gps_time')
-    def test_file_info_values(self, mock_gps, mock_emb, mock_mtime, mock_collect):
+    @patch('media.read_tags_batch')
+    def test_file_info_values(self, mock_batch, mock_mtime, mock_collect):
         mock_collect.return_value = [Path('/d/GX010001.MP4')]
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 30, 0)
-        mock_emb.return_value = datetime(2026, 5, 14, 16, 0, 0)
-        mock_gps.return_value = None
+        mock_batch.return_value = {
+            Path('/d/GX010001.MP4'): (datetime(2026, 5, 14, 16, 0, 0), None),
+        }
 
         result = analysis.analyze('/d')
         fi = result.sets[0].files[0]

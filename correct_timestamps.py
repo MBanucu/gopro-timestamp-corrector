@@ -94,24 +94,36 @@ def main():
 
     clean_exiftool_temp(target)
 
-    # ── 1. Compute global delta ─────────────────────────────────
-    needs_global_delta = args.gps or not args.strategy_manifest
+    # ── 1. Read all files via shared analysis (single exiftool batch) ──
     strategy_manifest_raw = None
     if args.strategy_manifest:
         strategy_manifest_raw = json.loads(Path(args.strategy_manifest).read_text())
-        sets = strategy_manifest_raw.get('sets', {})
+
+    analysis_result = an_mod.analyze(target)
+    if not analysis_result.total_files:
+        print("No media files found.")
+        return
+
+    # ── 2. Compute global delta ─────────────────────────────────
+    needs_global_delta = args.gps or not args.strategy_manifest
+    if args.strategy_manifest:
+        sets_m = strategy_manifest_raw.get('sets', {})
         if not needs_global_delta:
-            needs_global_delta = any(s.get('strategy', 'manual') == 'manual' for s in sets.values())
+            needs_global_delta = any(s.get('strategy', 'manual') == 'manual' for s in sets_m.values())
 
     if needs_global_delta:
         if args.gps:
-            files = media.collect(target)
             gps_file = None
             gps_utc = None
-            for f in files:
-                gps_utc = media.read_gps_time(f)
-                if gps_utc:
-                    gps_file = f
+            gopro_dt = None
+            for fs in analysis_result.sets:
+                for fi in fs.files:
+                    if fi.gps_time:
+                        gps_file = fi.path
+                        gps_utc = fi.gps_time
+                        gopro_dt = fi.embedded_time
+                        break
+                if gps_file:
                     break
             if not gps_file:
                 print("Error: No file with GPS data found.")
@@ -119,7 +131,6 @@ def main():
 
             print(f"Using GPS from {gps_file.name}")
 
-            gps_utc = media.read_gps_time(gps_file)
             if not gps_utc:
                 print(f"Error: Could not read GPS from {gps_file.name}")
                 sys.exit(1)
@@ -136,7 +147,6 @@ def main():
             else:
                 actual_dt = gps_utc
 
-            gopro_dt = media.read_embedded(gps_file, use_qt_utc=False)
             if not gopro_dt:
                 print(f"Error: Could not read embedded time from {gps_file.name}")
                 sys.exit(1)
@@ -156,12 +166,6 @@ def main():
         gopro_dt = actual_dt
 
     print()
-
-    # ── 2. Read all files via shared analysis ──────────────────
-    analysis_result = an_mod.analyze(target)
-    if not analysis_result.total_files:
-        print("No media files found.")
-        return
 
     # ── 3. Build decisions + compute plan (calculator) ─────────
     if args.strategy_manifest:

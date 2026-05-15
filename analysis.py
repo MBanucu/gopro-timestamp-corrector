@@ -61,18 +61,21 @@ def analyze(directory: str | Path) -> AnalysisResult:
     target = Path(directory)
     raw_files = media.collect(target)
 
+    batch = media.read_tags_batch(raw_files)
+
     groups: dict[str, list[FileInfo]] = {}
     for f in raw_files:
         key = _group_key(f)
         if not key:
             continue
+        embedded, gps = batch.get(f, (None, None))
         info = FileInfo(
             path=f,
             stem=f.stem,
             ext=f.suffix.lower(),
             mtime=media.read_mtime(f),
-            embedded_time=media.read_embedded(f, use_qt_utc=False),
-            gps_time=media.read_gps_time(f),
+            embedded_time=embedded,
+            gps_time=gps,
         )
         groups.setdefault(key, []).append(info)
 
