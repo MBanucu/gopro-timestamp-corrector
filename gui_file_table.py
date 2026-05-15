@@ -47,56 +47,105 @@ def _get_iana_id():
     return _IANA_ID
 
 
-def _tz_abbrs(iana_id):
+def _load_tzif(key):
+    """Parse the compiled TZif file for *key* and return transition data.
+
+    Returns a dict with ``trans_times`` (tuple of int UTC timestamps),
+    ``trans_idx`` (list of ttinfo indices), ``ttinfo`` (list of
+    ``(offset_seconds, is_dst, abbreviation)`` tuples).
+    """
+    import os
+    import struct
     import zoneinfo
-    try:
-        z = zoneinfo.ZoneInfo(iana_id)
-        winter = datetime(2026, 1, 1, 12, 0, 0).replace(tzinfo=z).tzname() or ''
-        summer = datetime(2026, 7, 1, 12, 0, 0).replace(tzinfo=z).tzname() or ''
-        return winter, summer
-    except Exception:
-        return '', ''
+
+    for base in zoneinfo.TZPATH:
+        path = os.path.join(base, key)
+        if os.path.isfile(path):
+            break
+    else:
+        return None
+
+    with open(path, 'rb') as f:
+        raw = f.read()
+
+    if raw[:4] != b'TZif':
+        return None
+
+    # v1 header at offset 20
+    isutcnt, isstdcnt, leapcnt, timecnt, typecnt, charcnt = \
+        struct.unpack('>6i', raw[20:44])
+
+    # end of v1 data
+    pos = 44 + timecnt * 4 + timecnt * 1 + typecnt * 6 + charcnt
+    pos += leapcnt * 8 + isstdcnt + isutcnt
+
+    if raw[pos:pos + 4] != b'TZif':
+        return None
+
+    isutcnt, isstdcnt, leapcnt, timecnt, typecnt, charcnt = \
+        struct.unpack('>6i', raw[pos + 20:pos + 44])
+    pos2 = pos + 44
+
+    trans_times = struct.unpack(f'>{timecnt}q',
+                                raw[pos2:pos2 + timecnt * 8])
+    pos2 += timecnt * 8
+
+    trans_idx = list(raw[pos2:pos2 + timecnt])
+    pos2 += timecnt
+
+    ttinfo = []
+    for _ in range(typecnt):
+        off32, dst, abbr_idx = struct.unpack('>ibb', raw[pos2:pos2 + 6])
+        ttinfo.append((off32, bool(dst), abbr_idx))
+        pos2 += 6
+
+    abbr_block = raw[pos2:pos2 + charcnt]
+
+    def _abbr(idx):
+        end = abbr_block.index(0, idx) if 0 in abbr_block[idx:] else len(abbr_block)
+        return abbr_block[idx:end].decode()
+
+    return {
+        'trans_times': trans_times,
+        'trans_idx': trans_idx,
+        'ttinfo': [(off, dst, _abbr(idx)) for off, dst, idx in ttinfo],
+    }
 
 
 def _dst_transitions(iana_id, year=2026):
     """Return DST transition (spring, fall) for *iana_id* in *year*.
 
+    Reads the actual IANA transition data from the compiled TZif file.
+
     Returns ``(spring, fall)`` where each is a ``(datetime, tzname_before,
-    tzname_after)`` tuple, or ``(None, None)`` if the zone has no DST.
+    tzname_after)``, or ``(None, None)`` if the zone has no DST.
     """
-    import zoneinfo
-    try:
-        z = zoneinfo.ZoneInfo(iana_id)
-    except Exception:
+    data = _load_tzif(iana_id)
+    if data is None:
         return None, None
 
-    jan = datetime(year, 1, 1, 2, 0, 0).replace(tzinfo=z)
-    std_off = jan.utcoffset()
-    std_name = jan.tzname() or ''
+    year_start = datetime(year, 1, 1, tzinfo=timezone.utc).timestamp()
+    year_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp()
 
     spring = None
     fall = None
+    tt = data['ttinfo']
+    trans = data['trans_times']
+    idx = data['trans_idx']
 
-    for month in range(1, 13):
-        for day in range(1, 32):
-            try:
-                dt = datetime(year, month, day, 2, 0, 0).replace(tzinfo=z)
-            except ValueError:
-                continue
-            off = dt.utcoffset()
-            if off != std_off and spring is None:
-                prev = dt - timedelta(days=1)
-                prev_name = prev.replace(tzinfo=z).tzname() or ''
-                cur_name = dt.tzname() or ''
-                spring = (prev.replace(tzinfo=None), prev_name, cur_name)
-                std_off = off
-            elif off != std_off and spring is not None:
-                prev = dt - timedelta(days=1)
-                prev_name = prev.replace(tzinfo=z).tzname() or ''
-                cur_name = dt.tzname() or ''
-                fall = (prev.replace(tzinfo=None), prev_name, cur_name)
-                break
-        if fall:
+    for i, (ts, ti) in enumerate(zip(trans, idx)):
+        if not (year_start <= ts < year_end):
+            continue
+        cur_abbr = tt[ti][2]
+        prev_abbr = tt[idx[i - 1]][2] if i > 0 else tt[idx[0]][2]
+        dt_utc = datetime.fromtimestamp(ts, tz=timezone.utc)
+        cur_off = tt[ti][0]
+        dt_local = dt_utc + timedelta(seconds=cur_off)
+
+        if spring is None:
+            spring = (dt_local.replace(tzinfo=None), prev_abbr, cur_abbr)
+        else:
+            fall = (dt_local.replace(tzinfo=None), prev_abbr, cur_abbr)
             break
 
     return spring, fall
