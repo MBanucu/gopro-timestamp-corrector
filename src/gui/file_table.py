@@ -11,7 +11,7 @@ from preview import (
 from gui.tz_info import get_iana_id, TzInfoPanel
 
 
-_COLUMNS = ('set', 'file', 'type', 'mtime', 'exif', 'gps', 'strategy', 'target')
+_COLUMNS = ('set', 'file', 'type', 'mtime', 'exif', 'gps', 'delta', 'strategy', 'target')
 
 
 def _local_tz_info():
@@ -99,13 +99,14 @@ class FileSetTable(ttk.Frame):
         col_widths = {
             'set': 70, 'file': 130, 'type': 50,
             'mtime': 180, 'exif': 180, 'gps': 180,
-            'strategy': 80, 'target': 180,
+            'delta': 130, 'strategy': 80, 'target': 180,
         }
         headings = {
             'set': 'Set', 'file': 'File', 'type': 'Type',
             'mtime': 'FS mtime',
             'exif': 'EXIF time',
             'gps': 'GPS time (UTC)',
+            'delta': 'Delta (GPS−EXIF)',
             'strategy': 'Strategy',
             'target': 'Target',
         }
@@ -220,7 +221,7 @@ class FileSetTable(ttk.Frame):
                     fs.id, '', fs.kind,
                     f'GPS: {"\u2713" if fs.has_any_gps else "\u2014"}',
                     f'EMB: {"\u2713" if fs.has_any_embedded else "\u2014"}',
-                    '',
+                    '', '',
                     self._strategy_label(dec),
                     '',
                 ),
@@ -242,6 +243,10 @@ class FileSetTable(ttk.Frame):
                         tgt_emb, tgt_tz = _utc_to_local_with_tz(fp.target_mtime)
                     else:
                         tgt_emb, tgt_tz = None, ''
+                per_file_delta = None
+                if fi.gps_time is not None and fi.embedded_time is not None:
+                    per_file_delta = fi.gps_time - fi.embedded_time
+
                 self.tree.insert(set_iid, tk.END,
                     values=(
                         '',
@@ -250,6 +255,7 @@ class FileSetTable(ttk.Frame):
                         _fmt(fmt_mtime, mtime_tz),
                         _fmt(cur_emb, emb_tz),
                         _fmt(fi.gps_time, 'UTC'),
+                        _fmt_delta(per_file_delta),
                         dec.strategy,
                         _fmt(tgt_emb, tgt_tz),
                     ),
