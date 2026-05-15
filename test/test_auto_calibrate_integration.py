@@ -153,14 +153,16 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         gps_utc_tz = best_gps.replace(tzinfo=timezone.utc)
         expected_actual_dt = gps_utc_tz.astimezone(tz) if tz else gps_utc_tz.astimezone()
 
-        self.assertEqual(actual.get('date'), expected_actual_dt.strftime('%Y-%m-%d'))
-        self.assertEqual(actual.get('time'), expected_actual_dt.strftime('%H:%M'))
+        # Both editors show times in the same local timezone
+        gps_local = best_gps.astimezone(tz) if tz else best_gps.astimezone()
+        emb_local = best_emb.astimezone(tz) if tz else best_emb.astimezone()
+        self.assertEqual(actual.get('date'), gps_local.strftime('%Y-%m-%d'))
+        self.assertEqual(actual.get('time'), gps_local.strftime('%H:%M'))
         self.assertEqual(actual.get('timezone'), tz_id)
-        self.assertEqual(gopro.get('date'), best_emb.strftime('%Y-%m-%d'))
-        self.assertEqual(gopro.get('time'), best_emb.strftime('%H:%M'))
-        # The gopro editor shows embedded time as UTC (QuickTime per spec).
-        self.assertEqual(gopro.get('timezone'), 'UTC')
-        return best_file, expected_actual_dt, best_emb
+        self.assertEqual(gopro.get('date'), emb_local.strftime('%Y-%m-%d'))
+        self.assertEqual(gopro.get('time'), emb_local.strftime('%H:%M'))
+        self.assertEqual(gopro.get('timezone'), actual.get('timezone'))
+        return best_file, gps_local, emb_local
 
     def test_auto_calibrate_editors_populated(self):
         """The calendar editors show the representative file's GPS and embedded times."""
@@ -202,7 +204,8 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         expected_local = best_gps.replace(tzinfo=timezone.utc).astimezone(berlin)
 
         self.assertEqual(panel.actual_editor.tz_var.get(), 'Europe/Berlin')
-        self.assertEqual(panel.gopro_editor.tz_var.get(), 'UTC')
+        self.assertEqual(panel.gopro_editor.tz_var.get(), 'Europe/Berlin')
+
         self.assertEqual(actual_dt.year, expected_local.year)
         self.assertEqual(actual_dt.month, expected_local.month)
         self.assertEqual(actual_dt.day, expected_local.day)
