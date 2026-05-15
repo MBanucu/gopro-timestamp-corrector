@@ -58,6 +58,50 @@ def _tz_abbrs(iana_id):
         return '', ''
 
 
+def _dst_transitions(iana_id, year=2026):
+    """Return DST transition (spring, fall) for *iana_id* in *year*.
+
+    Returns ``(spring, fall)`` where each is a ``(datetime, tzname_before,
+    tzname_after)`` tuple, or ``(None, None)`` if the zone has no DST.
+    """
+    import zoneinfo
+    try:
+        z = zoneinfo.ZoneInfo(iana_id)
+    except Exception:
+        return None, None
+
+    jan = datetime(year, 1, 1, 2, 0, 0).replace(tzinfo=z)
+    std_off = jan.utcoffset()
+    std_name = jan.tzname() or ''
+
+    spring = None
+    fall = None
+
+    for month in range(1, 13):
+        for day in range(1, 32):
+            try:
+                dt = datetime(year, month, day, 2, 0, 0).replace(tzinfo=z)
+            except ValueError:
+                continue
+            off = dt.utcoffset()
+            if off != std_off and spring is None:
+                prev = dt - timedelta(days=1)
+                prev_name = prev.replace(tzinfo=z).tzname() or ''
+                cur_name = dt.tzname() or ''
+                spring = (prev.replace(tzinfo=None), prev_name, cur_name)
+                std_off = off
+            elif off != std_off and spring is not None:
+                prev = dt - timedelta(days=1)
+                prev_name = prev.replace(tzinfo=z).tzname() or ''
+                cur_name = dt.tzname() or ''
+                fall = (prev.replace(tzinfo=None), prev_name, cur_name)
+                break
+        if fall:
+            break
+
+    return spring, fall
+
+
 def _local_tz_info():
     now = datetime.now().astimezone()
     abbr = now.tzname() or ''
@@ -169,11 +213,17 @@ class FileSetTable(ttk.Frame):
         self.tree.bind('<Button-3>', self._show_menu)
 
         iana = _get_iana_id() or 'local'
-        winter, summer = _tz_abbrs(iana) if iana else ('', '')
-        if winter and summer and winter != summer:
-            info = f'TZ: {iana} — per-entry: {winter} (Jan) / {summer} (Jul)'
-        elif winter:
-            info = f'TZ: {iana} — per-entry: {winter} (no DST)'
+        spring, fall = _dst_transitions(iana) if iana else (None, None)
+        if spring and fall:
+            sp_dt, sp_before, sp_after = spring
+            fa_dt, fa_before, fa_after = fall
+            info = (f'TZ: {iana} — \u2191 {sp_dt.strftime("%d %b %H:%M")} '
+                    f'{sp_before}\u2192{sp_after}  '
+                    f'\u2193 {fa_dt.strftime("%d %b %H:%M")} '
+                    f'{fa_before}\u2192{fa_after}')
+        elif spring:
+            dt, before, after = spring
+            info = f'TZ: {iana} — \u2191 {dt.strftime("%d %b %H:%M")} {before}\u2192{after} (no fall DST)'
         else:
             info = f'TZ: {iana}' if iana else 'TZ: local'
         self._tz_var = tk.StringVar(value=f'{info}  |  GPS is UTC')
