@@ -58,23 +58,26 @@ def parse_delta(text: str) -> timedelta | None:
                 return None
 
     days = hours = minutes = seconds = ms = 0
-    units = re.findall(r'(\d+)(ms|[dhms])', text)
-    for val, unit in units:
-        val = int(val)
+    units = re.findall(r'(\d+(?:\.\d+)?)(ms|[dhms])', text)
+    for val_s, unit in units:
+        val = float(val_s)
         if unit == 'd':
-            days = val
+            days = int(val)
         elif unit == 'h':
-            hours = val
+            hours = int(val)
         elif unit == 'm':
-            minutes = val
+            minutes = int(val)
         elif unit == 's':
-            seconds = val
+            seconds = int(val)
+            ms = int(round((val - seconds) * 1000))
         elif unit == 'ms':
-            ms = val
+            ms = int(val)
 
     if not units:
         try:
-            seconds = int(text)
+            seconds = float(text)
+            ms = int(round((seconds - int(seconds)) * 1000))
+            seconds = int(seconds)
             minutes = 0
         except ValueError:
             return None
