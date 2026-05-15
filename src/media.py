@@ -194,7 +194,9 @@ def write_embedded(filepath, dt):
             f'-QuickTime:TrackCreateDate={fmt}',
             f'-QuickTime:TrackModifyDate={fmt}',
         ]
-        cmd = QT_BASE + ['-overwrite_original'] + tags + [str(filepath)]
+        # Target times are always UTC internally, so write without
+        # QuickTimeUTC conversion (the value is already UTC).
+        cmd = ['exiftool', '-overwrite_original'] + tags + [str(filepath)]
     elif ext == '.thm':
         tags = [
             f'-EXIF:DateTimeOriginal={fmt}',
