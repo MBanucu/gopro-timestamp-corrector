@@ -15,10 +15,10 @@ class TestBtimeFsDetection(unittest.TestCase):
     def setUpClass(cls):
         cls.mount_point = None
 
-        gz_path = Path(__file__).parent / 'sda1_sparse.img.gz'
+        gz_path = Path(__file__).parent / 'sdcard.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest(f"Compressed image not found at {gz_path}")
-        img_path = Path(__file__).parent / 'sda1_sparse.img'
+        img_path = Path(__file__).parent / 'sdcard.img'
         cls.img_path = decompress_sparse_image(gz_path, img_path)
 
         try:

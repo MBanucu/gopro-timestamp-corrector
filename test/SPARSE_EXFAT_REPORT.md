@@ -13,19 +13,19 @@ This report documents the procedure for creating a sparse, writable exFAT disk i
     # Clone partition using nix-shell to provide partclone binaries
     nix-shell -p partclone --run "
       sudo partclone.exfat -c -s /dev/sda1 -o sda1_raw.img &&
-      sudo partclone.restore -s sda1_raw.img -o sda1_sparse.img -W &&
+      sudo partclone.restore -s sda1_raw.img -o sdcard.img -W &&
       rm sda1_raw.img
     "
 
     # Set permissions so the user can mount the image without sudo
-    sudo chown $USER:users sda1_sparse.img
-    chmod 644 sda1_sparse.img
+    sudo chown $USER:users sdcard.img
+    chmod 644 sdcard.img
     ```
 
 2. **Mounting:**
     ```bash
     # Setup loop device (Nautilus will automatically mount it)
-    udisksctl loop-setup -f sda1_sparse.img
+    udisksctl loop-setup -f sdcard.img
     ```
 
 ## Results

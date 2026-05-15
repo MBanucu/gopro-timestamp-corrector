@@ -40,7 +40,7 @@ def decompress_sparse_image(gz_path: Path, dest_path: Path) -> Path:
 
 def write_sparse(gz_path: Path, img_path: Path):
     """Stream gzip content into a sparse file, writing only non-zero blocks."""
-    KNOWN_SIZE = 8531738624  # apparent (uncompressed) size of sda1_sparse.img
+    KNOWN_SIZE = 8531738624  # apparent (uncompressed) size of sdcard.img
     CHUNK = 1024 * 1024      # 1 MiB
 
     fd = os.open(img_path, os.O_CREAT | os.O_WRONLY)

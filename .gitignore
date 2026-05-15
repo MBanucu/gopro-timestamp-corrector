@@ -7,4 +7,4 @@ result
 *.LRV
 *.THM
 .coverage
-test/sda1_sparse.img
+test/sdcard.img

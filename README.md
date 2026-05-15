@@ -308,7 +308,7 @@ $COV/bin/coverage-report
 ├── dst.py                  # DST ambiguity detection
 ├── flake.nix               # Nix flake (dev shell + apps)
 ├── test/
-│   ├── sda1_sparse.img     # Sparse exFAT disk image (12 real GoPro files)
+│   ├── sdcard.img     # Sparse exFAT disk image (12 real GoPro files)
 │   ├── SPARSE_EXFAT_REPORT.md
 │   ├── test_analysis.py    # Analysis module tests (8)
 │   ├── test_preview.py     # Preview/calculator tests (11)

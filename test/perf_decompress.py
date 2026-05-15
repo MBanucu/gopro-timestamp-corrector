@@ -79,7 +79,7 @@ def run_once(gz_path: Path, run_label: str) -> dict:
     print(f"    Actual on disk: {actual}")
 
     temp_dir = Path(tempfile.mkdtemp(prefix='gopro_perf_'))
-    img_path = temp_dir / 'sda1_sparse.img'
+    img_path = temp_dir / 'sdcard.img'
 
     t0 = time.perf_counter()
     _write_sparse(gz_path, img_path)
@@ -229,12 +229,12 @@ def main():
                         help='Number of runs to average (default: 1)')
     args = parser.parse_args()
 
-    gz_path = Path(__file__).parent / 'sda1_sparse.img.gz'
+    gz_path = Path(__file__).parent / 'sdcard.img.gz'
     if not gz_path.exists():
         print(f"Error: {gz_path} not found")
         sys.exit(1)
 
-    img_path = Path(__file__).parent / 'sda1_sparse.img'
+    img_path = Path(__file__).parent / 'sdcard.img'
 
     if not args.perf:
         status(gz_path, img_path)
