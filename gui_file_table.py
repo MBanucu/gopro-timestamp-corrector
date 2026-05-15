@@ -8,176 +8,10 @@ from preview import (
     compute_preview, SetDecision, PreviewResult, FilePreview,
     STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP,
 )
+from gui_tz_info import get_iana_id, TzInfoPanel
 
 
 _COLUMNS = ('set', 'file', 'type', 'mtime', 'exif', 'gps', 'strategy', 'target')
-
-_IANA_ID: str | None = None
-
-
-def _detect_iana_id():
-    import os, subprocess
-    tz = os.environ.get('TZ', '').strip()
-    if tz and '/' in tz:
-        return tz
-    try:
-        r = subprocess.run(
-            ['timedatectl', 'show', '--property=Timezone', '--value'],
-            capture_output=True, text=True, timeout=2)
-        if r.returncode == 0 and '/' in r.stdout.strip():
-            return r.stdout.strip()
-    except Exception:
-        pass
-    try:
-        p = Path('/etc/localtime').resolve()
-        for parent in p.parents:
-            if parent.name == 'zoneinfo':
-                rel = str(p.relative_to(parent))
-                if '/' in rel:
-                    return rel
-    except Exception:
-        pass
-    return None
-
-
-def _get_iana_id():
-    global _IANA_ID
-    if _IANA_ID is None:
-        _IANA_ID = _detect_iana_id()
-    return _IANA_ID
-
-
-def _load_tzif(key):
-    """Parse the compiled TZif file for *key* and return transition data.
-
-    Returns a dict with ``trans_times`` (tuple of int UTC timestamps),
-    ``trans_idx`` (list of ttinfo indices), ``ttinfo`` (list of
-    ``(offset_seconds, is_dst, abbreviation)`` tuples).
-    """
-    import os
-    import struct
-    import zoneinfo
-
-    for base in zoneinfo.TZPATH:
-        path = os.path.join(base, key)
-        if os.path.isfile(path):
-            break
-    else:
-        return None
-
-    with open(path, 'rb') as f:
-        raw = f.read()
-
-    if raw[:4] != b'TZif':
-        return None
-
-    # v1 header at offset 20
-    isutcnt, isstdcnt, leapcnt, timecnt, typecnt, charcnt = \
-        struct.unpack('>6i', raw[20:44])
-
-    # end of v1 data
-    pos = 44 + timecnt * 4 + timecnt * 1 + typecnt * 6 + charcnt
-    pos += leapcnt * 8 + isstdcnt + isutcnt
-
-    if raw[pos:pos + 4] != b'TZif':
-        return None
-
-    isutcnt, isstdcnt, leapcnt, timecnt, typecnt, charcnt = \
-        struct.unpack('>6i', raw[pos + 20:pos + 44])
-    pos2 = pos + 44
-
-    trans_times = struct.unpack(f'>{timecnt}q',
-                                raw[pos2:pos2 + timecnt * 8])
-    pos2 += timecnt * 8
-
-    trans_idx = list(raw[pos2:pos2 + timecnt])
-    pos2 += timecnt
-
-    ttinfo = []
-    for _ in range(typecnt):
-        off32, dst, abbr_idx = struct.unpack('>ibb', raw[pos2:pos2 + 6])
-        ttinfo.append((off32, bool(dst), abbr_idx))
-        pos2 += 6
-
-    abbr_block = raw[pos2:pos2 + charcnt]
-
-    def _abbr(idx):
-        end = abbr_block.index(0, idx) if 0 in abbr_block[idx:] else len(abbr_block)
-        return abbr_block[idx:end].decode()
-
-    return {
-        'trans_times': trans_times,
-        'trans_idx': trans_idx,
-        'ttinfo': [(off, dst, _abbr(idx)) for off, dst, idx in ttinfo],
-    }
-
-
-def _zone_all_transitions(iana_id):
-    """Return ALL historical IANA transitions for *iana_id*.
-
-    Returns a list of ``(local_datetime, abbr_before, abbr_after,
-    offset_after_s, is_dst)`` tuples, sorted chronologically.
-    Returns an empty list if the zone has no transitions or is not found.
-    """
-    data = _load_tzif(iana_id)
-    if data is None:
-        return []
-
-    result = []
-    tt = data['ttinfo']
-    trans = data['trans_times']
-    idx = data['trans_idx']
-
-    for i, (ts, ti) in enumerate(zip(trans, idx)):
-        cur_off, cur_dst, cur_abbr = tt[ti]
-        prev_abbr = tt[idx[i - 1]][2] if i > 0 else tt[idx[0]][2]
-        dt_utc = datetime.fromtimestamp(ts, tz=timezone.utc)
-        dt_local = dt_utc + timedelta(seconds=cur_off)
-        result.append((dt_local.replace(tzinfo=None), prev_abbr, cur_abbr,
-                       cur_off, cur_dst))
-    return result
-
-
-def _build_tz_info_text(iana_id):
-    """Build a multi-line string with the full IANA transition history."""
-    if not iana_id:
-        return 'TZ: local'
-
-    tt = _load_tzif(iana_id)
-    if tt is None:
-        return f'TZ: {iana_id}'
-
-    lines = [f'TZ: {iana_id}']
-    trans = _zone_all_transitions(iana_id)
-
-    if not trans:
-        # Fixed-offset zone: show the single ttinfo
-        off, dst, abbr = tt['ttinfo'][0]
-        off_h = f'UTC{off//3600:+03d}:{(abs(off)%3600)//60:02d}'
-        lines.append(f'  Fixed offset  {off_h}  {abbr}  (no DST)')
-        return '\n'.join(lines)
-
-    # Group by year
-    by_year: dict[int, list] = {}
-    for t in trans:
-        y = t[0].year
-        by_year.setdefault(y, []).append(t)
-
-    for year in sorted(by_year):
-        entries = by_year[year]
-        year_parts = []
-        for dt_local, before, after, off, dst in entries:
-            off_s = f'UTC{off//3600:+03d}:{(abs(off)%3600)//60:02d}'
-            if before != after:
-                year_parts.append(
-                    f'{dt_local.strftime("%d %b %H:%M")}  '
-                    f'{before}\u2192{after}  {off_s}')
-            else:
-                year_parts.append(
-                    f'{dt_local.strftime("%d %b %H:%M")}  {off_s}  {after}')
-        lines.append(f'  {year}:  {" | ".join(year_parts)}')
-
-    return '\n'.join(lines)
 
 
 def _local_tz_info():
@@ -185,7 +19,7 @@ def _local_tz_info():
     abbr = now.tzname() or ''
     offset = now.strftime('%z')
     offset = f'UTC{offset[:3]}:{offset[3:]}' if offset else 'UTC'
-    iana = _get_iana_id()
+    iana = get_iana_id()
     if iana:
         return f'{iana} ({abbr}, {offset})'
     return f'{abbr} ({offset})'
@@ -194,7 +28,7 @@ def _local_tz_info():
 def _utc_to_local_with_tz(utc_dt):
     if utc_dt is None:
         return None, ''
-    iana = _get_iana_id()
+    iana = get_iana_id()
     if not iana:
         return utc_dt, ''
     import zoneinfo
@@ -206,12 +40,9 @@ def _utc_to_local_with_tz(utc_dt):
         return utc_dt, ''
 
 
-
-
-
 def _fmt(dt, tz_suffix=''):
     if dt is None:
-        return '—'
+        return '\u2014'
     if isinstance(dt, datetime):
         base = dt.strftime('%Y-%m-%d %H:%M:%S')
         return f'{base} {tz_suffix}' if tz_suffix else base
@@ -220,7 +51,7 @@ def _fmt(dt, tz_suffix=''):
 
 def _fmt_delta(delta):
     if delta is None:
-        return '—'
+        return '\u2014'
     negative = delta.total_seconds() < 0
     if negative:
         delta = -delta
@@ -290,52 +121,12 @@ class FileSetTable(ttk.Frame):
         self.menu.add_command(label='Skip', command=lambda: self._set_strategy(STRATEGY_SKIP))
         self.tree.bind('<Button-3>', self._show_menu)
 
-        iana = _get_iana_id() or 'local'
-        tz_text = _build_tz_info_text(iana)
-        tz_lines = tz_text.split('\n', 1)
-        heading = tz_lines[0]
-        detail = tz_lines[1] if len(tz_lines) > 1 else ''
-
-        style = ttk.Style(self)
-        style.configure('TZ.TButton', font=('', 8), foreground='#888',
-                        borderwidth=0, padding=(4, 0), anchor=tk.W,
-                        relief=tk.FLAT)
-
-        self._tz_expanded = False
-        self._tz_toggle = ttk.Button(self, style='TZ.TButton',
-                                     command=self._toggle_tz)
-        self._tz_toggle.configure(text=f'\u25b6  {heading}  |  GPS is UTC')
-        self._tz_toggle.pack(fill=tk.X, padx=2, pady=(0, 0))
-
-        self._tz_detail_frame = ttk.Frame(self)
-        self._tz_detail_text = tk.Text(self._tz_detail_frame, height=6, wrap=tk.WORD,
-                                        font=('', 8), fg='#666', bg='#fafafa',
-                                        relief=tk.FLAT, padx=6, pady=2)
-        self._tz_detail_text.insert('1.0', detail)
-        self._tz_detail_text.configure(state=tk.DISABLED)
-        self._tz_detail_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        tz_scroll = ttk.Scrollbar(self._tz_detail_frame, orient=tk.VERTICAL,
-                                   command=self._tz_detail_text.yview)
-        self._tz_detail_text.configure(yscrollcommand=tz_scroll.set)
-        tz_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self._tz_detail_frame.pack(fill=tk.X, padx=(16, 0))
-        self._tz_detail_frame.pack_forget()
+        TzInfoPanel(self).pack(fill=tk.X)
 
         self._status_var = tk.StringVar(value='No files analyzed yet')
         status_bar = ttk.Label(self, textvariable=self._status_var,
                                 foreground='gray', anchor=tk.W, padding=(4, 1))
         status_bar.pack(fill=tk.X)
-
-    def _toggle_tz(self):
-        self._tz_expanded = not self._tz_expanded
-        if self._tz_expanded:
-            self._tz_detail_frame.pack(fill=tk.X, padx=(16, 0))
-            self._tz_toggle.configure(text=self._tz_toggle.cget('text').replace('\u25b6', '\u25bc'))
-        else:
-            self._tz_detail_frame.pack_forget()
-            self._tz_toggle.configure(text=self._tz_toggle.cget('text').replace('\u25bc', '\u25b6'))
 
     # ---- Public API ----
 
@@ -368,7 +159,6 @@ class FileSetTable(ttk.Frame):
         }
 
     def get_write_jobs(self):
-        """Return WriteJob list from current plan — no recalculation of targets."""
         if not self.analysis:
             return []
         import preview as pr_mod
@@ -405,8 +195,8 @@ class FileSetTable(ttk.Frame):
             set_iid = self.tree.insert('', tk.END,
                 values=(
                     fs.id, '', fs.kind,
-                    f'GPS: {"✓" if fs.has_any_gps else "—"}',
-                    f'EMB: {"✓" if fs.has_any_embedded else "—"}',
+                    f'GPS: {"\u2713" if fs.has_any_gps else "\u2014"}',
+                    f'EMB: {"\u2713" if fs.has_any_embedded else "\u2014"}',
                     '',
                     dec.strategy,
                     '',
