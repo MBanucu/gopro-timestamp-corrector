@@ -17,7 +17,14 @@ def compute_delta(actual_editor, gopro_editor):
     data = {'actual': actual, 'gopro': gopro}
     ok, *rest = calibration.try_parse(data)
     if ok:
-        return rest[0] - rest[1]
+        actual_dt, gopro_dt = rest[0], rest[1]
+        # If timezone info is present, convert to UTC first so both
+        # sides are naive and can be subtracted.
+        if actual_dt.tzinfo is not None:
+            actual_dt = actual_dt.astimezone(timezone.utc).replace(tzinfo=None)
+        if gopro_dt.tzinfo is not None:
+            gopro_dt = gopro_dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return actual_dt - gopro_dt
     return None
 
 
