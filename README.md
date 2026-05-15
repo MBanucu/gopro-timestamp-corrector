@@ -308,13 +308,14 @@ $COV/bin/coverage-report
 ├── dst.py                  # DST ambiguity detection
 ├── flake.nix               # Nix flake (dev shell + apps)
 ├── test/
-│   ├── sdcard.iso          # Test FAT32 image (3 synthetic files)
-│   ├── sdcard2.iso         # Test FAT32 image (12 real GoPro files with GPS)
+│   ├── sda1_sparse.img     # Sparse exFAT disk image (12 real GoPro files)
+│   ├── SPARSE_EXFAT_REPORT.md
 │   ├── test_analysis.py    # Analysis module tests (8)
 │   ├── test_preview.py     # Preview/calculator tests (11)
 │   ├── test_file_table.py  # GUI table widget tests (12)
 │   ├── test_strategy.py    # Strategy manifest integration tests (6)
-│   ├── test_iso.py         # End-to-end CLI integration test
+│   ├── test_img.py         # End-to-end CLI integration test
+│   ├── test_btime.py       # Birth-time fixing method tests
 │   ├── test_gps.py         # GPS time parsing tests
 │   ├── test_dst_fold.py    # DST detection tests
 │   ├── test_datepicker.py  # Calendar widget tests
