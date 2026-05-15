@@ -1,8 +1,8 @@
 """
 Pure calculator — no file I/O.
 
-All datetimes are naive UTC internally. Timezone conversion happens
-only at the display layer (gui_file_table.py).
+All datetimes carry ``tzinfo=timezone.utc`` internally. Timezone
+conversion for display happens only at the GUI layer.
 """
 
 from datetime import datetime, timedelta

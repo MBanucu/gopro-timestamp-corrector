@@ -14,12 +14,12 @@ class TestGPS(unittest.TestCase):
         )
         
         dt = media.read_gps_time("fake.mp4")
-        self.assertEqual(dt, datetime(2026, 5, 14, 13, 41, 45, 600000))
+        self.assertEqual(dt, datetime(2026, 5, 14, 13, 41, 45, 600000, tzinfo=timezone.utc))
         
         # Test with Z suffix
         mock_run.return_value.stdout = "2021:03:11 12:51:00.199Z\n"
         dt = media.read_gps_time("fake.mp4")
-        self.assertEqual(dt, datetime(2021, 3, 11, 12, 51, 0, 199000))
+        self.assertEqual(dt, datetime(2021, 3, 11, 12, 51, 0, 199000, tzinfo=timezone.utc))
 
     @patch('subprocess.run')
     def test_read_gps_time_no_data(self, mock_run):

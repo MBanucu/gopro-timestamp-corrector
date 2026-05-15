@@ -35,7 +35,7 @@ def _read_tag(filepath, tag, use_qt_utc=False):
         return None
     try:
         val = _strip_tz(result.stdout.strip())
-        return datetime.strptime(val, "%Y:%m:%d %H:%M:%S")
+        return datetime.strptime(val, "%Y:%m:%d %H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
 
@@ -62,12 +62,11 @@ def read_gps_time(filepath):
     val = _strip_tz(line)
     try:
         if '.' in val:
-            # Handle variable number of digits in fractional seconds
             main, frac = val.split('.')
             frac = (frac + '000000')[:6]
             val = f"{main}.{frac}"
-            return datetime.strptime(val, "%Y:%m:%d %H:%M:%S.%f")
-        return datetime.strptime(val, "%Y:%m:%d %H:%M:%S")
+            return datetime.strptime(val, "%Y:%m:%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
+        return datetime.strptime(val, "%Y:%m:%d %H:%M:%S").replace(tzinfo=timezone.utc)
     except (ValueError, IndexError):
         return None
 
@@ -114,8 +113,9 @@ def read_tags_batch(filepaths: list[Path]) -> dict[Path, tuple[datetime | None, 
                         main, frac = val.split('.')
                         frac = (frac + '000000')[:6]
                         embedded = datetime.strptime(f'{main}.{frac}', '%Y:%m:%d %H:%M:%S.%f')
+                        embedded = embedded.replace(tzinfo=timezone.utc)
                     else:
-                        embedded = datetime.strptime(val, '%Y:%m:%d %H:%M:%S')
+                        embedded = datetime.strptime(val, '%Y:%m:%d %H:%M:%S').replace(tzinfo=timezone.utc)
                     break
                 except (ValueError, IndexError):
                     continue
@@ -129,8 +129,9 @@ def read_tags_batch(filepaths: list[Path]) -> dict[Path, tuple[datetime | None, 
                     main, frac = val.split('.')
                     frac = (frac + '000000')[:6]
                     gps_time = datetime.strptime(f'{main}.{frac}', '%Y:%m:%d %H:%M:%S.%f')
+                    gps_time = gps_time.replace(tzinfo=timezone.utc)
                 else:
-                    gps_time = datetime.strptime(val, '%Y:%m:%d %H:%M:%S')
+                    gps_time = datetime.strptime(val, '%Y:%m:%d %H:%M:%S').replace(tzinfo=timezone.utc)
             except (ValueError, IndexError):
                 pass
 
@@ -176,7 +177,7 @@ def read_gps_accuracy_batch(filepaths: list[Path]) -> dict[Path, float | None]:
 
 def read_mtime(filepath):
     ts = os.path.getmtime(filepath)
-    return datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
 def write_embedded(filepath, dt):

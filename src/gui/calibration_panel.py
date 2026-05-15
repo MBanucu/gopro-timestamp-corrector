@@ -236,8 +236,7 @@ class CalibrationPanel(ttk.Frame):
         except Exception:
             tz = None
 
-        gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
-        actual_dt = gps_utc_tz.astimezone(tz) if tz else gps_utc_tz.astimezone()
+        actual_dt = gps_utc.astimezone(tz) if tz else gps_utc.astimezone()
         gopro_dt = media.read_embedded(gps_file, use_qt_utc=False)
 
         if not gopro_dt:
@@ -246,7 +245,7 @@ class CalibrationPanel(ttk.Frame):
             return
 
         self.actual_editor.set_datetime(actual_dt)
-        self.gopro_editor.set_datetime(gopro_dt.replace(tzinfo=timezone.utc))
+        self.gopro_editor.set_datetime(gopro_dt)
         self._log(f'Extracted calibration from GPS: {gps_file.name}')
         self._set_status('Ready')
 
@@ -319,12 +318,11 @@ class CalibrationPanel(ttk.Frame):
         except Exception:
             tz = None
 
-        # GPS in local timezone, embedded as UTC — both become timezone-aware
-        # so set_datetime() extracts and stores the timezone automatically.
-        gps_aware = best_gps.replace(tzinfo=timezone.utc)
-        actual_dt = gps_aware.astimezone(tz) if tz else gps_aware
+        # GPS in local timezone, embedded as UTC — both are UTC-aware so
+        # set_datetime() extracts and stores the timezone automatically.
+        actual_dt = best_gps.astimezone(tz) if tz else best_gps.astimezone()
         self.actual_editor.set_datetime(actual_dt)
-        self.gopro_editor.set_datetime(best_emb.replace(tzinfo=timezone.utc))
+        self.gopro_editor.set_datetime(best_emb)
 
         # Re-apply the median delta after editor traces have fired, so the
         # delta callback and the delta entry both show the correct value.

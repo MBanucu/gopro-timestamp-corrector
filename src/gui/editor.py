@@ -67,6 +67,11 @@ class CalibrationEditor(ttk.LabelFrame):
                                            textvariable=self.tz_var)
         self.tz_combo.pack(side=tk.LEFT, padx=(0, 4))
 
+        self.tz_utc_label = ttk.Label(row, text='(UTC)', foreground='red',
+                                       font=('', 8, 'bold'))
+        self.tz_utc_label.pack(side=tk.LEFT, padx=(0, 4))
+        self._tz_blink_id = None
+
         self.tz_abbr_var = tk.StringVar()
         self.tz_abbr_label = ttk.Label(row, textvariable=self.tz_abbr_var,
                                         foreground='gray', width=14)
@@ -74,6 +79,7 @@ class CalibrationEditor(ttk.LabelFrame):
 
         self.date_var.trace_add('write', lambda *a: self.update_abbr())
         self.tz_var.trace_add('write', lambda *a: self.update_abbr())
+        self.tz_var.trace_add('write', lambda *a: self._update_tz_utc_label())
         self.hour_var.trace_add('write', lambda *a: self.update_abbr())
         self.min_var.trace_add('write', lambda *a: self.update_abbr())
 
@@ -82,6 +88,8 @@ class CalibrationEditor(ttk.LabelFrame):
         self.dst_warn = ttk.Label(self, textvariable=self.dst_warn_var,
                                    foreground='#b33', wraplength=380, font=('', 9))
         self.dst_warn.pack(fill=tk.X, pady=(2, 0))
+
+        self._update_tz_utc_label()
 
         # Fold selector (hidden by default)
         self.fold_var = tk.IntVar(value=0)
@@ -156,6 +164,23 @@ class CalibrationEditor(ttk.LabelFrame):
         DateTimePicker(self.master.master, self.on_date_picked,
                        all_zones=self.all_zones,
                        initial_hour=h, initial_minute=m, initial_tz=tz)
+
+    def _update_tz_utc_label(self):
+        """Show a blinking red (UTC) label when no timezone is set."""
+        if self._tz_blink_id:
+            self.after_cancel(self._tz_blink_id)
+            self._tz_blink_id = None
+        if self.tz_var.get().strip():
+            self.tz_utc_label.pack_forget()
+        else:
+            self.tz_utc_label.pack(side=tk.LEFT, padx=(0, 4))
+            self._tz_blink(True)
+
+    def _tz_blink(self, visible):
+        """Toggle the UTC warning label foreground."""
+        self.tz_utc_label.configure(
+            foreground='red' if visible else self.tz_utc_label.master.cget('bg'))
+        self._tz_blink_id = self.after(600, self._tz_blink, not visible)
 
     def _tzinfo_to_id(self, tzinfo) -> str:
         """Convert a ``tzinfo`` object to an IANA timezone ID string."""

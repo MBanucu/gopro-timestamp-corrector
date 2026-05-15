@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -83,7 +83,9 @@ def _parse_with_tz(date_str, time_str, tz_id, fold=0):
             tz = zoneinfo.ZoneInfo(tz_id)
             dt = dt.replace(tzinfo=tz, fold=fold)
         except Exception:
-            pass
+            dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt
 
 
