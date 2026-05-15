@@ -54,18 +54,18 @@ class CalibrationEditor(ttk.LabelFrame):
         self.hour_var = tk.StringVar()
         self.min_var = tk.StringVar()
         ttk.Spinbox(row, textvariable=self.hour_var, from_=0, to=23,
-                    width=3, format='%02.0f').pack(side=tk.LEFT)
+                    width=2, format='%02.0f').pack(side=tk.LEFT)
         ttk.Label(row, text=':').pack(side=tk.LEFT)
         ttk.Spinbox(row, textvariable=self.min_var, from_=0, to=59,
-                    width=3, format='%02.0f').pack(side=tk.LEFT)
+                    width=2, format='%02.0f').pack(side=tk.LEFT)
         ttk.Label(row, text=':').pack(side=tk.LEFT)
         self.sec_var = tk.StringVar()
         ttk.Spinbox(row, textvariable=self.sec_var, from_=0, to=59,
-                    width=3, format='%02.0f').pack(side=tk.LEFT)
+                    width=2, format='%02.0f').pack(side=tk.LEFT)
         ttk.Label(row, text='.').pack(side=tk.LEFT)
         self.ms_var = tk.StringVar()
         ttk.Spinbox(row, textvariable=self.ms_var, from_=0, to=999,
-                    width=4, format='%03.0f').pack(side=tk.LEFT)
+                    width=3, format='%03.0f').pack(side=tk.LEFT)
         ttk.Label(row, text='  HH:MM:SS.mmm (24h)', foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
         # Timezone row
         row = ttk.Frame(self)
