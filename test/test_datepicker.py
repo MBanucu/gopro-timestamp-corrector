@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 from datetime import date, datetime
 
-from datepicker import DatePicker, DateTimePicker
+from gui.datepicker import DatePicker, DateTimePicker
 
 
 class TestDatePicker(unittest.TestCase):

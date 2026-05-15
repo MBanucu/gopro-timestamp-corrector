@@ -8,7 +8,7 @@ from preview import (
     compute_preview, SetDecision, PreviewResult, FilePreview,
     STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP,
 )
-from gui_tz_info import get_iana_id, TzInfoPanel
+from gui.gui_tz_info import get_iana_id, TzInfoPanel
 
 
 _COLUMNS = ('set', 'file', 'type', 'mtime', 'exif', 'gps', 'strategy', 'target')

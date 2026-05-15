@@ -3,7 +3,7 @@
 import unittest
 import tkinter as tk
 
-from tzcombobox import FilteringCombobox
+from gui.tzcombobox import FilteringCombobox
 from test.shared import TEST_ZONES
 
 

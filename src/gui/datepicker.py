@@ -136,7 +136,7 @@ class DateTimePicker(DatePicker):
         row.pack(fill=tk.X, pady=2)
         ttk.Label(row, text='TZ:', width=6).pack(side=tk.LEFT)
         self.tz_var = tk.StringVar(value=self._tz)
-        from tzcombobox import FilteringCombobox
+        from gui.tzcombobox import FilteringCombobox
         self.tz_combo = FilteringCombobox(row, all_values=self._all_zones,
                                            textvariable=self.tz_var, width=30)
         self.tz_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from analysis import AnalysisResult, FileSet, FileInfo
-from gui_file_table import FileSetTable
+from gui.gui_file_table import FileSetTable
 from preview import SetDecision, STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP
 
 
@@ -221,8 +221,8 @@ class TestFileSetTable(unittest.TestCase):
 
 
     def test_thm_target_shows_dst_from_zoneinfo(self):
-        from gui_tz_info import get_iana_id as _get_iana_id
-        from gui_file_table import _utc_to_local_with_tz
+        from gui.gui_tz_info import get_iana_id as _get_iana_id
+        from gui.gui_file_table import _utc_to_local_with_tz
         import zoneinfo
 
         iana = _get_iana_id()
@@ -246,7 +246,7 @@ class TestFileSetTable(unittest.TestCase):
                              f'March target should be CET, got {target_aware.tzname()}')
 
     def test_thm_target_in_gui_shows_cet_for_march(self):
-        from gui_tz_info import get_iana_id as _get_iana_id
+        from gui.gui_tz_info import get_iana_id as _get_iana_id
         iana = _get_iana_id()
         if iana != 'Europe/Berlin':
             self.skipTest(f'Test requires Europe/Berlin, got {iana}')
@@ -282,7 +282,7 @@ class TestFileSetTable(unittest.TestCase):
                          f'THM target for March should NOT show CEST: {target}')
 
     def test_thm_target_equals_mp4_lrv_with_gps_strategy(self):
-        from gui_tz_info import get_iana_id as _get_iana_id
+        from gui.gui_tz_info import get_iana_id as _get_iana_id
         iana = _get_iana_id()
         if iana != 'Europe/Berlin':
             self.skipTest(f'Test requires Europe/Berlin, got {iana}')

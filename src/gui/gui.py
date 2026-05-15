@@ -10,9 +10,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 import calibration
-from gui_editor import CalibrationEditor, get_all_tz_ids, resolve_tz_abbr
-from gui_cal_file import CalibrationFileBar
-from gui_file_table import FileSetTable, _fmt_delta
+from gui.gui_editor import CalibrationEditor, get_all_tz_ids, resolve_tz_abbr
+from gui.gui_cal_file import CalibrationFileBar
+from gui.gui_file_table import FileSetTable, _fmt_delta
 from writer import Writer, WriteJob
 
 

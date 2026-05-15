@@ -297,19 +297,21 @@ $COV/bin/coverage-report
 │   ├── preview.py          # Calculator — computes the correction plan
 │   ├── resolve.py          # Pure math helpers (target_time, gps_delta)
 │   ├── writer.py           # Pure I/O dispatcher (takes WriteJob list)
-│   ├── gui_file_table.py   # FileSetTable widget (Treeview + strategy menu)
-│   ├── gui_editor.py       # Calibration editor widget
-│   ├── gui_cal_file.py     # Calibration file management bar
-│   ├── gui_tz_info.py      # IANA timezone database parser + TzInfoPanel
-│   ├── tzcombobox.py       # FilteringCombobox widget
-│   ├── datepicker.py       # Calendar popup widget
 │   ├── media.py            # EXIF/QuickTime read/write via exiftool
 │   ├── calibration.py      # JSON calibration load/save/parse
 │   ├── translate.py        # Plain‑text calibration parser
 │   ├── btime.py            # Birth‑time fixing methods
 │   ├── dst.py              # DST ambiguity detection
-│   ├── gui.py              # Tkinter GUI application
-│   └── correct_timestamps.py  # CLI orchestrator
+│   ├── correct_timestamps.py  # CLI orchestrator
+│   ├── gui/
+│   │   ├── __init__.py
+│   │   ├── gui.py              # Tkinter GUI application
+│   │   ├── gui_file_table.py   # FileSetTable widget
+│   │   ├── gui_editor.py       # Calibration editor widget
+│   │   ├── gui_cal_file.py     # Calibration file management bar
+│   │   ├── gui_tz_info.py      # IANA timezone parser + TzInfoPanel
+│   │   ├── tzcombobox.py       # FilteringCombobox widget
+│   │   └── datepicker.py       # Calendar popup widget
 ├── flake.nix               # Nix flake (dev shell + apps)
 ├── test/
 │   ├── sdcard.img     # Sparse exFAT disk image (12 real GoPro files)

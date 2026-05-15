@@ -7,7 +7,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 
-from tzcombobox import FilteringCombobox
+from gui.tzcombobox import FilteringCombobox
 
 
 TEST_ZONES = [

@@ -11,8 +11,8 @@ except ImportError:
 
 import dst as dst_mod
 
-from datepicker import DateTimePicker
-from tzcombobox import FilteringCombobox
+from gui.datepicker import DateTimePicker
+from gui.tzcombobox import FilteringCombobox
 
 
 def get_all_tz_ids():
