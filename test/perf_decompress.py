@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Manual performance test: decompress sparse image → loop-setup → mount → cleanup.
+"""Benchmark the sparse image decompression + mount pipeline.
 
 Usage:
-    python3 test/perf_decompress.py          # single run
-    python3 test/perf_decompress.py --runs 3 # average of 3 runs
+    python3 test/perf_decompress.py              # status check only
+    python3 test/perf_decompress.py --perf       # single benchmark run
+    python3 test/perf_decompress.py --perf --runs 3  # average of 3
 """
 import argparse
 import gzip
@@ -22,7 +23,6 @@ KNOWN_SIZE = 8531738624  # apparent (uncompressed) size of the sparse image
 
 
 def _write_sparse(gz_path: Path, img_path: Path):
-    """Stream gzip content into a sparse file, writing only non-zero blocks."""
     fd = os.open(img_path, os.O_CREAT | os.O_WRONLY)
     os.ftruncate(fd, KNOWN_SIZE)
     os.close(fd)
@@ -73,14 +73,11 @@ def run_once(gz_path: Path, run_label: str) -> dict:
     print(f"  Run {run_label}")
     print(f"{'='*60}")
 
-    # ── 1. File sizes ──────────────────────────────────────────
     apparent, actual = human_size(gz_path)
     print(f"\n  {gz_path.name}")
     print(f"    Apparent size:  {apparent}")
     print(f"    Actual on disk: {actual}")
-    print(f"    Compression:    {gz_path.stat().st_size / 1024 / 1024:.1f} MB")
 
-    # ── 2. Decompress (sparse-aware) ───────────────────────────
     temp_dir = Path(tempfile.mkdtemp(prefix='gopro_perf_'))
     img_path = temp_dir / 'sda1_sparse.img'
 
@@ -94,7 +91,6 @@ def run_once(gz_path: Path, run_label: str) -> dict:
     print(f"    Actual on disk: {actual_i}")
     print(f"    Duration:       {fmt_dur(results['decompress'])}")
 
-    # ── 3. Loop setup ──────────────────────────────────────────
     t0 = time.perf_counter()
     res = subprocess.run(
         ['udisksctl', 'loop-setup', '-f', str(img_path), '--no-user-interaction'],
@@ -117,7 +113,6 @@ def run_once(gz_path: Path, run_label: str) -> dict:
     print(f"\n  Loop device:    {loop_dev}")
     print(f"    Duration:       {fmt_dur(results['loop_setup'])}")
 
-    # ── 4. Mount ───────────────────────────────────────────────
     t0 = time.perf_counter()
     res = subprocess.run(
         ['udisksctl', 'mount', '-b', loop_dev, '--no-user-interaction'],
@@ -142,7 +137,6 @@ def run_once(gz_path: Path, run_label: str) -> dict:
         print(f"  Mount point:    {mount_point}")
     print(f"    Duration:       {fmt_dur(results['mount'])}")
 
-    # ── 5. Verify mount ────────────────────────────────────────
     if mount_point:
         t0 = time.perf_counter()
         target = Path(mount_point) / 'DCIM' / '100GOPRO'
@@ -154,7 +148,6 @@ def run_once(gz_path: Path, run_label: str) -> dict:
         for f in files:
             print(f"      {f.name}")
 
-    # ── 6. Unmount ─────────────────────────────────────────────
     if mount_point:
         t0 = time.perf_counter()
         subprocess.run(
@@ -164,7 +157,6 @@ def run_once(gz_path: Path, run_label: str) -> dict:
         results['unmount'] = t1 - t0
         print(f"\n  Unmount:         {fmt_dur(results['unmount'])}")
 
-    # ── 7. Loop delete ─────────────────────────────────────────
     if loop_dev:
         t0 = time.perf_counter()
         subprocess.run(
@@ -174,7 +166,6 @@ def run_once(gz_path: Path, run_label: str) -> dict:
         results['loop_delete'] = t1 - t0
         print(f"  Loop delete:     {fmt_dur(results['loop_delete'])}")
 
-    # ── 8. Temp cleanup ────────────────────────────────────────
     t0 = time.perf_counter()
     shutil.rmtree(temp_dir, ignore_errors=True)
     t1 = time.perf_counter()
@@ -214,9 +205,26 @@ def summary(all_results: list[dict]):
     print()
 
 
+def status(gz_path, img_path):
+    print(f"{'='*60}")
+    print(f"  Sparse image status")
+    print(f"{'='*60}")
+    for p, label in [(gz_path, 'Compressed'), (img_path, 'Decompressed')]:
+        if p.exists():
+            a, d = human_size(p)
+            print(f"\n  {label}: {p.name}")
+            print(f"    Apparent:       {a}")
+            print(f"    Actual on disk: {d}")
+        else:
+            print(f"\n  {label}: {p.name} — not found")
+    print(f"\n  Use --perf to run the full benchmark (fresh decompress + mount).")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Performance test: decompress + mount sparse image')
+        description='Benchmark the sparse image decompression + mount pipeline')
+    parser.add_argument('--perf', action='store_true',
+                        help='Run the full benchmark (skipped by default)')
     parser.add_argument('--runs', type=int, default=1,
                         help='Number of runs to average (default: 1)')
     args = parser.parse_args()
@@ -225,6 +233,12 @@ def main():
     if not gz_path.exists():
         print(f"Error: {gz_path} not found")
         sys.exit(1)
+
+    img_path = Path(__file__).parent / 'sda1_sparse.img'
+
+    if not args.perf:
+        status(gz_path, img_path)
+        return
 
     all_results = []
     for i in range(args.runs):

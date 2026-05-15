@@ -1,7 +1,6 @@
 import unittest
 import subprocess
 import re
-import shutil
 from pathlib import Path
 
 from shared import decompress_sparse_image
@@ -10,14 +9,14 @@ from shared import decompress_sparse_image
 class TestImgIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._temp_dir = None
         cls.mount_point = None
         cls.loop_dev = None
 
         gz_path = Path(__file__).parent / 'sda1_sparse.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest(f"Compressed image not found at {gz_path}")
-        cls.img_path, cls._temp_dir = decompress_sparse_image(gz_path)
+        img_path = Path(__file__).parent / 'sda1_sparse.img'
+        cls.img_path = decompress_sparse_image(gz_path, img_path)
 
         try:
             res = subprocess.run(['udisksctl', 'loop-setup', '-f', str(cls.img_path),
@@ -66,8 +65,6 @@ class TestImgIntegration(unittest.TestCase):
                                 '--no-user-interaction'], capture_output=True)
             subprocess.run(['udisksctl', 'loop-delete', '-b', cls.loop_dev,
                             '--no-user-interaction'], capture_output=True)
-        if cls._temp_dir:
-            shutil.rmtree(cls._temp_dir, ignore_errors=True)
 
     def test_gps_correction_on_img(self):
         target = Path(self.mount_point) / 'DCIM' / '100GOPRO'

@@ -13,13 +13,13 @@ import btime
 class TestBtimeFsDetection(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._temp_dir = None
         cls.mount_point = None
 
         gz_path = Path(__file__).parent / 'sda1_sparse.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest(f"Compressed image not found at {gz_path}")
-        cls.img_path, cls._temp_dir = decompress_sparse_image(gz_path)
+        img_path = Path(__file__).parent / 'sda1_sparse.img'
+        cls.img_path = decompress_sparse_image(gz_path, img_path)
 
         try:
             res = subprocess.run(
@@ -61,8 +61,6 @@ class TestBtimeFsDetection(unittest.TestCase):
             subprocess.run(
                 ['udisksctl', 'loop-delete', '-b', cls.loop_dev, '--no-user-interaction'],
                 capture_output=True)
-        if cls._temp_dir:
-            shutil.rmtree(cls._temp_dir, ignore_errors=True)
 
     def test_detect_fs_exfat(self):
         fs = btime.detect_fs(self.test_path)

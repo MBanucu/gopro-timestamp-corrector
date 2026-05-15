@@ -2,7 +2,6 @@
 
 import gzip
 import os
-import tempfile
 from pathlib import Path
 
 import tkinter as tk
@@ -25,26 +24,25 @@ def make_cb(root):
     return cb
 
 
-def decompress_sparse_image(gz_path: Path) -> tuple[Path, Path]:
-    """Decompress sda1_sparse.img.gz to a sparse temp file.
+def decompress_sparse_image(gz_path: Path, dest_path: Path) -> Path:
+    """Decompress *gz_path* → *dest_path* if not already present.
 
     Writes non-zero data blocks directly into a sparse file without
-    ever creating a dense 8GB intermediate file on disk.
+    ever creating a dense 8 GB intermediate file on disk.
 
-    Returns (img_path, temp_dir).  Caller must clean up temp_dir.
+    Returns *dest_path* (already exists or freshly decompressed).
     """
-    temp_dir = Path(tempfile.mkdtemp(prefix='gopro_test_'))
-    img_path = temp_dir / 'sda1_sparse.img'
-    _write_sparse(gz_path, img_path)
-    return img_path, temp_dir
+    if dest_path.exists():
+        return dest_path
+    write_sparse(gz_path, dest_path)
+    return dest_path
 
 
-def _write_sparse(gz_path: Path, img_path: Path):
+def write_sparse(gz_path: Path, img_path: Path):
     """Stream gzip content into a sparse file, writing only non-zero blocks."""
     KNOWN_SIZE = 8531738624  # apparent (uncompressed) size of sda1_sparse.img
     CHUNK = 1024 * 1024      # 1 MiB
 
-    # Create a sparse file of the right apparent size (0 disk usage for holes).
     fd = os.open(img_path, os.O_CREAT | os.O_WRONLY)
     os.ftruncate(fd, KNOWN_SIZE)
     os.close(fd)
