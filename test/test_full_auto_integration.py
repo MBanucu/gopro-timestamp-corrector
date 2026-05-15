@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import re
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -94,20 +95,30 @@ class TestFullAutoIntegration(unittest.TestCase):
 
     # ── Helpers ───────────────────────────────────────────────
 
-    def _read_exif(self, path):
-        """Return QuickTime:CreateDate as naive UTC datetime, or None."""
+    def _read_exif_batch(self, paths: list[Path]) -> dict[Path, datetime | None]:
+        """Read QuickTime:CreateDate for all *paths* in a single exiftool call."""
+        if not paths:
+            return {}
         r = subprocess.run(
-            ['exiftool', '-b', '-QuickTime:CreateDate', str(path)],
+            ['exiftool', '-json', '-QuickTime:CreateDate'] + [str(p) for p in paths],
             capture_output=True, text=True)
         if r.returncode != 0 or not r.stdout.strip():
-            return None
-        val = r.stdout.strip().splitlines()[0].strip()
+            return {}
+        import json as _json
         from media import _strip_tz
-        val = _strip_tz(val)
-        try:
-            return datetime.strptime(val, '%Y:%m:%d %H:%M:%S').replace(tzinfo=timezone.utc)
-        except ValueError:
-            return None
+        out = {}
+        for rec in _json.loads(r.stdout):
+            src = rec.get('SourceFile')
+            raw = rec.get('CreateDate')
+            if not src or not raw:
+                continue
+            val = _strip_tz(str(raw))
+            try:
+                dt = datetime.strptime(val, '%Y:%m:%d %H:%M:%S').replace(tzinfo=timezone.utc)
+                out[Path(src)] = dt
+            except ValueError:
+                out[Path(src)] = None
+        return out
 
     def _read_mtime(self, path):
         ts = os.path.getmtime(path)
@@ -121,10 +132,11 @@ class TestFullAutoIntegration(unittest.TestCase):
         return None
 
     def _record_metadata(self, files):
+        exif_batch = self._read_exif_batch(files)
         md = {}
         for f in files:
             md[f] = {
-                'exif': self._read_exif(f),
+                'exif': exif_batch.get(f),
                 'mtime': self._read_mtime(f),
                 'btime': self._read_btime(f),
             }
@@ -145,14 +157,20 @@ class TestFullAutoIntegration(unittest.TestCase):
         from writer import Writer, WriteJob
 
         all_files = media.collect(self.target)
+        t_total = time.perf_counter()
 
         # ── 1. Record original metadata ────────────────────────
+        t0 = time.perf_counter()
         orig = self._record_metadata(all_files)
+        t_meta = time.perf_counter() - t0
 
         # ── 2. Compute weighted median delta (auto calibration) ─
+        t0 = time.perf_counter()
         batch = media.read_tags_batch(all_files)
         accuracy = media.read_gps_accuracy_batch(all_files)
+        t_batch = time.perf_counter() - t0
 
+        t0 = time.perf_counter()
         pairs = []
         for f in all_files:
             embedded, gps = batch.get(f, (None, None))
@@ -174,11 +192,13 @@ class TestFullAutoIntegration(unittest.TestCase):
         weights = [p[1] for p in pairs]
         self.median = weighted_median_delta(deltas, weights)
         self.assertIsNotNone(self.median, 'Weighted median delta should be computable')
+        t_auto = time.perf_counter() - t0
 
         print(f'  Weighted median delta: {self.median}')
         print(f'  Based on {len(pairs)} files with valid GPS fix')
 
         # ── 3. Analyse and build decisions ─────────────────────
+        t0 = time.perf_counter()
         result = an_mod.analyze(self.target)
         self.assertGreater(result.total_files, 0, 'Analysis should find files')
 
@@ -200,8 +220,10 @@ class TestFullAutoIntegration(unittest.TestCase):
                 ))
 
         self.assertGreater(len(jobs), 0, 'Should have write jobs')
+        t_plan = time.perf_counter() - t0
 
         # ── 4. Apply corrections via Writer ────────────────────
+        t0 = time.perf_counter()
         fix_btime = 'off'
         if (subprocess.run(['which', 'faketime'], capture_output=True).returncode == 0 and
                 subprocess.run(['which', 'mount.exfat-fuse'], capture_output=True).returncode == 0):
@@ -220,8 +242,10 @@ class TestFullAutoIntegration(unittest.TestCase):
         if errs:
             print(f'  {len(errs)} write errors: {errs[:3]}')
         print(f'  {summary.written} files corrected')
+        t_write = time.perf_counter() - t0
 
         # ── 5. Verify metadata changes ─────────────────────────
+        t0 = time.perf_counter()
         after = self._record_metadata(all_files)
 
         tolerance = timedelta(seconds=2)
@@ -263,6 +287,18 @@ class TestFullAutoIntegration(unittest.TestCase):
                       f'(Δ={self.median})')
             elif o['btime'] is not None and fix_btime == 'off':
                 print(f'  {name} btime: {o["btime"]} (btime fix skipped)')
+
+        t_verify = time.perf_counter() - t0
+        t_total = time.perf_counter() - t_total
+        print(f'\n  TIMING')
+        print(f'  │ record metadata:     {t_meta:.2f}s')
+        print(f'  │ batch exiftool:      {t_batch:.2f}s')
+        print(f'  │ auto calibrate:      {t_auto:.2f}s')
+        print(f'  │ build plan:          {t_plan:.2f}s')
+        print(f'  │ write corrections:   {t_write:.2f}s')
+        print(f'  │ verify metadata:     {t_verify:.2f}s')
+        print(f'  │ {"─" * 30}')
+        print(f'  │ total:               {t_total:.2f}s')
 
 
 if __name__ == '__main__':
