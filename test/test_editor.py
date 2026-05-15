@@ -21,8 +21,8 @@ class TestCalibrationEditor(unittest.TestCase):
     def tearDown(self):
         self.root.destroy()
 
-    def _fmt_time(self, hour, minute):
-        return f'{hour:02d}:{minute:02d}'
+    def _fmt_time(self, hour, minute, second=0):
+        return f'{hour:02d}:{minute:02d}:{second:02d}'
 
     def test_set_datetime_with_timezone(self):
         """set_datetime extracts the IANA timezone from an aware datetime."""

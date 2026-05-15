@@ -74,9 +74,12 @@ def _parse_with_tz(date_str, time_str, tz_id, fold=0):
     fmt = '%Y-%m-%d'
     tf = '%H:%M'
     try:
-        dt = datetime.strptime(f"{date_str} {time_str}", f"{fmt} {tf}")
+        dt = datetime.strptime(f"{date_str} {time_str}", f"{fmt} %H:%M:%S")
     except ValueError:
-        dt = datetime.strptime(f"{date_str} {time_str}", "%m/%d/%y %H:%M")
+        try:
+            dt = datetime.strptime(f"{date_str} {time_str}", f"{fmt} {tf}")
+        except ValueError:
+            dt = datetime.strptime(f"{date_str} {time_str}", "%m/%d/%y %H:%M")
     if tz_id:
         try:
             import zoneinfo

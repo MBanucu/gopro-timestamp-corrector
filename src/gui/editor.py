@@ -58,7 +58,11 @@ class CalibrationEditor(ttk.LabelFrame):
         ttk.Label(row, text=':').pack(side=tk.LEFT)
         ttk.Spinbox(row, textvariable=self.min_var, from_=0, to=59,
                     width=3, format='%02.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text='  HH:MM (24h)', foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
+        ttk.Label(row, text=':').pack(side=tk.LEFT)
+        self.sec_var = tk.StringVar()
+        ttk.Spinbox(row, textvariable=self.sec_var, from_=0, to=59,
+                    width=3, format='%02.0f').pack(side=tk.LEFT)
+        ttk.Label(row, text='  HH:MM:SS (24h)', foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
         # Timezone row
         row = ttk.Frame(self)
         row.pack(fill=tk.X, pady=1)
@@ -231,6 +235,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.date_var.set(dt.strftime('%Y-%m-%d'))
         self.hour_var.set(str(dt.hour).zfill(2))
         self.min_var.set(str(dt.minute).zfill(2))
+        self.sec_var.set(str(dt.second).zfill(2))
         tz_id = self._tzinfo_to_id(dt.tzinfo)
         if tz_id:
             self.tz_var.set(tz_id)
@@ -239,6 +244,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.date_var.set(dt.strftime('%Y-%m-%d'))
         self.hour_var.set(str(dt.hour).zfill(2))
         self.min_var.set(str(dt.minute).zfill(2))
+        self.sec_var.set(str(dt.second).zfill(2))
         if tz:
             self.tz_var.set(tz)
 
@@ -257,9 +263,11 @@ class CalibrationEditor(ttk.LabelFrame):
             parts = t.split(':')
             self.hour_var.set(parts[0].zfill(2))
             self.min_var.set(parts[1].zfill(2))
+            self.sec_var.set(parts[2].zfill(2) if len(parts) > 2 else '00')
         else:
             self.hour_var.set('00')
             self.min_var.set('00')
+            self.sec_var.set('00')
         tz = side_data.get('timezone', '')
         if tz:
             self.tz_var.set(tz)
@@ -271,9 +279,10 @@ class CalibrationEditor(ttk.LabelFrame):
         d['date'] = self.date_var.get().strip()
         h = self.hour_var.get().strip() or '00'
         m = self.min_var.get().strip() or '00'
-        d['time'] = f"{int(h):02d}:{int(m):02d}"
+        s = self.sec_var.get().strip() or '00'
+        d['time'] = f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
         d['timezone'] = self.tz_var.get().strip()
         d['date_format'] = 'YYYY-MM-DD'
-        d['time_format'] = 'HH:MM'
+        d['time_format'] = 'HH:MM:SS'
         d['fold'] = self.fold_var.get()
         return d
