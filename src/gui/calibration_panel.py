@@ -178,7 +178,8 @@ class CalibrationPanel(ttk.Frame):
             cal_data = {'actual': actual, 'gopro': {}}
             ok, *rest = calibration.try_parse(cal_data)
             if ok:
-                self.gopro_editor.on_date_picked(rest[0] - delta, '')
+                tz_id = self.actual_editor.tz_var.get()
+                self.gopro_editor.on_date_picked(rest[0] - delta, tz_id)
 
     def _update_preview(self):
         delta = compute_delta(self.actual_editor, self.gopro_editor)
@@ -243,7 +244,7 @@ class CalibrationPanel(ttk.Frame):
             return
 
         self.actual_editor.on_date_picked(actual_dt, tz_id)
-        self.gopro_editor.on_date_picked(gopro_dt, '')
+        self.gopro_editor.on_date_picked(gopro_dt, tz_id)
         self._log(f'Extracted calibration from GPS: {gps_file.name}')
         self._set_status('Ready')
 
@@ -311,7 +312,9 @@ class CalibrationPanel(ttk.Frame):
         gps_utc_tz = best_gps.replace(tzinfo=timezone.utc)
         actual_dt = gps_utc_tz.astimezone(tz) if tz else gps_utc_tz.astimezone()
         self.actual_editor.on_date_picked(actual_dt, tz_id)
-        self.gopro_editor.on_date_picked(best_emb, '')
+        # The gopro editor gets the same timezone as the actual editor, since
+        # both times are local times from the same recording location.
+        self.gopro_editor.on_date_picked(best_emb, tz_id)
 
         # Re-apply the median delta after editor traces have fired, so the
         # delta callback and the delta entry both show the correct value.

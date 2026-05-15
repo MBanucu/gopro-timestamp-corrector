@@ -145,6 +145,9 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         except Exception:
             tz = None
 
+        # Both editors share the same timezone
+        self.assertEqual(panel.actual_editor.tz_var.get(), panel.gopro_editor.tz_var.get())
+
         best = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
         _, _, best_file, best_gps, best_emb = best
 
@@ -166,8 +169,8 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         self.root.update_idletasks()
 
         best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
-        self.assertEqual(panel.actual_editor.tz_var.get(), '')
-        self.assertEqual(panel.gopro_editor.tz_var.get(), '')
+        # Both editors should share the same timezone (empty by default)
+        self.assertEqual(panel.actual_editor.tz_var.get(), panel.gopro_editor.tz_var.get())
 
         for msg in logged:
             print(f'  [log] {msg}')
@@ -198,7 +201,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         expected_local = best_gps.replace(tzinfo=timezone.utc).astimezone(berlin)
 
         self.assertEqual(panel.actual_editor.tz_var.get(), 'Europe/Berlin')
-        self.assertEqual(panel.gopro_editor.tz_var.get(), '')
+        self.assertEqual(panel.gopro_editor.tz_var.get(), 'Europe/Berlin')
         self.assertEqual(actual_dt.year, expected_local.year)
         self.assertEqual(actual_dt.month, expected_local.month)
         self.assertEqual(actual_dt.day, expected_local.day)
