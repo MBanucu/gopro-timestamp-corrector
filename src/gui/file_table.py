@@ -60,10 +60,19 @@ def _fmt_delta(delta):
         parts.append(f'{delta.days}d')
     hours = delta.seconds // 3600
     minutes = (delta.seconds % 3600) // 60
+    seconds = delta.seconds % 60
+    ms = delta.microseconds // 1000
     if hours:
         parts.append(f'{hours}h')
-    if minutes or not parts:
+    if minutes:
         parts.append(f'{minutes}m')
+    if seconds or ms:
+        if ms:
+            parts.append(f'{seconds}.{ms:03d}s')
+        else:
+            parts.append(f'{seconds}s')
+    elif not parts:
+        parts.append('0s')
     return ('-' if negative else '+') + ' '.join(parts)
 
 

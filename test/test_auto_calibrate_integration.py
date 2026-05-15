@@ -157,10 +157,10 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         gps_local = best_gps.astimezone(tz) if tz else best_gps.astimezone()
         emb_local = best_emb.astimezone(tz) if tz else best_emb.astimezone()
         self.assertEqual(actual.get('date'), gps_local.strftime('%Y-%m-%d'))
-        self.assertEqual(actual.get('time'), gps_local.strftime('%H:%M:%S'))
+        self.assertEqual(actual.get('time'), gps_local.strftime('%H:%M:%S.') + f"{gps_local.microsecond//1000:03d}")
         self.assertEqual(actual.get('timezone'), tz_id)
         self.assertEqual(gopro.get('date'), emb_local.strftime('%Y-%m-%d'))
-        self.assertEqual(gopro.get('time'), emb_local.strftime('%H:%M:%S'))
+        self.assertEqual(gopro.get('time'), emb_local.strftime('%H:%M:%S.') + f"{emb_local.microsecond//1000:03d}")
         self.assertEqual(gopro.get('timezone'), actual.get('timezone'))
         return best_file, gps_local, emb_local
 

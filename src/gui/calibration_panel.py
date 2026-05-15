@@ -33,7 +33,8 @@ def parse_delta(text: str) -> timedelta | None:
 
     Accepted formats::
 
-        +2h30m    -1d5h     2:30      -90m      0
+        +2h30m    -1d5h     2:30      -90m
+        +2h30m15s    -1d5h30s500ms     0
     """
     text = text.strip()
     if not text:
@@ -56,24 +57,30 @@ def parse_delta(text: str) -> timedelta | None:
             except ValueError:
                 return None
 
-    days = hours = minutes = 0
-    m = re.search(r'(\d+)d', text)
-    if m:
-        days = int(m.group(1))
-    m = re.search(r'(\d+)h', text)
-    if m:
-        hours = int(m.group(1))
-    m = re.search(r'(\d+)m', text)
-    if m:
-        minutes = int(m.group(1))
+    days = hours = minutes = seconds = ms = 0
+    units = re.findall(r'(\d+)(ms|[dhms])', text)
+    for val, unit in units:
+        val = int(val)
+        if unit == 'd':
+            days = val
+        elif unit == 'h':
+            hours = val
+        elif unit == 'm':
+            minutes = val
+        elif unit == 's':
+            seconds = val
+        elif unit == 'ms':
+            ms = val
 
-    if days == 0 and hours == 0 and minutes == 0:
+    if not units:
         try:
-            minutes = int(text)
+            seconds = int(text)
+            minutes = 0
         except ValueError:
             return None
 
-    d = timedelta(days=days, hours=hours, minutes=minutes)
+    d = timedelta(days=days, hours=hours, minutes=minutes,
+                  seconds=seconds, milliseconds=ms)
     return -d if negative else d
 
 

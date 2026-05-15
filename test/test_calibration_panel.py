@@ -112,7 +112,7 @@ class TestAutoCalibrateGUI(unittest.TestCase):
         # Gopro editor should be set to the embedded time
         gopro = self.panel.gopro_editor.get_data()
         self.assertEqual(gopro.get('date'), '2026-05-14')
-        self.assertEqual(gopro.get('time'), '14:52:00')
+        self.assertEqual(gopro.get('time'), '14:52:00.000')
 
         # Actual editor date should reflect GPS time
         actual = self.panel.actual_editor.get_data()
