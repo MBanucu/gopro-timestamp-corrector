@@ -365,8 +365,9 @@ class ToolGUI:
 
         Reads GPS time and embedded time for every file, filters out
         poor-quality GPS fixes via GPSHPositioningError, computes the
-        weighted median delta, and sets the calibration editors to the
-        file whose per-file delta is closest to the aggregate median.
+        weighted median delta, then sets the delta entry and switches
+        to the Delta tab.  The calendar editors are also populated so
+        the calibration file can be saved.
         """
         target_dir = self.dir_var.get()
         if not target_dir:
@@ -387,8 +388,7 @@ class ToolGUI:
         batch = media.read_tags_batch(files)
         accuracy = media.read_gps_accuracy_batch(files)
 
-        # Compute per-file deltas with weights
-        candidates = []
+        pairs = []
         for f in files:
             embedded, gps = batch.get(f, (None, None))
             if embedded is None or gps is None:
@@ -397,15 +397,14 @@ class ToolGUI:
             acc = accuracy.get(f, 99.99)
             if acc is None:
                 acc = 99.99
-            # Skip no-fix files (HPositioningError = 99.99 is GoPro's default)
             if acc >= 25.0 or acc == 99.99:
                 continue
 
             delta = gps - embedded
             weight = 1.0 / (acc + 1.0)
-            candidates.append((delta, weight, f, gps, embedded))
+            pairs.append((delta, weight, f, gps, embedded))
 
-        if not candidates:
+        if not pairs:
             self.log('No files with valid GPS fix found (need GPSHPositioningError < 25 m).')
             self.log('Falling back to single-file GPS extraction.')
             self.set_status('Ready')
@@ -413,8 +412,8 @@ class ToolGUI:
             return
 
         from resolve import weighted_median_delta
-        deltas = [c[0] for c in candidates]
-        weights = [c[1] for c in candidates]
+        deltas = [p[0] for p in pairs]
+        weights = [p[1] for p in pairs]
         median = weighted_median_delta(deltas, weights)
 
         if median is None:
@@ -423,33 +422,32 @@ class ToolGUI:
             self.auto_gps()
             return
 
-        # Find the candidate file whose delta is closest to the median
-        best = min(candidates, key=lambda c: abs((c[0] - median).total_seconds()))
-        delta_best, _, best_file, best_gps, best_emb = best
+        # Set the delta entry (primary output) and switch to the Delta tab
+        self.cal_notebook.select(1)
+        self.delta_entry.delete(0, tk.END)
+        self.delta_entry.insert(0, _fmt_delta(median))
 
+        # Also populate the calendar editors so the calibration file is consistent
+        best = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
+        _, _, best_file, best_gps, best_emb = best
         tz_id = self.actual_editor.tz_var.get()
         import zoneinfo
         try:
             tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
         except Exception:
             tz = None
-
         gps_utc_tz = best_gps.replace(tzinfo=timezone.utc)
-        if tz:
-            actual_dt = gps_utc_tz.astimezone(tz)
-        else:
-            actual_dt = gps_utc_tz.astimezone()
-
+        actual_dt = gps_utc_tz.astimezone(tz) if tz else gps_utc_tz.astimezone()
         self.actual_editor.on_date_picked(actual_dt, tz_id)
         self.gopro_editor.on_date_picked(best_emb, '')
 
         # Statistics
         mean_delta = sum(deltas, timedelta()) / len(deltas) if deltas else median
-        self.log(f'Auto calibrate: {len(candidates)} files with valid GPS fix')
+        self.log(f'Auto calibrate: {len(pairs)} files with valid GPS fix')
         self.log(f'  Deltas range: {min(deltas)} … {max(deltas)}')
         self.log(f'  Weighted median: {median}')
         self.log(f'  Mean: ~{mean_delta}')
-        self.log(f'  Using: {best_file.name} (delta ~{delta_best})')
+        self.log(f'  Representative file: {best_file.name}')
         self.set_status('Ready')
 
     # ----- Run -----
