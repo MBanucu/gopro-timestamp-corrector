@@ -211,6 +211,9 @@ def write_embedded(filepath, dt):
     return result.returncode == 0
 
 
+
+
+
 def write_mtime(filepath, dt):
     ts = dt.replace(tzinfo=timezone.utc).timestamp()
     os.utime(filepath, (ts, ts))
