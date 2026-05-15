@@ -181,7 +181,6 @@ class CalibrationEditor(ttk.LabelFrame):
             self._tz_blink_id = None
         tz_id = self.tz_var.get().strip()
         if self._tz_is_valid(tz_id):
-            self.tz_abbr_var.set('')
             self.tz_abbr_label.configure(foreground='gray')
             self._tz_blink(False)
         else:

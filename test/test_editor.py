@@ -94,5 +94,42 @@ class TestCalibrationEditor(unittest.TestCase):
         self.assertEqual(data.get('timezone'), 'America/New_York')
 
 
+    def test_tz_abbr_cest_in_summer(self):
+        """Europe/Berlin in July shows (CEST)."""
+        self.editor.date_var.set('2026-07-01')
+        self.editor.hour_var.set('12')
+        self.editor.min_var.set('00')
+        self.editor.tz_var.set('Europe/Berlin')
+        self.root.update_idletasks()
+        self.assertEqual(self.editor.tz_abbr_var.get(), '(CEST)')
+
+    def test_tz_abbr_cet_in_winter(self):
+        """Europe/Berlin in January shows (CET)."""
+        self.editor.date_var.set('2026-01-15')
+        self.editor.hour_var.set('12')
+        self.editor.min_var.set('00')
+        self.editor.tz_var.set('Europe/Berlin')
+        self.root.update_idletasks()
+        self.assertEqual(self.editor.tz_abbr_var.get(), '(CET)')
+
+    def test_tz_abbr_empty_without_tz(self):
+        """No timezone set means no abbreviation, and the (UTC) warning appears."""
+        self.editor.date_var.set('2026-07-01')
+        self.editor.hour_var.set('12')
+        self.editor.min_var.set('00')
+        self.root.update_idletasks()
+        # Abbreviation label should show (UTC) blinking warning
+        self.assertEqual(self.editor.tz_abbr_var.get(), '(UTC)')
+
+    def test_tz_abbr_invalid_tz(self):
+        """An invalid timezone like 'Europe/' shows (UTC) warning."""
+        self.editor.date_var.set('2026-07-01')
+        self.editor.hour_var.set('12')
+        self.editor.min_var.set('00')
+        self.editor.tz_var.set('Europe/')
+        self.root.update_idletasks()
+        self.assertEqual(self.editor.tz_abbr_var.get(), '(UTC)')
+
+
 if __name__ == '__main__':
     unittest.main()
