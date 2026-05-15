@@ -145,9 +145,8 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         except Exception:
             tz = None
 
-        # Both editors share the same timezone
-        self.assertEqual(panel.actual_editor.tz_var.get(), panel.gopro_editor.tz_var.get())
-
+        # The actual editor shows GPS in local timezone; the gopro editor
+        # shows embedded time as UTC (QuickTime dates are UTC per spec).
         best = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
         _, _, best_file, best_gps, best_emb = best
 
@@ -156,8 +155,11 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
 
         self.assertEqual(actual.get('date'), expected_actual_dt.strftime('%Y-%m-%d'))
         self.assertEqual(actual.get('time'), expected_actual_dt.strftime('%H:%M'))
+        self.assertEqual(actual.get('timezone'), tz_id)
         self.assertEqual(gopro.get('date'), best_emb.strftime('%Y-%m-%d'))
         self.assertEqual(gopro.get('time'), best_emb.strftime('%H:%M'))
+        # The gopro editor shows embedded time as UTC (QuickTime per spec).
+        self.assertEqual(gopro.get('timezone'), 'UTC')
         return best_file, expected_actual_dt, best_emb
 
     def test_auto_calibrate_editors_populated(self):
@@ -169,8 +171,6 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         self.root.update_idletasks()
 
         best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
-        # Both editors should share the same timezone
-        self.assertEqual(panel.actual_editor.tz_var.get(), panel.gopro_editor.tz_var.get())
 
         for msg in logged:
             print(f'  [log] {msg}')
@@ -184,7 +184,6 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
 
         # Set a timezone before running auto calibration
         panel.actual_editor.tz_var.set('Europe/Berlin')
-        panel.gopro_editor.tz_var.set('Europe/Berlin')
         self.root.update_idletasks()
 
         pairs, median = self._collect_gps_pairs()
@@ -203,7 +202,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         expected_local = best_gps.replace(tzinfo=timezone.utc).astimezone(berlin)
 
         self.assertEqual(panel.actual_editor.tz_var.get(), 'Europe/Berlin')
-        self.assertEqual(panel.gopro_editor.tz_var.get(), 'Europe/Berlin')
+        self.assertEqual(panel.gopro_editor.tz_var.get(), 'UTC')
         self.assertEqual(actual_dt.year, expected_local.year)
         self.assertEqual(actual_dt.month, expected_local.month)
         self.assertEqual(actual_dt.day, expected_local.day)
