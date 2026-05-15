@@ -2,7 +2,7 @@
 
 import tkinter as tk
 from tkinter import ttk
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     import zoneinfo
@@ -156,6 +156,30 @@ class CalibrationEditor(ttk.LabelFrame):
         DateTimePicker(self.master.master, self.on_date_picked,
                        all_zones=self.all_zones,
                        initial_hour=h, initial_minute=m, initial_tz=tz)
+
+    def _tzinfo_to_id(self, tzinfo) -> str:
+        """Convert a ``tzinfo`` object to an IANA timezone ID string."""
+        if tzinfo is None:
+            return ''
+        if zoneinfo and isinstance(tzinfo, zoneinfo.ZoneInfo):
+            return tzinfo.key
+        if isinstance(tzinfo, timezone):
+            return 'UTC'
+        return ''
+
+    def set_datetime(self, dt):
+        """Set date, time and timezone from a single *dt* (aware or naive).
+
+        If *dt* is timezone-aware the editor's timezone is set from its
+        ``tzinfo`` attribute (supports ``ZoneInfo`` and ``timezone.utc``).
+        If *dt* is naive the timezone field is cleared.
+        """
+        self.date_var.set(dt.strftime('%Y-%m-%d'))
+        self.hour_var.set(str(dt.hour).zfill(2))
+        self.min_var.set(str(dt.minute).zfill(2))
+        tz_id = self._tzinfo_to_id(dt.tzinfo)
+        if tz_id:
+            self.tz_var.set(tz_id)
 
     def on_date_picked(self, dt, tz):
         self.date_var.set(dt.strftime('%Y-%m-%d'))
