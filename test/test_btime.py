@@ -13,6 +13,7 @@ import btime
 class TestBtimeFsDetection(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.loop_dev = None
         cls.mount_point = None
 
         gz_path = Path(__file__).parent / 'sdcard.img.gz'
@@ -28,9 +29,9 @@ class TestBtimeFsDetection(unittest.TestCase):
             if res.returncode != 0:
                 raise unittest.SkipTest("udisksctl loop-setup failed")
             m = re.search(r'as (/dev/loop\d+)', res.stdout)
-            if not m:
+            cls.loop_dev = m.group(1) if m else None
+            if not cls.loop_dev:
                 raise unittest.SkipTest("Could not parse loop device")
-            cls.loop_dev = m.group(1)
 
             res = subprocess.run(
                 ['udisksctl', 'mount', '-b', cls.loop_dev, '--no-user-interaction'],
@@ -51,16 +52,21 @@ class TestBtimeFsDetection(unittest.TestCase):
             cls.test_path = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         except FileNotFoundError:
             raise unittest.SkipTest("udisksctl not found")
+        except Exception:
+            cls.tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls):
         if getattr(cls, 'loop_dev', None):
-            subprocess.run(
+            r = subprocess.run(
                 ['udisksctl', 'unmount', '-b', cls.loop_dev, '--no-user-interaction'],
-                capture_output=True)
-            subprocess.run(
-                ['udisksctl', 'loop-delete', '-b', cls.loop_dev, '--no-user-interaction'],
-                capture_output=True)
+                capture_output=True, text=True)
+            if r.returncode != 0:
+                subprocess.run(['sudo', 'umount', cls.loop_dev],
+                               capture_output=True)
+            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev],
+                           capture_output=True)
 
     def test_detect_fs_exfat(self):
         fs = btime.detect_fs(self.test_path)

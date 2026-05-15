@@ -26,9 +26,9 @@ class TestImgIntegration(unittest.TestCase):
                 raise unittest.SkipTest("udisksctl loop-setup failed (permissions?)")
 
             m = re.search(r'as (/dev/loop\d+)', res.stdout)
-            if not m:
+            cls.loop_dev = m.group(1) if m else None
+            if not cls.loop_dev:
                 raise unittest.SkipTest("Could not parse loop device path")
-            cls.loop_dev = m.group(1)
 
             res = subprocess.run(['udisksctl', 'mount', '-b', cls.loop_dev,
                                   '--no-user-interaction'],
@@ -56,15 +56,18 @@ class TestImgIntegration(unittest.TestCase):
 
         except FileNotFoundError:
             raise unittest.SkipTest("udisksctl not found")
+        except Exception:
+            cls.tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls):
         if cls.loop_dev:
-            if cls.mount_point:
-                subprocess.run(['udisksctl', 'unmount', '-b', cls.loop_dev,
-                                '--no-user-interaction'], capture_output=True)
-            subprocess.run(['udisksctl', 'loop-delete', '-b', cls.loop_dev,
-                            '--no-user-interaction'], capture_output=True)
+            r = subprocess.run(['udisksctl', 'unmount', '-b', cls.loop_dev,
+                                '--no-user-interaction'], capture_output=True, text=True)
+            if r.returncode != 0:
+                subprocess.run(['sudo', 'umount', cls.loop_dev], capture_output=True)
+            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev], capture_output=True)
 
     def test_gps_correction_on_img(self):
         target = Path(self.mount_point) / 'DCIM' / '100GOPRO'

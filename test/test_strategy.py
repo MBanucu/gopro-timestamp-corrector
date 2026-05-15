@@ -27,9 +27,9 @@ class TestStrategyManifestISO(unittest.TestCase):
             if res.returncode != 0:
                 raise unittest.SkipTest("udisksctl loop-setup failed")
             m = re.search(r'as (/dev/loop\d+)', res.stdout)
-            if not m:
+            cls.loop_dev = m.group(1) if m else None
+            if not cls.loop_dev:
                 raise unittest.SkipTest("Could not parse loop device")
-            cls.loop_dev = m.group(1)
 
             res = subprocess.run(['udisksctl', 'mount', '-b', cls.loop_dev,
                                   '--no-user-interaction'],
@@ -55,15 +55,18 @@ class TestStrategyManifestISO(unittest.TestCase):
                     raise unittest.SkipTest("Could not parse mount point")
         except FileNotFoundError:
             raise unittest.SkipTest("udisksctl not found")
+        except Exception:
+            cls.tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls):
         if cls.loop_dev:
-            if cls.mount_point:
-                subprocess.run(['udisksctl', 'unmount', '-b', cls.loop_dev,
-                                '--no-user-interaction'], capture_output=True)
-            subprocess.run(['udisksctl', 'loop-delete', '-b', cls.loop_dev,
-                            '--no-user-interaction'], capture_output=True)
+            r = subprocess.run(['udisksctl', 'unmount', '-b', cls.loop_dev,
+                                '--no-user-interaction'], capture_output=True, text=True)
+            if r.returncode != 0:
+                subprocess.run(['sudo', 'umount', cls.loop_dev], capture_output=True)
+            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev], capture_output=True)
 
     def _target(self):
         p = Path(self.mount_point) / 'DCIM' / '100GOPRO'
