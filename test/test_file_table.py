@@ -68,7 +68,7 @@ class TestFileSetTable(unittest.TestCase):
         self.assertEqual(len(rows), 4)  # 1 parent + 3 children
         parent = rows[0]
         self.assertEqual(parent[2][0], '010001')  # set ID in first column
-        self.assertEqual(parent[2][7], 'gps')     # strategy = GPS (has GPS)
+        self.assertEqual(parent[2][8], 'gps')     # strategy = GPS (has GPS)
 
     def test_load_analysis_no_gps_defaults_to_manual(self):
         fs = _make_fs('010001', ['.mp4'], has_gps=False)
@@ -77,7 +77,7 @@ class TestFileSetTable(unittest.TestCase):
 
         rows = self._tree_rows()
         parent = rows[0]
-        self.assertEqual(parent[2][7], 'manual')
+        self.assertEqual(parent[2][8], 'manual')
 
     def test_multiple_sets(self):
         sets = [
@@ -125,7 +125,7 @@ class TestFileSetTable(unittest.TestCase):
 
         rows = self._tree_rows()
         parent = rows[0]
-        self.assertEqual(parent[2][7], 'manual +5h')
+        self.assertEqual(parent[2][8], 'manual +5h')
 
     def test_set_strategy_updates_decision(self):
         fs = _make_fs('010001', ['.mp4'], has_gps=True)
@@ -146,12 +146,12 @@ class TestFileSetTable(unittest.TestCase):
         self.table.load_analysis(ar)
 
         rows = self._tree_rows()
-        self.assertEqual(rows[0][2][7], 'gps')
+        self.assertEqual(rows[0][2][8], 'gps')
 
         self.table.set_strategy_for_set('010001', STRATEGY_SKIP)
         self.root.update_idletasks()
         rows = self._tree_rows()
-        self.assertEqual(rows[0][2][7], 'skip')
+        self.assertEqual(rows[0][2][8], 'skip')
 
     def test_status_shows_analysis_summary(self):
         fs1 = _make_fs('010001', ['.mp4', '.lrv'])
@@ -171,9 +171,9 @@ class TestFileSetTable(unittest.TestCase):
         parents = [(iid, vals) for iid, parent, vals in self._tree_rows() if not parent]
         self.assertEqual(len(parents), 2)
         self.assertEqual(parents[0][1][0], '010001')
-        self.assertEqual(parents[0][1][7], 'gps')
+        self.assertEqual(parents[0][1][8], 'gps')
         self.assertEqual(parents[1][1][0], '010002')
-        self.assertEqual(parents[1][1][7], 'manual')
+        self.assertEqual(parents[1][1][8], 'manual')
 
     def test_timezone_suffixes_on_cell_values(self):
         fs = _make_fs('010001', ['.mp4', '.lrv', '.thm'])
@@ -187,7 +187,7 @@ class TestFileSetTable(unittest.TestCase):
             mtime = vals[3]  # FS mtime column
             exif = vals[4]   # EXIF time column
             gps = vals[5]    # GPS time column
-            target = vals[8]  # Target column
+            target = vals[9]  # Target column
             ext = vals[2]    # file type
 
             # FS mtime: should have a timezone suffix (current system TZ, e.g. CEST)
@@ -274,7 +274,7 @@ class TestFileSetTable(unittest.TestCase):
         thm_row = next((vals for iid, vals in children if vals[2] == 'thm'), None)
         self.assertIsNotNone(thm_row, 'THM row not found')
 
-        target = thm_row[8]  # Target column
+        target = thm_row[9]  # Target column
         self.assertIn('CET', target.upper(),
                       f'THM target for March should show CET: {target}')
         self.assertNotIn('CEST', target.upper(),
@@ -306,7 +306,7 @@ class TestFileSetTable(unittest.TestCase):
         targets = {}
         for iid, vals in children:
             ext = vals[2]
-            target = vals[8]
+            target = vals[9]
             targets[ext] = target
 
         # All three must have a target with timezone suffix

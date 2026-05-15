@@ -11,7 +11,7 @@ from preview import (
 from gui.tz_info import get_iana_id, TzInfoPanel
 
 
-_COLUMNS = ('set', 'file', 'type', 'mtime', 'exif', 'gps', 'delta', 'strategy', 'target')
+_COLUMNS = ('set', 'file', 'type', 'mtime', 'exif', 'gps', 'delta', 'applied', 'strategy', 'target')
 
 
 def _local_tz_info():
@@ -99,14 +99,15 @@ class FileSetTable(ttk.Frame):
         col_widths = {
             'set': 70, 'file': 130, 'type': 50,
             'mtime': 180, 'exif': 180, 'gps': 180,
-            'delta': 130, 'strategy': 80, 'target': 180,
+            'delta': 130, 'applied': 130, 'strategy': 80, 'target': 180,
         }
         headings = {
             'set': 'Set', 'file': 'File', 'type': 'Type',
             'mtime': 'FS mtime',
             'exif': 'EXIF time',
             'gps': 'GPS time (UTC)',
-            'delta': 'Delta (GPS−EXIF)',
+            'delta': 'Δ GPS−EXIF',
+            'applied': 'Δ applied',
             'strategy': 'Strategy',
             'target': 'Target',
         }
@@ -221,7 +222,7 @@ class FileSetTable(ttk.Frame):
                     fs.id, '', fs.kind,
                     f'GPS: {"\u2713" if fs.has_any_gps else "\u2014"}',
                     f'EMB: {"\u2713" if fs.has_any_embedded else "\u2014"}',
-                    '', '',
+                    '', '', '',
                     self._strategy_label(dec),
                     '',
                 ),
@@ -247,6 +248,10 @@ class FileSetTable(ttk.Frame):
                 if fi.gps_time is not None and fi.embedded_time is not None:
                     per_file_delta = fi.gps_time - fi.embedded_time
 
+                applied_delta = None
+                if fp.target_embedded is not None and fi.embedded_time is not None:
+                    applied_delta = fp.target_embedded - fi.embedded_time
+
                 self.tree.insert(set_iid, tk.END,
                     values=(
                         '',
@@ -256,6 +261,7 @@ class FileSetTable(ttk.Frame):
                         _fmt(cur_emb, emb_tz),
                         _fmt(fi.gps_time, 'UTC'),
                         _fmt_delta(per_file_delta),
+                        _fmt_delta(applied_delta),
                         dec.strategy,
                         _fmt(tgt_emb, tgt_tz),
                     ),
