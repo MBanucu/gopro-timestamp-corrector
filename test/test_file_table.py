@@ -125,7 +125,7 @@ class TestFileSetTable(unittest.TestCase):
 
         rows = self._tree_rows()
         parent = rows[0]
-        self.assertEqual(parent[2][8], 'manual +5h')
+        self.assertEqual(parent[2][8], 'manual')
 
     def test_set_strategy_updates_decision(self):
         fs = _make_fs('010001', ['.mp4'], has_gps=True)

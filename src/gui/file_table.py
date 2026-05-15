@@ -199,8 +199,6 @@ class FileSetTable(ttk.Frame):
     # ---- Internal ----
 
     def _strategy_label(self, dec):
-        if dec.strategy == STRATEGY_MANUAL and self._manual_delta:
-            return f'{dec.strategy} {_fmt_delta(self._manual_delta)}'
         return dec.strategy
 
     def _rebuild_tree(self):
