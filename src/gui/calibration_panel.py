@@ -291,10 +291,8 @@ class CalibrationPanel(ttk.Frame):
             self._auto_gps()
             return
 
-        self.notebook.select(1)
-        self.delta_entry.delete(0, tk.END)
-        self.delta_entry.insert(0, _fmt_delta(median))
-
+        # Populate the calendar editors FIRST (traces will fire and try to
+        # update the delta entry, which we overwrite right after).
         best = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
         _, _, best_file, best_gps, best_emb = best
         tz_id = self.actual_editor.tz_var.get()
@@ -307,6 +305,11 @@ class CalibrationPanel(ttk.Frame):
         actual_dt = gps_utc_tz.astimezone(tz) if tz else gps_utc_tz.astimezone()
         self.actual_editor.on_date_picked(actual_dt, tz_id)
         self.gopro_editor.on_date_picked(best_emb, '')
+
+        # Set the delta entry LAST so it is not overwritten by editor traces.
+        self.notebook.select(1)
+        self.delta_entry.delete(0, tk.END)
+        self.delta_entry.insert(0, _fmt_delta(median))
 
         mean_delta = sum(deltas, timedelta()) / len(deltas) if deltas else median
         self._log(f'Auto calibrate: {len(pairs)} files with valid GPS fix')

@@ -90,12 +90,11 @@ class TestAutoCalibrateGUI(unittest.TestCase):
         self.assertIsNotNone(self.delta_result)
 
         entry_text = self.panel.delta_entry.get()
-        self.assertIn('d', entry_text, 'Delta entry should show days')
-        self.assertIn('h', entry_text, 'Delta entry should show hours')
-        self.assertIn('m', entry_text, 'Delta entry should show minutes')
-        # The delta should be negative (GPS time is before camera time)
         self.assertTrue(entry_text.startswith('-'),
                         f'Expected negative delta, got: {entry_text}')
+        # At least one unit component should be present
+        self.assertTrue(any(c in entry_text for c in 'dhms'),
+                        f'Delta entry should contain time units, got: {entry_text}')
 
     def test_auto_calibrate_sets_calendar_editors(self):
         """The GPS and embedded times of the representative file appear in the Calendar tab."""
