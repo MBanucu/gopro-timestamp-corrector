@@ -300,8 +300,6 @@ class FileSetTable(ttk.Frame):
         style.configure('TZ.TButton', font=('', 8), foreground='#888',
                         borderwidth=0, padding=(4, 0), anchor=tk.W,
                         relief=tk.FLAT)
-        style.map('TZ.TButton', background=[('!active', self.master.cget('bg') if hasattr(self.master, 'cget') else '#f0f0f0'),
-                                             ('active', '#e8e8e8')])
 
         self._tz_expanded = False
         self._tz_toggle = ttk.Button(self, style='TZ.TButton',
