@@ -111,17 +111,36 @@ class ToolGUI:
                                            log_fn=self.log)
         self.cal_bar.pack(fill=tk.X, pady=4)
 
-        # --- Calibration editors ---
-        cal_frame = ttk.Frame(main)
-        cal_frame.pack(fill=tk.X, pady=6)
+        # --- Calibration notebook ---
+        self.cal_notebook = ttk.Notebook(main)
+        self.cal_notebook.pack(fill=tk.X, pady=4)
 
-        self.actual_editor = CalibrationEditor(cal_frame, 'Actual local time')
+        # Tab 1: Calendar
+        cal_tab = ttk.Frame(self.cal_notebook, padding=6)
+        self.cal_notebook.add(cal_tab, text='Calendar')
+
+        self.actual_editor = CalibrationEditor(cal_tab, 'Actual local time')
         self.actual_editor.grid(row=0, column=0, sticky='ew', padx=(0, 4))
 
-        self.gopro_editor = CalibrationEditor(cal_frame, 'GoPro local time')
+        self.gopro_editor = CalibrationEditor(cal_tab, 'GoPro local time')
         self.gopro_editor.grid(row=0, column=1, sticky='ew')
-        cal_frame.columnconfigure(0, weight=1, uniform='editor')
-        cal_frame.columnconfigure(1, weight=1, uniform='editor')
+        cal_tab.columnconfigure(0, weight=1, uniform='editor')
+        cal_tab.columnconfigure(1, weight=1, uniform='editor')
+
+        # Tab 2: Delta
+        delta_tab = ttk.Frame(self.cal_notebook, padding=6)
+        self.cal_notebook.add(delta_tab, text='Delta')
+        ttk.Label(delta_tab, text='Enter the time offset directly:',
+                  font=('', 8)).pack(anchor=tk.W)
+        delta_entry_frame = ttk.Frame(delta_tab)
+        delta_entry_frame.pack(fill=tk.X, pady=(4, 2))
+        ttk.Label(delta_entry_frame, text='Delta:', foreground='#555').pack(side=tk.LEFT, padx=(0, 4))
+        self.delta_entry = ttk.Entry(delta_entry_frame, width=24, font=('', 9))
+        self.delta_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.delta_entry.bind('<KeyRelease>', self._on_delta_entry)
+        self.delta_entry.bind('<FocusOut>', self._on_delta_entry)
+        ttk.Label(delta_tab, text='Examples:  +2h30m   -1d5h   2:30   90m   0',
+                  font=('', 7), foreground='#999').pack(anchor=tk.W)
 
         # --- GPS Button ---
         gps_row = ttk.Frame(main)
@@ -134,11 +153,6 @@ class ToolGUI:
         status = ttk.Frame(main)
         status.pack(fill=tk.X, pady=(2, 4))
         ttk.Label(status, textvariable=self.preview_var, foreground='#c33').pack(side=tk.LEFT)
-        ttk.Label(status, text='Delta:', foreground='#555').pack(side=tk.RIGHT, padx=(0, 2))
-        self.delta_entry = ttk.Entry(status, width=18, font=('', 8))
-        self.delta_entry.pack(side=tk.RIGHT)
-        self.delta_entry.bind('<KeyRelease>', self._on_delta_entry)
-        self.delta_entry.bind('<FocusOut>', self._on_delta_entry)
 
         for ed in (self.actual_editor, self.gopro_editor):
             for var in (ed.date_var, ed.hour_var, ed.min_var, ed.tz_var):
