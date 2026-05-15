@@ -104,13 +104,13 @@ class CalibrationEditor(ttk.LabelFrame):
             d_str = self.date_var.get().strip()
             tz_id = self.tz_var.get().strip()
             dt = datetime.strptime(d_str, '%Y-%m-%d') if d_str else None
-            if dt and tz_id:
+            if dt and tz_id and self._tz_is_valid(tz_id):
                 abbr = resolve_tz_abbr(tz_id, dt)
                 if abbr:
                     self.tz_abbr_var.set(f'({abbr})')
                 else:
                     self.tz_abbr_var.set('')
-            elif not tz_id:
+            elif not tz_id or not self._tz_is_valid(tz_id):
                 pass  # _update_tz_utc_label handles the (UTC) warning
             else:
                 self.tz_abbr_var.set('')
@@ -163,12 +163,24 @@ class CalibrationEditor(ttk.LabelFrame):
                        all_zones=self.all_zones,
                        initial_hour=h, initial_minute=m, initial_tz=tz)
 
+    def _tz_is_valid(self, tz_id):
+        if not tz_id:
+            return False
+        if not zoneinfo:
+            return True
+        try:
+            zoneinfo.ZoneInfo(tz_id)
+            return True
+        except (Exception, ImportError):
+            return False
+
     def _update_tz_utc_label(self):
-        """Show (UTC) in red blinking when no timezone is set, or abbreviation."""
+        """Show (UTC) in red blinking when TZ is empty or invalid, or abbreviation."""
         if self._tz_blink_id:
             self.after_cancel(self._tz_blink_id)
             self._tz_blink_id = None
-        if self.tz_var.get().strip():
+        tz_id = self.tz_var.get().strip()
+        if self._tz_is_valid(tz_id):
             self.tz_abbr_var.set('')
             self.tz_abbr_label.configure(foreground='gray')
             self._tz_blink(False)
