@@ -26,10 +26,17 @@ class TestFullAutoIntegration(unittest.TestCase):
         if not gz_path.exists():
             raise unittest.SkipTest(f'Compressed image not found at {gz_path}')
 
-        # Work on a copy so the original is never modified
-        cls._work_dir = Path(tempfile.mkdtemp(prefix='gopro_full_test_'))
         from shared import decompress_sparse_image
-        cls.img_path = decompress_sparse_image(gz_path, cls._work_dir / 'sdcard.img')
+
+        # Decompress to the test directory (cached — skip if already present)
+        cached = Path(__file__).parent / 'sdcard.img'
+        decompress_sparse_image(gz_path, cached)
+
+        # Copy to a temp directory so we never modify the cached image
+        cls._work_dir = Path(tempfile.mkdtemp(prefix='gopro_full_test_'))
+        cls.img_path = cls._work_dir / 'sdcard.img'
+        subprocess.run(['cp', '--sparse=always', str(cached), str(cls.img_path)],
+                       check=True, capture_output=True)
 
         try:
             r = subprocess.run(
