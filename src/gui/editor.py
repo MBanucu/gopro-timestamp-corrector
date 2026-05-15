@@ -190,7 +190,7 @@ class CalibrationEditor(ttk.LabelFrame):
 
     def _tz_blink(self, visible):
         self.tz_abbr_label.configure(
-            foreground='red' if visible else self.tz_abbr_label.master.cget('bg'))
+            foreground='red' if visible else '#888')
         self._tz_blink_id = self.after(600, self._tz_blink, not visible)
 
     def _tzinfo_to_id(self, tzinfo) -> str:
