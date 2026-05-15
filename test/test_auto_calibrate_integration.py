@@ -162,18 +162,43 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         actual = panel.actual_editor.get_data()
         gopro = panel.gopro_editor.get_data()
 
-        self.assertNotEqual(actual.get('date', ''), '',
-                            'Actual editor date should be set')
-        self.assertNotEqual(gopro.get('date', ''), '',
-                            'GoPro editor date should be set')
-        self.assertNotEqual(gopro.get('time', ''), '',
-                            'GoPro editor time should be set')
+        # Determine the representative file (same logic as in _auto_calibrate_from_gps)
+        tz_id = panel.actual_editor.tz_var.get()
+        import zoneinfo
+        try:
+            tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
+        except Exception:
+            tz = None
+
+        best = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
+        _, _, best_file, best_gps, best_emb = best
+
+        # Actual editor should show the GPS time of the representative file,
+        # converted to the local timezone.
+        gps_utc_tz = best_gps.replace(tzinfo=timezone.utc)
+        expected_actual_dt = gps_utc_tz.astimezone(tz) if tz else gps_utc_tz.astimezone()
+        self.assertEqual(actual.get('date'), expected_actual_dt.strftime('%Y-%m-%d'))
+        self.assertEqual(actual.get('time'), expected_actual_dt.strftime('%H:%M'))
+        self.assertEqual(actual.get('timezone', ''), tz_id)
+
+        # GoPro editor should show the embedded time of the representative file,
+        # without any timezone (camera-local time as stored).
+        self.assertEqual(gopro.get('date'), best_emb.strftime('%Y-%m-%d'))
+        self.assertEqual(gopro.get('time'), best_emb.strftime('%H:%M'))
+        self.assertEqual(gopro.get('timezone', ''), '')
+
+        # The delta callback should have been called with the weighted median.
+        self.assertIsNotNone(delta_result[-1], 'Delta callback should have a value')
+        self.assertAlmostEqual(delta_result[-1].total_seconds(),
+                               median.total_seconds(), delta=1.0,
+                               msg='Delta callback value should match weighted median')
 
         # Log what happened for debugging
         for msg in logged:
             print(f'  [log] {msg}')
 
         print(f'  Delta entry: {entry_text}')
+        print(f'  Representative file: {best_file.name}')
         print(f'  Actual: {actual.get("date")} {actual.get("time")}')
         print(f'  GoPro:  {gopro.get("date")} {gopro.get("time")}')
         print(f'  Computed median: {median}')

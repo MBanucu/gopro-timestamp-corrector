@@ -306,7 +306,9 @@ class CalibrationPanel(ttk.Frame):
         self.actual_editor.on_date_picked(actual_dt, tz_id)
         self.gopro_editor.on_date_picked(best_emb, '')
 
-        # Set the delta entry LAST so it is not overwritten by editor traces.
+        # Re-apply the median delta after editor traces have fired, so the
+        # delta callback and the delta entry both show the correct value.
+        self._delta_cb(median)
         self.notebook.select(1)
         self.delta_entry.delete(0, tk.END)
         self.delta_entry.insert(0, _fmt_delta(median))
