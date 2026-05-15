@@ -29,6 +29,56 @@ def _compute_delta(actual_editor, gopro_editor):
     return None
 
 
+def _parse_delta(text: str) -> timedelta | None:
+    """Parse a human-readable timedelta string.
+
+    Accepted formats::
+
+        +2h30m    -1d5h     2:30      -90m      0
+    """
+    text = text.strip()
+    if not text:
+        return None
+
+    negative = False
+    if text.startswith('-'):
+        negative = True
+        text = text[1:]
+    elif text.startswith('+'):
+        text = text[1:]
+
+    if ':' in text:
+        parts = text.split(':')
+        if len(parts) == 2:
+            try:
+                h, m = int(parts[0]), int(parts[1])
+                d = timedelta(hours=h, minutes=m)
+                return -d if negative else d
+            except ValueError:
+                return None
+
+    import re
+    days = hours = minutes = 0
+    m = re.search(r'(\d+)d', text)
+    if m:
+        days = int(m.group(1))
+    m = re.search(r'(\d+)h', text)
+    if m:
+        hours = int(m.group(1))
+    m = re.search(r'(\d+)m', text)
+    if m:
+        minutes = int(m.group(1))
+
+    if days == 0 and hours == 0 and minutes == 0:
+        try:
+            minutes = int(text)
+        except ValueError:
+            return None
+
+    d = timedelta(days=days, hours=hours, minutes=minutes)
+    return -d if negative else d
+
+
 class ToolGUI:
     def __init__(self, root):
         self.root = root
@@ -81,11 +131,14 @@ class ToolGUI:
 
         # --- Preview / delta ---
         self.preview_var = tk.StringVar()
-        self.delta_var = tk.StringVar(value='Delta: —')
         status = ttk.Frame(main)
         status.pack(fill=tk.X, pady=(2, 4))
         ttk.Label(status, textvariable=self.preview_var, foreground='#c33').pack(side=tk.LEFT)
-        ttk.Label(status, textvariable=self.delta_var, foreground='#555').pack(side=tk.RIGHT)
+        ttk.Label(status, text='Delta:', foreground='#555').pack(side=tk.RIGHT, padx=(0, 2))
+        self.delta_entry = ttk.Entry(status, width=18, font=('', 8))
+        self.delta_entry.pack(side=tk.RIGHT)
+        self.delta_entry.bind('<KeyRelease>', self._on_delta_entry)
+        self.delta_entry.bind('<FocusOut>', self._on_delta_entry)
 
         for ed in (self.actual_editor, self.gopro_editor):
             for var in (ed.date_var, ed.hour_var, ed.min_var, ed.tz_var):
@@ -162,18 +215,35 @@ class ToolGUI:
     def get_cal_data(self):
         return self.cal_bar.get_data()
 
+    def _on_delta_entry(self, event=None):
+        text = self.delta_entry.get().strip()
+        delta = _parse_delta(text)
+        if delta is not None:
+            self.file_table.manual_delta = delta
+            # Sync gopro editor: gopro = actual - delta
+            actual = self.actual_editor.get_data()
+            cal_data = {'actual': actual, 'gopro': {}}
+            ok, *rest = calibration.try_parse(cal_data)
+            if ok:
+                gopro_dt = rest[0] - delta
+                self.gopro_editor.on_date_picked(gopro_dt, '')
+            else:
+                # Fall back to clearing delta display
+                pass
+
     def update_preview(self):
         delta = _compute_delta(self.actual_editor, self.gopro_editor)
         if delta is not None:
-            self.delta_var.set(f'Delta: {_fmt_delta(delta)}')
-            self.preview_var.set('')
             self.file_table.manual_delta = delta
+            self.preview_var.set('')
+            self.delta_entry.delete(0, tk.END)
+            self.delta_entry.insert(0, _fmt_delta(delta))
         else:
-            self.delta_var.set('Delta: —')
             data = self.get_cal_data()
             ok, *rest = calibration.try_parse(data)
             err = rest[0] if rest else 'Invalid'
             self.preview_var.set(f'\u26a0 {err}')
+            self.delta_entry.delete(0, tk.END)
 
     def _on_strategy_changed(self):
         delta = _compute_delta(self.actual_editor, self.gopro_editor)
