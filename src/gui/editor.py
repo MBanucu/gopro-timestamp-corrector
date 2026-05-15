@@ -180,14 +180,13 @@ class CalibrationEditor(ttk.LabelFrame):
             return False
 
     def _update_tz_utc_label(self):
-        """Show (UTC) in red blinking when TZ is empty or invalid, or abbreviation."""
+        """Show (UTC) blinking red when TZ is empty or invalid, else stop blink."""
         if self._tz_blink_id:
             self.after_cancel(self._tz_blink_id)
             self._tz_blink_id = None
         tz_id = self.tz_var.get().strip()
         if self._tz_is_valid(tz_id):
             self.tz_abbr_label.configure(foreground='gray')
-            self._tz_blink(False)
         else:
             self.tz_abbr_var.set('(UTC)')
             self._tz_blink(True)
