@@ -66,15 +66,11 @@ class CalibrationEditor(ttk.LabelFrame):
         self.tz_combo = FilteringCombobox(row, all_values=self.all_zones,
                                            textvariable=self.tz_var)
         self.tz_combo.pack(side=tk.LEFT, padx=(0, 4))
-
-        self.tz_utc_label = ttk.Label(row, text='(UTC)', foreground='red',
-                                       font=('', 8, 'bold'))
-        self.tz_utc_label.pack(side=tk.LEFT, padx=(0, 4))
         self._tz_blink_id = None
 
         self.tz_abbr_var = tk.StringVar()
         self.tz_abbr_label = ttk.Label(row, textvariable=self.tz_abbr_var,
-                                        foreground='gray', width=14)
+                                        width=14)
         self.tz_abbr_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         self.date_var.trace_add('write', lambda *a: self.update_abbr())
@@ -114,6 +110,8 @@ class CalibrationEditor(ttk.LabelFrame):
                     self.tz_abbr_var.set(f'({abbr})')
                 else:
                     self.tz_abbr_var.set('')
+            elif not tz_id:
+                pass  # _update_tz_utc_label handles the (UTC) warning
             else:
                 self.tz_abbr_var.set('')
         except Exception:
@@ -166,20 +164,21 @@ class CalibrationEditor(ttk.LabelFrame):
                        initial_hour=h, initial_minute=m, initial_tz=tz)
 
     def _update_tz_utc_label(self):
-        """Show a blinking red (UTC) label when no timezone is set."""
+        """Show (UTC) in red blinking when no timezone is set, or abbreviation."""
         if self._tz_blink_id:
             self.after_cancel(self._tz_blink_id)
             self._tz_blink_id = None
         if self.tz_var.get().strip():
-            self.tz_utc_label.pack_forget()
+            self.tz_abbr_var.set('')
+            self.tz_abbr_label.configure(foreground='gray')
+            self._tz_blink(False)
         else:
-            self.tz_utc_label.pack(side=tk.LEFT, padx=(0, 4))
+            self.tz_abbr_var.set('(UTC)')
             self._tz_blink(True)
 
     def _tz_blink(self, visible):
-        """Toggle the UTC warning label foreground."""
-        self.tz_utc_label.configure(
-            foreground='red' if visible else self.tz_utc_label.master.cget('bg'))
+        self.tz_abbr_label.configure(
+            foreground='red' if visible else self.tz_abbr_label.master.cget('bg'))
         self._tz_blink_id = self.after(600, self._tz_blink, not visible)
 
     def _tzinfo_to_id(self, tzinfo) -> str:
