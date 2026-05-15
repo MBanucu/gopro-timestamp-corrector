@@ -267,42 +267,24 @@ class CalibrationPanel(ttk.Frame):
 
         self._set_status('Reading GPS data from all files...')
 
-        # Determine timezone so GPS-UTC can be converted to local time
-        # before computing per-file deltas (removes the timezone offset
-        # from the camera-clock-error computation).
-        tz_id = self.actual_editor.tz_var.get()
-        if not tz_id:
-            from gui.tz_info import get_iana_id
-            tz_id = get_iana_id() or ''
-        import zoneinfo
-        try:
-            tz = zoneinfo.ZoneInfo(tz_id) if tz_id else None
-        except Exception:
-            tz = None
-
         batch = media.read_tags_batch(files)
         accuracy = media.read_gps_accuracy_batch(files)
 
         pairs = []
         for f in files:
-            embedded, gps_utc = batch.get(f, (None, None))
-            if embedded is None or gps_utc is None:
+            embedded, gps = batch.get(f, (None, None))
+            if embedded is None or gps is None:
                 continue
             acc = accuracy.get(f, 99.99)
             if acc is None:
                 acc = 99.99
             if acc >= 25.0 or acc == 99.99:
                 continue
-            # Convert GPS-UTC to local time so the delta reflects camera
-            # clock error, not the timezone offset.
-            if tz:
-                gps_local = gps_utc.replace(tzinfo=timezone.utc).astimezone(tz)
-                gps_local = gps_local.replace(tzinfo=None)
-            else:
-                gps_local = gps_utc
-            delta = gps_local - embedded
+            # Both GPS and embedded are UTC (QuickTime per spec), so the
+            # per-file delta directly gives the camera clock error.
+            delta = gps - embedded
             weight = 1.0 / (acc + 1.0)
-            pairs.append((delta, weight, f, gps_utc, embedded))
+            pairs.append((delta, weight, f, gps, embedded))
 
         if not pairs:
             self._log('No files with valid GPS fix (need GPSHPositioningError < 25 m).')

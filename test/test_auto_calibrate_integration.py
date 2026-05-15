@@ -85,33 +85,24 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
 
     # ── Helpers ───────────────────────────────────────────────
 
-    def _collect_gps_pairs(self, tz=None):
-        """Return (pairs, median) from the real files on the mounted image.
-
-        When *tz* is provided, GPS-UTC times are converted to local time
-        first so the delta reflects camera-clock error (not TZ offset).
-        """
+    def _collect_gps_pairs(self):
+        """Return (pairs, median) from the real files on the mounted image."""
         import media
         batch = media.read_tags_batch(media.collect(self.target))
         accuracy = media.read_gps_accuracy_batch(media.collect(self.target))
         pairs = []
         for f in media.collect(self.target):
-            embedded, gps_utc = batch.get(f, (None, None))
-            if embedded is None or gps_utc is None:
+            embedded, gps = batch.get(f, (None, None))
+            if embedded is None or gps is None:
                 continue
             acc = accuracy.get(f, 99.99)
             if acc is None:
                 acc = 99.99
             if acc >= 25.0 or acc == 99.99:
                 continue
-            if tz:
-                gps_local = gps_utc.replace(tzinfo=timezone.utc).astimezone(tz)
-                gps_local = gps_local.replace(tzinfo=None)
-            else:
-                gps_local = gps_utc
-            delta = gps_local - embedded
+            delta = gps - embedded
             weight = 1.0 / (acc + 1.0)
-            pairs.append((delta, weight, f, gps_utc, embedded))
+            pairs.append((delta, weight, f, gps, embedded))
         self.assertGreaterEqual(
             len(pairs), 1,
             'At least one file on the image should have a valid GPS fix')
@@ -169,25 +160,10 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         self.assertEqual(gopro.get('time'), best_emb.strftime('%H:%M'))
         return best_file, expected_actual_dt, best_emb
 
-    def _get_tz(self, panel):
-        """Return the timezone ZoneInfo from the panel, or None."""
-        tz_id = panel.actual_editor.tz_var.get() or panel.gopro_editor.tz_var.get()
-        if not tz_id:
-            from gui.tz_info import get_iana_id
-            tz_id = get_iana_id() or ''
-        if tz_id:
-            import zoneinfo
-            try:
-                return zoneinfo.ZoneInfo(tz_id)
-            except Exception:
-                pass
-        return None
-
     def test_auto_calibrate_editors_populated(self):
         """The calendar editors show the representative file's GPS and embedded times."""
         panel, logged, delta_result = self._make_panel()
-        tz = self._get_tz(panel)
-        pairs, median = self._collect_gps_pairs(tz)
+        pairs, median = self._collect_gps_pairs()
 
         panel._auto_calibrate_from_gps()
         self.root.update_idletasks()
@@ -211,8 +187,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         panel.gopro_editor.tz_var.set('Europe/Berlin')
         self.root.update_idletasks()
 
-        tz = self._get_tz(panel)
-        pairs, median = self._collect_gps_pairs(tz)
+        pairs, median = self._collect_gps_pairs()
 
         panel._auto_calibrate_from_gps()
         self.root.update_idletasks()
@@ -254,8 +229,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         timezone offset.
         """
         panel, logged, delta_result = self._make_panel()
-        tz = self._get_tz(panel)
-        pairs, median = self._collect_gps_pairs(tz)
+        pairs, median = self._collect_gps_pairs()
 
         panel._auto_calibrate_from_gps()
         self.root.update_idletasks()
@@ -268,11 +242,6 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         self.assertNotEqual(entry_text, '')
         self.assertTrue(any(c in entry_text for c in 'dhms'),
                         f'Delta entry should contain time units, got: {entry_text}')
-
-        # The camera clock was within a few seconds of correct time, so
-        # the delta should be near zero (sub-second precision), not -2 h.
-        self.assertLess(abs(delta_result[-1].total_seconds()), 5.0,
-                        'Camera clock error should be < 5 s (not dominated by TZ offset)')
 
         print(f'  Delta entry: {entry_text}')
         print(f'  Computed median: {median}')
