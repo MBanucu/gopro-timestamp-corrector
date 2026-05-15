@@ -211,6 +211,58 @@ def write_embedded(filepath, dt):
     return result.returncode == 0
 
 
+_QT_JSON_TAGS = (
+    'QuickTime:CreateDate', 'QuickTime:CreationDate',
+    'QuickTime:ModifyDate', 'QuickTime:MediaCreateDate',
+    'QuickTime:MediaModifyDate', 'QuickTime:TrackCreateDate',
+    'QuickTime:TrackModifyDate',
+)
+_EXIF_JSON_TAGS = (
+    'EXIF:DateTimeOriginal', 'EXIF:CreateDate', 'EXIF:ModifyDate',
+)
+
+
+def write_embedded_batch(pairs: list[tuple[Path, datetime]]) -> bool:
+    """Write embedded times for all *pairs* in one exiftool call via JSON import.
+
+    Returns ``True`` if all files were written successfully.
+    """
+    import json as _json
+    import tempfile
+
+    qt_records = []
+    exif_records = []
+    for path, dt in pairs:
+        fmt = dt.strftime('%Y:%m:%d %H:%M:%S')
+        ext = Path(path).suffix.lower()
+        if ext in ('.mp4', '.lrv'):
+            qt_records.append({'SourceFile': str(path),
+                               **{t: fmt for t in _QT_JSON_TAGS}})
+        elif ext == '.thm':
+            exif_records.append({'SourceFile': str(path),
+                                 **{t: fmt for t in _EXIF_JSON_TAGS}})
+        else:
+            qt_records.append({'SourceFile': str(path),
+                               **{t: fmt for t in _QT_JSON_TAGS}})
+
+    ok = True
+    for records in (qt_records, exif_records):
+        if not records:
+            continue
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json',
+                                          delete=False) as f:
+            _json.dump(records, f)
+            tmp = f.name
+        cmd = ['exiftool', '-overwrite_original', '-json=' + tmp]
+        for rec in records:
+            cmd.append(rec['SourceFile'])
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        os.unlink(tmp)
+        if result.returncode != 0:
+            ok = False
+    return ok
+
+
 
 
 

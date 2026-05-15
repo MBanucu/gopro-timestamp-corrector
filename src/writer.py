@@ -91,12 +91,31 @@ class Writer:
     def write_all(self, jobs: list[WriteJob]) -> WriteSummary:
         """Write multiple jobs. Returns summary."""
         summary = WriteSummary()
+        if not jobs:
+            return summary
+
+        # ── Batch-write embedded times (exiftool JSON import) ──
+        if not self.dry_run:
+            emb_pairs = [(j.path, j.target_embedded) for j in jobs
+                         if j.target_embedded is not None]
+            batch_ok = media.write_embedded_batch(emb_pairs)
+        else:
+            batch_ok = True
+
+        # ── Per-file: mtime + btime ────────────────────────────
         for job in jobs:
-            ok = self.write(job)
-            if ok:
-                summary.written += 1
-            else:
+            if not self.dry_run and job.target_embedded is not None and not batch_ok:
                 (summary.errors or []).append(str(job.path))
+                continue
+
+            summary.written += 1
+
+            if job.target_mtime is not None:
+                media.write_mtime(job.path, job.target_mtime)
+
+            if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
+                btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
+
         return summary
 
     def close(self):
