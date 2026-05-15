@@ -11,7 +11,6 @@ from pathlib import Path
 import analysis as an_mod
 import preview
 import resolve
-import translate
 import media
 import btime
 from writer import Writer, WriteJob
@@ -25,20 +24,6 @@ def clean_exiftool_temp(target):
         p.unlink(missing_ok=True)
     for p in target.glob('*_original'):
         p.unlink(missing_ok=True)
-
-
-def find_translation(target_path, cli_path):
-    if cli_path:
-        p = Path(cli_path)
-        if not p.exists():
-            print(f"Error: Translation file not found: {cli_path}")
-            sys.exit(1)
-        return p
-    translations = list(target_path.glob('*time translation*'))
-    if not translations:
-        print("Error: No time translation file found. Use --translation to specify one.")
-        sys.exit(1)
-    return translations[0]
 
 
 def load_manifest(target):
@@ -76,7 +61,6 @@ def main():
     parser.add_argument('--fix-btime', nargs='?', const='auto',
                         choices=['auto', 'debugfs', 'fuse', 'clock'],
                         help='Fix creation time: auto (best for FS), debugfs, fuse, clock')
-    parser.add_argument('--translation', help='Path to time translation file')
     parser.add_argument('--gps', action='store_true', help='Use GPS time from the first file to determine delta')
     parser.add_argument('--timezone', help='Timezone for GPS correction (e.g. Europe/Berlin)')
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')
@@ -153,9 +137,8 @@ def main():
 
             global_delta = resolve.gps_delta(actual_dt, gopro_dt)
         else:
-            tf = find_translation(target, args.translation)
-            actual_dt, gopro_dt = translate.parse(tf)
-            global_delta = actual_dt - gopro_dt
+            print("Error: No GPS data available and no translation file provided.")
+            sys.exit(1)
 
         print(f"Actual: {actual_dt}")
         print(f"GoPro:  {gopro_dt}")

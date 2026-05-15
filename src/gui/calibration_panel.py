@@ -325,12 +325,7 @@ class CalibrationPanel(ttk.Frame):
         self.actual_editor.set_datetime(actual_dt)
         self.gopro_editor.set_datetime(gopro_dt)
 
-        # Re-apply the median delta after editor traces have fired, so the
-        # delta callback and the delta entry both show the correct value.
-        self._delta_cb(median)
         self.notebook.select(1)
-        self.delta_entry.delete(0, tk.END)
-        self.delta_entry.insert(0, _fmt_delta(median))
 
         mean_delta = sum(deltas, timedelta()) / len(deltas) if deltas else median
         self._log(f'Auto calibrate: {len(pairs)} files with valid GPS fix')
