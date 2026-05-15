@@ -43,7 +43,9 @@ class CalibrationEditor(ttk.LabelFrame):
         self.date_entry = ttk.Entry(row, textvariable=self.date_var, width=14)
         self.date_entry.pack(side=tk.LEFT, padx=(0, 2))
         ttk.Button(row, text='📅', width=3, command=self.pick_date).pack(side=tk.LEFT)
-        ttk.Label(row, text='  ISO: YYYY-MM-DD', foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.date_fmt_label = ttk.Label(row, text='  ISO: YYYY-MM-DD',
+                                         foreground='gray')
+        self.date_fmt_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
 
         # Time row
         row = ttk.Frame(self)
@@ -67,6 +69,7 @@ class CalibrationEditor(ttk.LabelFrame):
                                            textvariable=self.tz_var)
         self.tz_combo.pack(side=tk.LEFT, padx=(0, 4))
         self._tz_blink_id = None
+        self._date_blink_id = None
 
         self.tz_abbr_var = tk.StringVar()
         self.tz_abbr_label = ttk.Label(row, textvariable=self.tz_abbr_var,
@@ -74,6 +77,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.tz_abbr_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         self.date_var.trace_add('write', lambda *a: self.update_abbr())
+        self.date_var.trace_add('write', lambda *a: self._update_date_label())
         self.tz_var.trace_add('write', lambda *a: self.update_abbr())
         self.tz_var.trace_add('write', lambda *a: self._update_tz_utc_label())
         self.hour_var.trace_add('write', lambda *a: self.update_abbr())
@@ -86,6 +90,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.dst_warn.pack(fill=tk.X, pady=(2, 0))
 
         self._update_tz_utc_label()
+        self._update_date_label()
 
         # Fold selector (hidden by default)
         self.fold_var = tk.IntVar(value=0)
@@ -191,6 +196,21 @@ class CalibrationEditor(ttk.LabelFrame):
         self.tz_abbr_label.configure(
             foreground='red' if visible else '#888')
         self._tz_blink_id = self.after(600, self._tz_blink, not visible)
+
+    def _date_blink(self, visible):
+        self.date_fmt_label.configure(
+            foreground='red' if visible else '#888')
+        self._date_blink_id = self.after(600, self._date_blink, not visible)
+
+    def _update_date_label(self):
+        """Blink the date format label red when the date field is empty."""
+        if self._date_blink_id:
+            self.after_cancel(self._date_blink_id)
+            self._date_blink_id = None
+        if self.date_var.get().strip():
+            self.date_fmt_label.configure(foreground='gray')
+        else:
+            self._date_blink(True)
 
     def _tzinfo_to_id(self, tzinfo) -> str:
         """Convert a ``tzinfo`` object to an IANA timezone ID string."""
