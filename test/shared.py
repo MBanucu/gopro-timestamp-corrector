@@ -4,11 +4,6 @@ import gzip
 import os
 from pathlib import Path
 
-import tkinter as tk
-from tkinter import ttk
-
-from gui.tzcombobox import FilteringCombobox
-
 
 TEST_ZONES = [
     'EET', 'EST', 'Europe/Amsterdam', 'Europe/Berlin',
@@ -18,6 +13,7 @@ TEST_ZONES = [
 
 
 def make_cb(root):
+    from gui.tzcombobox import FilteringCombobox
     cb = FilteringCombobox(root, all_values=TEST_ZONES, width=30)
     cb.pack()
     root.update_idletasks()
