@@ -153,7 +153,8 @@ class CalibrationPanel(ttk.Frame):
 
         # ── Traces ─────────────────────────────────────────────
         for ed in (self.actual_editor, self.gopro_editor):
-            for var in (ed.date_var, ed.hour_var, ed.min_var, ed.tz_var):
+            for var in (ed.date_var, ed.hour_var, ed.min_var,
+                        ed.sec_var, ed.ms_var, ed.tz_var):
                 var.trace_add('write', lambda *a: self._update_preview())
 
     # ── Public API ─────────────────────────────────────────────
