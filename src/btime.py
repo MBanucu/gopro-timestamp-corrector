@@ -139,7 +139,7 @@ def _setup_fuse(target_path, delta, dry_run):
         return None
 
     total_sec = int(delta.total_seconds())
-    offset = str(total_sec)
+    offset = f'+{total_sec}' if total_sec >= 0 else str(total_sec)
 
     if dry_run:
         print(f"    Would unmount {mount_point} and remount with FUSE + faketime")

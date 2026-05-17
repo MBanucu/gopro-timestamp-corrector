@@ -122,8 +122,13 @@ def format_delta(delta: timedelta) -> str:
 
     Uses raw seconds format because faketime's multi-component format
     ('-Xd -Yh -Zm') has a parsing bug with combined day/hour/minute offsets.
+
+    Always includes an explicit sign (+/-) so that positive offsets
+    are recognised as relative offsets, not absolute timestamps.
     """
     total_sec = int(delta.total_seconds())
+    if total_sec >= 0:
+        return f'+{total_sec}'
     return str(total_sec)
 
 
