@@ -245,6 +245,8 @@ class TestFuseFaketimeBtime(unittest.TestCase):
 
         r = run(['sudo', 'umount', mount_path])
         if r.returncode != 0:
+            r = run(['sudo', 'umount', '-l', mount_path])
+        if r.returncode != 0:
             self.skipTest(f'Could not unmount: {r.stderr.strip()}')
 
         run(['sudo', 'mkdir', '-p', mount_path], check=True)

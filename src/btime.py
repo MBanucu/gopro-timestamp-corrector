@@ -123,11 +123,8 @@ def _setup_fuse(target_path, delta, dry_run):
         print("  ! Could not resolve device. Falling back to clock method.")
         return None
 
-    total_sec = int(abs(delta.total_seconds()))
-    days = total_sec // 86400
-    hours = (total_sec % 86400) // 3600
-    minutes = (total_sec % 3600) // 60
-    offset = f'-{days}d -{hours}h -{minutes}m'
+    total_sec = int(delta.total_seconds())
+    offset = str(total_sec)
 
     if dry_run:
         print(f"    Would unmount {target_path} and remount with FUSE + faketime")
@@ -138,22 +135,34 @@ def _setup_fuse(target_path, delta, dry_run):
         capture_output=True, text=True
     )
     if result.returncode != 0:
+        result = subprocess.run(
+            ['sudo', 'umount', '-l', str(target_path)],
+            capture_output=True, text=True
+        )
+    if result.returncode != 0:
         print(f"    ! Failed to unmount: {result.stderr.strip()}")
         return None
 
     proc = subprocess.Popen(
-        ['faketime', '-f', offset, 'mount.exfat-fuse', device, str(target_path),
-         '-o', 'allow_other', '-o', 'nonempty'],
+        ['sudo', 'faketime', '-f', offset, 'mount.exfat-fuse', device, str(target_path),
+         '-o', 'allow_other', '-o', 'nonempty', '-o', 'auto_unmount'],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    time.sleep(1.5)
 
-    if proc.poll() is not None:
-        print(f"    ! FUSE mount failed")
+    for _ in range(5000):
+        if proc.poll() is not None:
+            print(f"    ! FUSE mount failed")
+            subprocess.run(['sudo', 'mount', device, str(target_path)], capture_output=True)
+            return None
+        if os.path.ismount(str(target_path)):
+            break
+        time.sleep(0.002)
+    else:
+        print(f"    ! FUSE mount timed out")
         subprocess.run(['sudo', 'mount', device, str(target_path)], capture_output=True)
         return None
 
-    print(f"    \u2713  FUSE + faketime mounted ({days}d {hours}h {minutes}m offset)")
+    print(f"    \u2713  FUSE + faketime mounted ({delta})")
     return {'proc': proc, 'mount': target_path, 'device': device}
 
 
@@ -162,14 +171,16 @@ def _teardown_fuse(ctx, dry_run):
         return
     mount = ctx.get('mount')
     proc = ctx.get('proc')
-    if mount:
-        subprocess.run(['sudo', 'umount', '-f', str(mount)], capture_output=True)
     if proc:
         proc.terminate()
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+    if mount:
+        r = subprocess.run(['sudo', 'umount', '-f', str(mount)], capture_output=True)
+        if r.returncode != 0:
+            subprocess.run(['sudo', 'umount', '-l', str(mount)], capture_output=True)
     print(f"    FUSE mount torn down.")
 
 
