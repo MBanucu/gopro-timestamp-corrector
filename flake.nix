@@ -26,9 +26,10 @@
           inherit src;
           dontBuild = true;
           installPhase = ''
-            mkdir -p $out/bin $out/lib/gui
+            mkdir -p $out/bin $out/lib/gui/steps
             cp src/*.py $out/lib/
             cp src/gui/*.py $out/lib/gui/
+            cp src/gui/steps/*.py $out/lib/gui/steps/
             python_lib="$out/lib"
             python_bin="${python}/bin/python3"
             cat > $out/bin/correct-gopro-timestamps << WRAPPER
@@ -46,9 +47,10 @@ WRAPPER
           inherit src;
           dontBuild = true;
           installPhase = ''
-            mkdir -p $out/bin $out/lib/gui
+            mkdir -p $out/bin $out/lib/gui/steps
             cp src/*.py $out/lib/
             cp src/gui/*.py $out/lib/gui/
+            cp src/gui/steps/*.py $out/lib/gui/steps/
             python_lib="$out/lib"
             python_bin="${python}/bin/python3"
             cat > $out/bin/gopro-timestamp-gui << WRAPPER
