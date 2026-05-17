@@ -163,11 +163,8 @@ class FileSetTable(ttk.Frame):
         self.analysis = analysis
         self.decisions = {}
         for fs in analysis.sets:
-            if fs.has_any_gps:
-                self.decisions[fs.id] = SetDecision(strategy=STRATEGY_GPS)
-            else:
-                self.decisions[fs.id] = SetDecision(
-                    strategy=STRATEGY_MANUAL, manual_delta=self._manual_delta)
+            self.decisions[fs.id] = SetDecision(
+                strategy=STRATEGY_MANUAL, manual_delta=self._manual_delta)
         self._rebuild_tree()
         self._status_var.set(
             f'{len(analysis.sets)} sets, {analysis.total_files} files')

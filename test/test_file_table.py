@@ -72,7 +72,7 @@ class TestFileSetTable(unittest.TestCase):
         self.assertEqual(len(rows), 4)  # 1 parent + 3 children
         parent = rows[0]
         self.assertEqual(parent[2][0], '010001')  # set ID in first column
-        self.assertEqual(parent[2][8], 'gps')     # strategy = GPS (has GPS)
+        self.assertEqual(parent[2][8], 'manual')   # strategy = MANUAL (even if has GPS)
 
     def test_load_analysis_no_gps_defaults_to_manual(self):
         fs = _make_fs('010001', ['.mp4'], has_gps=False)
@@ -115,9 +115,8 @@ class TestFileSetTable(unittest.TestCase):
         decisions = self.table.get_decisions()
         self.assertIn('010001', decisions)
         self.assertIn('010002', decisions)
-        # 010001 has GPS → defaults to gps
-        self.assertEqual(decisions['010001']['strategy'], 'gps')
-        # 010002 has no GPS → defaults to manual
+        # Both should default to manual
+        self.assertEqual(decisions['010001']['strategy'], 'manual')
         self.assertEqual(decisions['010002']['strategy'], 'manual')
 
     def test_set_manual_delta_updates_tree(self):
@@ -136,13 +135,13 @@ class TestFileSetTable(unittest.TestCase):
         ar = AnalysisResult(directory='/d', sets=[fs])
         self.table.load_analysis(ar)
 
+        self.assertEqual(self.table.decisions['010001'].strategy, 'manual')
+
+        self.table.set_strategy_for_set('010001', STRATEGY_GPS)
         self.assertEqual(self.table.decisions['010001'].strategy, 'gps')
 
         self.table.set_strategy_for_set('010001', STRATEGY_SKIP)
         self.assertEqual(self.table.decisions['010001'].strategy, 'skip')
-
-        self.table.set_strategy_for_set('010001', STRATEGY_MANUAL)
-        self.assertEqual(self.table.decisions['010001'].strategy, 'manual')
 
     def test_set_strategy_updates_treeview_display(self):
         fs = _make_fs('010001', ['.mp4'], has_gps=True)
@@ -150,12 +149,12 @@ class TestFileSetTable(unittest.TestCase):
         self.table.load_analysis(ar)
 
         rows = self._tree_rows()
-        self.assertEqual(rows[0][2][8], 'gps')
+        self.assertEqual(rows[0][2][8], 'manual')
 
-        self.table.set_strategy_for_set('010001', STRATEGY_SKIP)
+        self.table.set_strategy_for_set('010001', STRATEGY_GPS)
         self.root.update_idletasks()
         rows = self._tree_rows()
-        self.assertEqual(rows[0][2][8], 'skip')
+        self.assertEqual(rows[0][2][8], 'gps')
 
     def test_status_shows_analysis_summary(self):
         fs1 = _make_fs('010001', ['.mp4', '.lrv'])
@@ -175,7 +174,7 @@ class TestFileSetTable(unittest.TestCase):
         parents = [(iid, vals) for iid, parent, vals in self._tree_rows() if not parent]
         self.assertEqual(len(parents), 2)
         self.assertEqual(parents[0][1][0], '010001')
-        self.assertEqual(parents[0][1][8], 'gps')
+        self.assertEqual(parents[0][1][8], 'manual')
         self.assertEqual(parents[1][1][0], '010002')
         self.assertEqual(parents[1][1][8], 'manual')
 
@@ -272,6 +271,7 @@ class TestFileSetTable(unittest.TestCase):
         fs = FileSet(id='010063', files=[mp4, lrv, thm])
         ar = AnalysisResult(directory='/d', sets=[fs])
         self.table.load_analysis(ar)
+        self.table.set_strategy_for_set('010063', STRATEGY_GPS)
         self.root.update_idletasks()
 
         children = [(iid, vals) for iid, p, vals in self._tree_rows() if p]
@@ -304,6 +304,7 @@ class TestFileSetTable(unittest.TestCase):
         fs = FileSet(id='010001', files=[mp4, lrv, thm])
         ar = AnalysisResult(directory='/d', sets=[fs])
         self.table.load_analysis(ar)
+        self.table.set_strategy_for_set('010001', STRATEGY_GPS)
         self.root.update_idletasks()
 
         children = [(iid, vals) for iid, p, vals in self._tree_rows() if p]
