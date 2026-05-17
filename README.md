@@ -43,6 +43,8 @@ and on the filesystem. This tool corrects them in one pass.
 - **Daylight‑saving detection** — warns about ambiguous hours (fall‑back /
   spring‑forward) and shows fold selectors
 - **Idempotent** — a manifest file prevents double‑correction on re‑runs
+- **Modification history** — every correction run records full exiftool JSON
+  (before/after) in `.timestamp_correction_history/` for audit and rollback
 - **ISO 8601** date format throughout the GUI with millisecond precision
 - **Common‑prefix autocomplete** for timezone entry with **Tab‑to‑accept**
 - **All internal times are UTC-aware** (`tzinfo=timezone.utc`) — timezone
@@ -257,8 +259,9 @@ loaded directly from the compiled TZif v2+ binary files on disk.
 | any | system clock | required | Temporarily sets `CLOCK_REALTIME` (disruptive) |
 
 When `--fix-btime` is used, the tool auto‑detects the filesystem and picks
-the best method. On exFAT the raw block method is attempted first; without
-`sudo` it falls back to FUSE+faketime, and finally to the clock method.
+the best method. On exFAT the **raw block** method (`exfat_raw`) is the
+default; without `sudo` it falls back to FUSE+faketime, and finally to
+the clock method.
 
 See [`docs/exfat-raw-implementation.md`](docs/exfat-raw-implementation.md)
 for a detailed report on the exFAT filesystem internals, the raw block
@@ -329,6 +332,7 @@ PYTHONPATH=src python3 test/run_parallel.py -j 4 -v
 | Btime (unit) | 14 unit | `test_btime.py` |
 | Btime (FUSE+faketime) | 4 integration | `test_fuse_faketime.py` |
 | Btime (exFAT raw) | 3 integration | `test_exfat_raw_btime.py` |
+| Modification history | 7 unit | `test_history.py` |
 | Auto calibration (real) | 3 integration | `test_auto_calibrate_integration.py` |
 | Full pipeline | 1 integration | `test_full_auto_integration.py` |
 
@@ -355,6 +359,7 @@ $COV/bin/coverage-report
 │   ├── media.py            # EXIF/QuickTime read/write via exiftool (batch JSON)
 │   ├── calibration.py      # JSON calibration load/save/parse
 │   ├── btime.py            # Birth‑time fixing methods (incl. exFAT raw block)
+│   ├── history.py          # Modification history logger (before/after exiftool JSON)
 │   ├── dst.py              # DST ambiguity detection
 │   ├── correct_timestamps.py  # CLI orchestrator
 │   ├── gui/
@@ -377,6 +382,7 @@ $COV/bin/coverage-report
 │   ├── debug_exfat.py       # Debug helper: raw hex dump of exFAT dir entries
 │   ├── test_exfat_raw_btime.py  # Integration tests for raw exFAT btime
 │   ├── test_fuse_faketime.py    # Integration tests for FUSE+faketime btime
+│   ├── test_history.py          # Tests for modification history logger
 │   ├── test_analysis.py
 │   ├── test_preview.py
 │   ├── test_file_table.py
