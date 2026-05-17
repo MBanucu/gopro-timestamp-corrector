@@ -93,8 +93,8 @@ class TestStepPanels(unittest.TestCase):
         s = StepRun(self.root)
         s.pack()
         self.root.update_idletasks()
-        self.assertTrue(hasattr(s, 'output'))
-        self.assertTrue(hasattr(s, 'status'))
+        self.assertTrue(hasattr(s, 'run_btn'))
+        self.assertTrue(hasattr(s, 'cancel_btn'))
 
     def test_step4_set_commands(self):
         s = StepRun(self.root)
@@ -109,19 +109,6 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         s.cancel_btn.invoke()
         self.assertIn('c', called)
-
-    def test_step4_log_clear(self):
-        s = StepRun(self.root)
-        s.pack()
-        s.log('hello')
-        s.log('world')
-        # Output widget should contain the text
-        content = s.output.get(1.0, tk.END)
-        self.assertIn('hello', content)
-        self.assertIn('world', content)
-        s.clear_output()
-        content = s.output.get(1.0, tk.END).strip()
-        self.assertEqual(content, '')
 
     def test_step_cross_talk(self):
         """Verify the delta wiring pattern used by app.py works."""

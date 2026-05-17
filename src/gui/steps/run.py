@@ -1,12 +1,10 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk
 
 
 class StepRun(ttk.Frame):
-    def __init__(self, parent, *, log_fn=None, set_status_fn=None, **kw):
+    def __init__(self, parent, **kw):
         super().__init__(parent, **kw)
-        self._log_fn = log_fn or (lambda m: None)
-        self._set_status_fn = set_status_fn or (lambda m: None)
 
         ttk.Label(self, text='4. Run',
                   font=('', 13, 'bold')).pack(anchor=tk.W, pady=(0, 8))
@@ -58,19 +56,6 @@ class StepRun(ttk.Frame):
                                      state=tk.DISABLED)
         self.cancel_btn.pack(side=tk.RIGHT)
 
-        out_frame = ttk.LabelFrame(self, text='Output', padding=4)
-        out_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 2))
-
-        self.output = scrolledtext.ScrolledText(
-            out_frame, wrap=tk.WORD, font=('Consolas', 10),
-            bg='#1e1e1e', fg='#d4d4d4', insertbackground='white', height=6)
-        self.output.pack(fill=tk.BOTH, expand=True)
-        self.output.config(state=tk.DISABLED)
-
-        self.status = ttk.Label(self, text='Ready', relief=tk.SUNKEN,
-                                anchor=tk.W, padding=(4, 2))
-        self.status.pack(fill=tk.X, pady=(4, 0))
-
     _on_back = lambda self: None
 
     def set_on_back(self, cb):
@@ -89,15 +74,6 @@ class StepRun(ttk.Frame):
         if cancel:
             self.cancel_btn.config(command=cancel)
 
-    def log(self, msg):
-        self.output.config(state=tk.NORMAL)
-        self.output.insert(tk.END, msg + '\n')
-        self.output.see(tk.END)
-        self.output.config(state=tk.DISABLED)
-
-    def set_status(self, msg):
-        self.status.config(text=msg)
-
     def set_buttons_enabled(self, enabled):
         state = tk.NORMAL if enabled else tk.DISABLED
         for btn in (self.run_btn, self.exif_btn, self.mtime_btn,
@@ -106,8 +82,3 @@ class StepRun(ttk.Frame):
 
     def set_cancel_enabled(self, enabled):
         self.cancel_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
-
-    def clear_output(self):
-        self.output.config(state=tk.NORMAL)
-        self.output.delete(1.0, tk.END)
-        self.output.config(state=tk.DISABLED)

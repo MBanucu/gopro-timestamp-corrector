@@ -50,6 +50,9 @@ class ToolGUI:
         self.content = ttk.Frame(main)
         self.content.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
+        # --- Shared output log + status bar (visible on every step) ---
+        self._build_bottom_bar()
+
         # --- Step panels ---
         self.step1 = StepDirectory(
             self.content,
@@ -68,11 +71,7 @@ class ToolGUI:
             self.content,
             manual_delta_changed_cb=self._on_strategy_changed,
         )
-        self.step4 = StepRun(
-            self.content,
-            log_fn=self.log,
-            set_status_fn=self.set_status,
-        )
+        self.step4 = StepRun(self.content)
 
         # --- Cross-step wiring ---
         self.step1.set_on_set_cal_data(lambda data: self.step2.cal_panel.set_data(data))
@@ -166,18 +165,40 @@ class ToolGUI:
         from gui.history_viewer import HistoryViewer
         HistoryViewer(self.root, Path(target_dir))
 
-    # ===================== Log / Status (wired to step4) =====================
+    # ===================== Shared output log + status bar =====================
+
+    def _build_bottom_bar(self):
+        bottom = ttk.Frame(self.content)
+        bottom.pack(side=tk.BOTTOM, fill=tk.X)
+
+        out_frame = ttk.LabelFrame(bottom, text='Output', padding=4)
+        out_frame.pack(fill=tk.BOTH, expand=False, pady=(4, 0))
+
+        self.output = scrolledtext.ScrolledText(
+            out_frame, wrap=tk.WORD, font=('Consolas', 10),
+            bg='#1e1e1e', fg='#d4d4d4', insertbackground='white', height=6)
+        self.output.pack(fill=tk.BOTH, expand=True)
+        self.output.config(state=tk.DISABLED)
+
+        self.status = ttk.Label(bottom, text='Ready', relief=tk.SUNKEN,
+                                anchor=tk.W, padding=(4, 2))
+        self.status.pack(fill=tk.X, pady=(4, 0))
 
     def log(self, msg):
-        self.step4.output.config(state=tk.NORMAL)
-        self.step4.output.insert(tk.END, msg + '\n')
-        self.step4.output.see(tk.END)
-        self.step4.output.config(state=tk.DISABLED)
+        self.output.config(state=tk.NORMAL)
+        self.output.insert(tk.END, msg + '\n')
+        self.output.see(tk.END)
+        self.output.config(state=tk.DISABLED)
         self.root.update_idletasks()
 
     def set_status(self, msg):
-        self.step4.status.config(text=msg)
+        self.status.config(text=msg)
         self.root.update_idletasks()
+
+    def clear_output(self):
+        self.output.config(state=tk.NORMAL)
+        self.output.delete(1.0, tk.END)
+        self.output.config(state=tk.DISABLED)
 
     # ===================== Run logic =====================
 
@@ -195,7 +216,7 @@ class ToolGUI:
         self.running = True
         self.step4.set_buttons_enabled(False)
         self.step4.set_cancel_enabled(True)
-        self.step4.clear_output()
+        self.clear_output()
 
         self.log('Applying corrections...')
         self.set_status('Running...')
@@ -287,7 +308,7 @@ class ToolGUI:
         self.running = True
         self.step4.set_buttons_enabled(False)
         self.step4.set_cancel_enabled(True)
-        self.step4.clear_output()
+        self.clear_output()
 
         self.log(f'{label}...')
         self.set_status('Running...')
