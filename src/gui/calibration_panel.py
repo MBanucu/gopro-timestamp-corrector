@@ -1,4 +1,4 @@
-"""Calibration panel — notebook with Calendar / Delta tabs and GPS extraction."""
+"""Calibration panel — unified Calendar editors + Delta entry + GPS extraction."""
 
 import re
 import tkinter as tk
@@ -88,7 +88,7 @@ def parse_delta(text: str) -> timedelta | None:
 
 
 class CalibrationPanel(ttk.Frame):
-    """Notebook with Calendar / Delta tabs and GPS extraction buttons.
+    """Calendar editors + Delta entry + GPS extraction — all visible at once.
 
     Parameters
     ----------
@@ -112,41 +112,32 @@ class CalibrationPanel(ttk.Frame):
         self._set_status = set_status_fn
         self._delta_cb = delta_changed_cb
 
-        # ── Notebook ───────────────────────────────────────────
-        self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill=tk.X, pady=4)
-
-        # Tab 1: Calendar
-        cal_tab = ttk.Frame(self.notebook, padding=6)
-        self.notebook.add(cal_tab, text='Calendar')
-
-        self.actual_editor = CalibrationEditor(cal_tab, 'Actual local time')
+        # ── Calendar editors (side by side) ────────────────────
+        eds = ttk.Frame(self)
+        eds.pack(fill=tk.X, pady=(0, 8))
+        self.actual_editor = CalibrationEditor(eds, 'Actual local time')
         self.actual_editor.grid(row=0, column=0, sticky='ew', padx=(0, 4))
-
-        self.gopro_editor = CalibrationEditor(cal_tab, 'GoPro local time')
+        self.gopro_editor = CalibrationEditor(eds, 'GoPro local time')
         self.gopro_editor.grid(row=0, column=1, sticky='ew')
-        cal_tab.columnconfigure(0, weight=1, uniform='editor')
-        cal_tab.columnconfigure(1, weight=1, uniform='editor')
+        eds.columnconfigure(0, weight=1, uniform='editor')
+        eds.columnconfigure(1, weight=1, uniform='editor')
 
-        # Tab 2: Delta
-        delta_tab = ttk.Frame(self.notebook, padding=6)
-        self.notebook.add(delta_tab, text='Delta')
-        ttk.Label(delta_tab, text='Enter the time offset directly:',
-                  font=('', 8)).pack(anchor=tk.W)
-        delta_entry_frame = ttk.Frame(delta_tab)
-        delta_entry_frame.pack(fill=tk.X, pady=(4, 2))
-        ttk.Label(delta_entry_frame, text='Delta:', foreground='#555').pack(
-            side=tk.LEFT, padx=(0, 4))
-        self.delta_entry = ttk.Entry(delta_entry_frame, width=24, font=('', 9))
-        self.delta_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # ── Delta entry ────────────────────────────────────────
+        delta_row = ttk.Frame(self)
+        delta_row.pack(fill=tk.X, pady=(0, 2))
+        ttk.Label(delta_row, text='\u0394 Offset:', width=10,
+                  font=('', 9, 'bold')).pack(side=tk.LEFT)
+        self.delta_entry = ttk.Entry(delta_row, width=24, font=('', 9))
+        self.delta_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self.delta_entry.bind('<KeyRelease>', self._on_delta_entry)
         self.delta_entry.bind('<FocusOut>', self._on_delta_entry)
-        ttk.Label(delta_tab, text='Examples:  +2h30m   -1d5h   2:30   90m   0',
-                  font=('', 7), foreground='#999').pack(anchor=tk.W)
+        ttk.Label(delta_row,
+                  text='Examples:  +2h30m   -1d5h   2:30   90m   0',
+                  font=('', 7), foreground='#999').pack(side=tk.LEFT)
 
         # ── GPS buttons ────────────────────────────────────────
         gps_row = ttk.Frame(self)
-        gps_row.pack(fill=tk.X, pady=(0, 4))
+        gps_row.pack(fill=tk.X, pady=(4, 2))
         ttk.Button(gps_row, text='Single GPS...', command=self._auto_gps,
                    width=13).pack(side=tk.RIGHT, padx=(2, 0))
         ttk.Button(gps_row, text='Auto calibrate',
@@ -334,8 +325,6 @@ class CalibrationPanel(ttk.Frame):
         gopro_dt = best_emb.astimezone(tz) if tz else best_emb.astimezone()
         self.actual_editor.set_datetime(actual_dt)
         self.gopro_editor.set_datetime(gopro_dt)
-
-        self.notebook.select(1)
 
         mean_delta = sum(deltas, timedelta()) / len(deltas) if deltas else median
         self._log(f'Auto calibrate: {len(pairs)} files with valid GPS fix')
