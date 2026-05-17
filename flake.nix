@@ -70,12 +70,12 @@ WRAPPER
             mkdir -p $out/bin
             cat > $out/bin/run-tests << WRAPPER
 #!${pkgs.bash}/bin/bash
-export PYTHONPATH="\$PYTHONPATH:${pkgs.lib.makeBinPath deps}:$out/lib"
-exec $python_test -m coverage run --source tzcombobox -m unittest discover -v test
+export PYTHONPATH="\$PYTHONPATH:$src:$src/src:${pkgs.lib.makeBinPath deps}:$out/lib"
+exec $python_test -m coverage run --source $src/src -m test.run_parallel -j 4
 WRAPPER
             cat > $out/bin/coverage-report << WRAPPER
 #!${pkgs.bash}/bin/bash
-exec $python_test -m coverage report -m --include="*tzcombobox*"
+exec $python_test -m coverage report -m --include="$src/src/*"
 WRAPPER
             chmod +x $out/bin/run-tests $out/bin/coverage-report
           '';
