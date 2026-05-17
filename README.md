@@ -298,18 +298,26 @@ implementation, and how it was tested.
 - **Orchestrator** (`correct_timestamps.py` / `gui/app.py`): reads files via
   `analysis.analyze()`, calls the calculator to build a plan, passes the
   same plan to the writer. No recalculation on apply.
+  The GUI uses a **sidebar/stepper hybrid** layout (`gui/sidebar.py` +
+  `gui/steps/`) that guides the user through four sequential steps:
+  directory selection, calibration, file review, and execution. A
+  history viewer (`gui/history_viewer.py`) provides a side-by-side
+  JSON diff of before/after exiftool data for past correction runs.
 
 ## Tests
 
 ```bash
-# Serial (all 125 tests)
-PYTHONPATH=src python3 -m unittest discover test -v
+# Via the Nix derivation (parallel, 4 workers, includes coverage):
+nix run .#test
+# then:
+COV=$(nix eval .#packages.x86_64-linux.test.outPath --raw)
+$COV/bin/coverage-report
 
-# Parallel (13 modules, 4 workers — 40 % faster)
-PYTHONPATH=src python3 test/run_parallel.py -j 4
+# Directly (parallel):
+PYTHONPATH=src:test python3 test/run_parallel.py -j 4
 
-# Parallel with verbose output
-PYTHONPATH=src python3 test/run_parallel.py -j 4 -v
+# Serial:
+PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ```
 
 ### Test structure
@@ -333,17 +341,9 @@ PYTHONPATH=src python3 test/run_parallel.py -j 4 -v
 | Btime (FUSE+faketime) | 4 integration | `test_fuse_faketime.py` |
 | Btime (exFAT raw) | 3 integration | `test_exfat_raw_btime.py` |
 | Modification history | 7 unit | `test_history.py` |
+| GUI structure smoke | 12 smoke | `test_gui_structure.py` |
 | Auto calibration (real) | 3 integration | `test_auto_calibrate_integration.py` |
 | Full pipeline | 1 integration | `test_full_auto_integration.py` |
-
-Or via the Nix derivation (includes coverage):
-
-```bash
-nix run .#test
-# then:
-COV=$(nix eval .#packages.x86_64-linux.test.outPath --raw)
-$COV/bin/coverage-report
-```
 
 ## Project structure
 
@@ -364,14 +364,22 @@ $COV/bin/coverage-report
 │   ├── correct_timestamps.py  # CLI orchestrator
 │   ├── gui/
 │   │   ├── __init__.py
-│   │   ├── app.py              # Tkinter GUI application
-│   │   ├── file_table.py       # FileSetTable widget (10 columns, delta support)
-│   │   ├── editor.py           # Calibration editor widget (HH:MM:SS.mmm)
-│   │   ├── cal_file.py         # Calibration file management bar
-│   │   ├── calibration_panel.py # Notebook with Calendar/Delta tabs + GPS
-│   │   ├── tz_info.py          # IANA TZif parser + TzInfoPanel
-│   │   ├── tzcombobox.py       # FilteringCombobox widget
-│   │   └── datepicker.py       # Calendar popup widget
+│   │   ├── app.py                # Tkinter orchestrator (sidebar + step panels)
+│   │   ├── sidebar.py            # Step indicator sidebar (①–④ + History)
+│   │   ├── history_viewer.py     # History browser + side-by-side diff viewer
+│   │   ├── steps/
+│   │   │   ├── __init__.py
+│   │   │   ├── directory.py      # Step 1: directory selection + analyze
+│   │   │   ├── calibration.py    # Step 2: calibration panel + skip
+│   │   │   ├── review.py         # Step 3: file review table
+│   │   │   └── run.py            # Step 4: options, run buttons, output
+│   │   ├── file_table.py         # FileSetTable widget (10 columns, delta support)
+│   │   ├── editor.py             # Calibration editor widget (HH:MM:SS.mmm)
+│   │   ├── cal_file.py           # Calibration file management bar
+│   │   ├── calibration_panel.py  # Notebook with Calendar/Delta tabs + GPS
+│   │   ├── tz_info.py            # IANA TZif parser + TzInfoPanel
+│   │   ├── tzcombobox.py         # FilteringCombobox widget
+│   │   └── datepicker.py         # Calendar popup widget
 ├── test/
 │   ├── sdcard.img.gz      # Compressed sparse exFAT test image (12 files)
 │   ├── sdcard.img           # Gitignored — decompressed on first test run
@@ -394,6 +402,7 @@ $COV/bin/coverage-report
 │   ├── test_calibration_panel.py
 │   ├── test_editor.py
 │   ├── test_gps.py
+│   ├── test_gui_structure.py
 │   ├── test_dst_fold.py
 │   ├── test_datepicker.py
 │   ├── test_autocomplete.py
