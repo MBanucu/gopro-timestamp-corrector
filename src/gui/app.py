@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 import calibration
+import history
 from gui.cal_file import CalibrationFileBar
 from gui.calibration_panel import CalibrationPanel, compute_delta
 from gui.file_table import FileSetTable
@@ -217,9 +218,24 @@ class ToolGUI:
                         self.root.after(0, self.log, f'\nDRY RUN - {len(jobs)} would be processed')
                     else:
                         delta = self.cal_panel.manual_delta
+                        decisions = self.file_table.get_decisions()
+                        history_meta = {
+                            'fix_btime': self.btime_var.get() or 'off',
+                            'global_delta': str(delta) if delta else None,
+                            'sets': {
+                                sid: {'strategy': d['strategy']}
+                                for sid, d in decisions.items()
+                            },
+                        }
+                        run_dir = history.begin_run(target_dir, history_meta)
+                        history.capture_before(run_dir, [j.path for j in jobs])
+
                         with Writer(target_dir, fix_btime=self.btime_var.get(),
                                     delta=delta, dry_run=False) as w:
                             summary = w.write_all(jobs)
+
+                        history.capture_after(run_dir, [j.path for j in jobs])
+                        history.finalize_run(run_dir, summary.written, summary.skipped, summary.errors)
                         self.root.after(0, self.log, f'\n{summary.written} corrected')
                 else:
                     data = self.get_cal_data()
@@ -276,10 +292,21 @@ class ToolGUI:
             try:
                 target_dir = Path(self.dir_var.get())
                 delta = self.cal_panel.manual_delta
+
+                history_meta = {
+                    'partial_write': label,
+                    'delta': str(delta) if delta else None,
+                }
+                run_dir = history.begin_run(target_dir, history_meta)
+                history.capture_before(run_dir, [j.path for j in jobs])
+
                 with Writer(target_dir, fix_btime='off', delta=delta, dry_run=False) as w:
                     for job in jobs:
                         self.root.after(0, self.log, str(job.path.name))
                         write_fn(w, job)
+
+                history.capture_after(run_dir, [j.path for j in jobs])
+                history.finalize_run(run_dir, len(jobs))
                 self.root.after(0, self.log, f'\n{label} done \u2014 {len(jobs)} files')
                 self.root.after(0, self.on_finish, 0)
             except Exception as e:

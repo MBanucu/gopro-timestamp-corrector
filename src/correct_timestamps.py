@@ -13,6 +13,7 @@ import preview
 import resolve
 import media
 import btime
+import history
 from writer import Writer, WriteJob
 
 
@@ -207,8 +208,25 @@ def main():
 
     # ── 5. Write plan via writer (shared module, no recalculation) ──
     if pending_jobs and not args.dry_run:
+        history_meta = {
+            'global_delta': str(global_delta) if global_delta else None,
+            'fix_btime': args.fix_btime or 'off',
+            'sets': {
+                pr.set_id: {
+                    'strategy': pr.strategy,
+                    'delta': str(pr.applied_delta) if pr.applied_delta else None,
+                }
+                for pr in plan
+            },
+        }
+        run_dir = history.begin_run(target, history_meta)
+        history.capture_before(run_dir, [j.path for j in pending_jobs])
+
         with Writer(target, fix_btime=args.fix_btime, delta=global_delta, dry_run=False) as w:
             summary = w.write_all(pending_jobs)
+
+        history.capture_after(run_dir, [j.path for j in pending_jobs])
+        history.finalize_run(run_dir, summary.written, summary.skipped, summary.errors)
         for job in pending_jobs:
             save_manifest(target, job.path.name)
         processed = len(pending_jobs)
