@@ -257,9 +257,12 @@ class TestFuseFaketimeBtime(unittest.TestCase):
         run(['sudo', 'mkdir', '-p', mount_path], check=True)
 
         offset = format_delta(delta)
+        uid = os.getuid()
+        gid = os.getgid()
         proc = subprocess.Popen(
             ['sudo', 'faketime', '-f', offset,
              'mount.exfat-fuse', self.loop_dev, mount_path,
+             '-o', f'uid={uid}', '-o', f'gid={gid}',
              '-o', 'allow_other', '-o', 'nonempty', '-o', 'auto_unmount'],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
 
@@ -366,6 +369,62 @@ class TestFuseFaketimeBtime(unittest.TestCase):
         self.assertLessEqual(
             diff, 5,
             f'btime={btime} expected≈{expected} diff={diff}s')
+
+    def test_os_utime_does_not_change_existing_file_btime(self):
+        """os.utime() on an existing file under FUSE+faketime does not
+        change its btime — the btime was set once at file creation and
+        utimensat only touches atime/mtime, not creation time.
+
+        This confirms that for EXISTING GoPro files (the primary use
+        case), the FUSE+faketime approach does NOT correct btime. Only
+        new files created under the faked clock get the shifted btime.
+        """
+        name = 'utime_btime_test.txt'
+        delta_create = timedelta(hours=-2)
+
+        # ── 1. Create file under FUSE+faketime with delta_create ──────
+        def create_file(mount):
+            Path(os.path.join(mount, name)).write_text('test data')
+
+        self._fuse_cycle(delta_create, create_file)
+
+        kernel_path = os.path.join(self.mount_point, name)
+        btime_after_create = read_btime(kernel_path)
+        self.assertIsNotNone(btime_after_create,
+                             'btime should be readable after creation')
+
+        now = int(time.time())
+        expected_btime = now + int(delta_create.total_seconds())
+        self.assertLessEqual(
+            abs(btime_after_create - expected_btime), 5,
+            f'btime after create={btime_after_create} '
+            f'expected≈{expected_btime}')
+
+        # ── 2. Remount with DIFFERENT delta, then os.utime() ──────────
+        delta_utime = timedelta(hours=+3)
+
+        def modify_file(mount):
+            target_ts = time.time()
+            os.utime(os.path.join(mount, name),
+                     (target_ts, target_ts))
+
+        self._fuse_cycle(delta_utime, modify_file)
+
+        # ── 3. Verify btime did NOT change ────────────────────────────
+        btime_after_utime = read_btime(kernel_path)
+        self.assertIsNotNone(btime_after_utime,
+                             'btime should be readable after utime')
+
+        drift = btime_after_utime - btime_after_create
+        self.assertEqual(
+            drift, 0,
+            f'btime changed by {drift}s after os.utime() under '
+            f'FUSE+faketime (from {btime_after_create} to '
+            f'{btime_after_utime}). This means os.utime() on existing '
+            f'files CAN modify btime, contradicting the hypothesis.')
+
+        # Cleanup
+        run(['sudo', 'rm', '-f', kernel_path])
 
 
 if __name__ == '__main__':
