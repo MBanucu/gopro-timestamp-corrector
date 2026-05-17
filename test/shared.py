@@ -4,6 +4,15 @@ import gzip
 import os
 from pathlib import Path
 
+HAS_TK = False
+try:
+    import tkinter as tk
+    _r = tk.Tk()
+    _r.destroy()
+    HAS_TK = True
+except Exception:
+    pass
+
 
 TEST_ZONES = [
     'EET', 'EST', 'Europe/Amsterdam', 'Europe/Berlin',

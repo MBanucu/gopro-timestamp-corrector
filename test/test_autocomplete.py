@@ -1,12 +1,16 @@
 """Tests for autocomplete behavior (first-match with common-prefix fallback)."""
 
 import unittest
-import tkinter as tk
-from tkinter import ttk
 
-from test.shared import make_cb
+from shared import HAS_TK
+
+if HAS_TK:
+    import tkinter as tk
+    from tkinter import ttk
+    from test.shared import make_cb
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestAutocomplete(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()

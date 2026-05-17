@@ -1,12 +1,16 @@
 """Tests for DST fold detection in the calibration editor."""
 
 import unittest
-import tkinter as tk
-from tkinter import ttk
 
-from gui.editor import CalibrationEditor
+from shared import HAS_TK
+
+if HAS_TK:
+    import tkinter as tk
+    from tkinter import ttk
+    from gui.editor import CalibrationEditor
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestDSTFold(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()

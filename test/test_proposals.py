@@ -1,11 +1,15 @@
 """Tests for the proposal (filter) list."""
 
 import unittest
-import tkinter as tk
 
-from test.shared import make_cb
+from shared import HAS_TK
+
+if HAS_TK:
+    import tkinter as tk
+    from test.shared import make_cb
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestProposals(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()

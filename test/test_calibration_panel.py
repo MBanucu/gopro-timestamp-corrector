@@ -4,9 +4,13 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import tkinter as tk
+from shared import HAS_TK
+
+if HAS_TK:
+    import tkinter as tk
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestAutoCalibrateGUI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

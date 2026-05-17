@@ -1,13 +1,17 @@
 """Tests for the CalibrationEditor widget."""
 import unittest
 import zoneinfo
-import tkinter as tk
-from tkinter import ttk
 from datetime import datetime, timezone
 
-from gui.editor import CalibrationEditor
+from shared import HAS_TK
+
+if HAS_TK:
+    import tkinter as tk
+    from tkinter import ttk
+    from gui.editor import CalibrationEditor
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestCalibrationEditor(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()

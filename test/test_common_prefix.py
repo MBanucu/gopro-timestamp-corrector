@@ -1,12 +1,16 @@
 """Tests for _common_prefix()."""
 
 import unittest
-import tkinter as tk
 
-from gui.tzcombobox import FilteringCombobox
-from test.shared import TEST_ZONES
+from shared import HAS_TK
+
+if HAS_TK:
+    import tkinter as tk
+    from gui.tzcombobox import FilteringCombobox
+    from test.shared import TEST_ZONES
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestCommonPrefix(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()

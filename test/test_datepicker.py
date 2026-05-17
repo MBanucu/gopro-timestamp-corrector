@@ -1,13 +1,17 @@
 """Tests for DatePicker and DateTimePicker."""
 
 import unittest
-import tkinter as tk
-from tkinter import ttk
 from datetime import date, datetime
 
-from gui.datepicker import DatePicker, DateTimePicker
+from shared import HAS_TK
+
+if HAS_TK:
+    import tkinter as tk
+    from tkinter import ttk
+    from gui.datepicker import DatePicker, DateTimePicker
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestDatePicker(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()
@@ -76,6 +80,7 @@ class TestDatePicker(unittest.TestCase):
         self.assertEqual(self.called, [date(2026, 4, 1)])
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestDateTimePicker(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()

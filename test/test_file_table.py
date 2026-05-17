@@ -1,14 +1,17 @@
 """Tests for the FileSetTable GUI widget."""
 
 import unittest
-import tkinter as tk
-from tkinter import ttk
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from shared import HAS_TK
 from analysis import AnalysisResult, FileSet, FileInfo
-from gui.file_table import FileSetTable
 from preview import SetDecision, STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP
+
+if HAS_TK:
+    import tkinter as tk
+    from tkinter import ttk
+    from gui.file_table import FileSetTable
 
 
 def _make_fs(set_id, exts, has_gps=True, emb_time=None, mtime=None):
@@ -31,6 +34,7 @@ def _make_fs(set_id, exts, has_gps=True, emb_time=None, mtime=None):
     return FileSet(id=set_id, files=files)
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestFileSetTable(unittest.TestCase):
     def setUp(self):
         self.root = tk.Tk()

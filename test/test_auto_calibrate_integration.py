@@ -2,14 +2,17 @@
 import subprocess
 import re
 import shutil
-import tkinter as tk
 import unittest
 from datetime import timezone
 from pathlib import Path
 
-from shared import decompress_sparse_image
+from shared import HAS_TK, decompress_sparse_image
+
+if HAS_TK:
+    import tkinter as tk
 
 
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestAutoCalibrateIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
