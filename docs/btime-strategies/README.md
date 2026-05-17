@@ -10,16 +10,22 @@ This document catalogs all known strategies for modifying btime on exFAT filesys
 
 1. [FUSE + faketime (Current Approach)](#1-fuse--faketime-current-approach)
 2. [Provenance Time — ptime syscall (Linux 6.17+)](#2-provenance-time--ptime-syscall-linux-617)
-3. [Raw Block Device Manipulation](#3-raw-block-device-manipulation)
-4. [System Clock Manipulation](#4-system-clock-manipulation)
-5. [Custom FUSE Wrapper](#5-custom-fuse-wrapper)
-6. [Kernel exFAT ioctl](#6-kernel-exfat-ioctl)
-7. [Windows / macOS Interop](#7-windows--macos-interop)
-8. [Comparison Matrix](#8-comparison-matrix)
+3. [Raw Block Device Manipulation (Theoretical)](#3-raw-block-device-manipulation-theoretical)
+4. [**Raw exFAT Block Manipulation (Recommended)**](#8-raw-exfat-block-manipulation-recommended)
+5. [System Clock Manipulation](#4-system-clock-manipulation)
+6. [Custom FUSE Wrapper](#5-custom-fuse-wrapper)
+7. [Kernel exFAT ioctl](#6-kernel-exfat-ioctl)
+8. [Windows / macOS Interop](#7-windows--macos-interop)
+9. [Comparison Matrix](#8-comparison-matrix)
 
 ---
 
 ## 1. FUSE + faketime (Current Approach)
+
+> **⚠️ Important limitation discovered during testing**  
+> The FUSE+faketime strategy only sets btime on **new files created** under the faked clock. For **existing files** whose mtime is changed via `utimensat` (the actual GoPro correction use case), the btime is **not updated**. The creation time of an existing file is set once at file creation and remains immutable even through the FUSE driver.  
+> [Integration test `test_os_utime_does_not_change_existing_file_btime`](../test/test_fuse_faketime.py) proves this — an existing file's btime is unchanged after `os.utime()` under a different faketime offset.  
+> As a result, this strategy is **not suitable** for correcting btime on existing GoPro files. Use the [Raw exFAT Block](#8-raw-exfat-block-manipulation-recommended) strategy instead.
 
 ### How it works
 
@@ -262,7 +268,91 @@ def set_btime_exfat(device, file_path, target_ts):
 
 ---
 
-## 4. System Clock Manipulation
+## 4. Raw exFAT Block Manipulation (Recommended)
+
+### How it works
+
+This strategy directly modifies the creation time field in a file's exFAT directory entry
+on the block device, bypassing the filesystem driver entirely. It is the **only approach
+that correctly sets btime on existing files** without unmounting, without `faketime`,
+and without disrupting the system clock.
+
+1. **Resolve the block device** — uses `/proc/partitions` to map the file's device number
+   to a block device path (e.g. `/dev/sda1` or `/dev/loop0`)
+2. **Parse the boot sector** — reads the first 512 bytes of the device to extract volume
+   parameters: cluster size, FAT offset, cluster heap offset, and root directory cluster
+3. **Traverse the directory tree** — follows the FAT cluster chain to navigate through
+   directory components (`DCIM/100GOPRO/`) until the target file's directory entry set is
+   located
+4. **Read the entry set** — the file's metadata is stored as a set of consecutive 32-byte
+   entries:
+   - **File Directory Entry** (type `0x85`): contains creation time at offsets `0x08`–`0x0D`
+   - **Stream Extension Entry** (type `0xC0`): contains name length, first cluster, file size
+   - **File Name Entries** (type `0xC1`): contain the filename as UTF-16LE characters
+5. **Update creation time** — encodes the target UTC datetime into exFAT date/time/ms
+   fields (2-second granularity + 10ms increments) and writes them into the entry
+6. **Recalculate the set checksum** — CRC-16/CCITT over all entries in the set (with the
+   checksum field itself zeroed during calculation)
+7. **Write back the modified cluster** — only the single cluster containing the modified
+   entry is written to the block device
+8. **Flush caches** — `sync` + `echo 3 > /proc/sys/vm/drop_caches` forces the kernel to
+   re-read the modified blocks from disk
+
+### Key detail
+
+exFAT creation time is encoded in three fields within the File Directory Entry:
+
+| Field | Offset | Size | Encoding |
+|-------|--------|------|----------|
+| `CreateDate` | 0x08 | 2 bytes | `(year-1980)<<9 \| month<<5 \| day` |
+| `CreateTime` | 0x0A | 2 bytes | `hour<<11 \| minute<<5 \| second//2` |
+| `CreateTimeMs` | 0x0C | 1 byte | `(sec%2)*100 + ms//10` (0–199, 10ms units) |
+| `CreateTimezone` | 0x0D | 1 byte | `0x00` = UTC |
+
+The checksum is CRC-16/CCITT (polynomial `0x1021`) over all entries in the set, with
+the checksum field itself zeroed during the calculation.
+
+### Requirements
+
+| Item | Notes |
+|------|-------|
+| `sudo` | For block device read/write via `dd` |
+| Device node | The file must reside on a block device with exFAT filesystem |
+| exFAT structure knowledge | Encoded in `_fix_exfat_raw` in `src/btime.py` |
+
+### Pros
+
+- **Works on existing files** — correctly sets btime on files that already exist (unlike
+  FUSE+faketime which only affects new files)
+- **No unmount needed** — filesystem remains mounted and accessible during correction
+- **No external tools** — no `faketime`, no `mount.exfat-fuse`, no NTP restart
+- **No system disruption** — only the target file's creation time is modified
+- **Batchable** — each file is a single cluster write; no per-cycle overhead
+- **No kernel version dependency** — works on any exFAT-capable kernel (5.7+)
+- **No policy dependencies** — no `allow_other` in `/etc/fuse.conf` required
+
+### Cons
+
+- Requires block device access (`sudo`)
+- Direct block writes while mounted carry inherent risk (though the risk is minimal
+  when modifying a single file's metadata cluster)
+- Only works on exFAT — not applicable to ext4, btrfs, NTFS, etc.
+- Filenames are assumed to be ASCII-compatible (true for GoPro files; full UTF-16
+  support is implemented)
+
+### Implementation
+
+The code lives entirely in `src/btime.py`:
+
+- `_fix_exfat_raw(filepath, dt, dry_run)` — main entry point
+- `_exfat_parse_boot(device)` — parses boot sector
+- `_exfat_find_in_dir(...)` — scans directory cluster chain for a matching filename
+- `_exfat_entry_set_crc(entries)` — recalculates CRC-16/CCITT
+- `_exfat_encode_time(dt)` — encodes UTC datetime into exFAT fields
+
+---
+
+## 5. System Clock Manipulation
 
 ### How it works
 
@@ -302,7 +392,7 @@ The most brute-force approach: temporarily rewind the system clock, create/modif
 
 ---
 
-## 5. Custom FUSE Wrapper
+## 6. Custom FUSE Wrapper
 
 ### How it works
 
@@ -341,7 +431,7 @@ A lighter variant: use **bindfs** with a custom timestamp map, though bindfs doe
 
 ---
 
-## 6. Kernel exFAT ioctl
+## 7. Kernel exFAT ioctl
 
 ### How it works
 
@@ -390,7 +480,7 @@ ioctl(fd, EXFAT_IOC_SET_CRTIME, &desired_timespec);
 
 ---
 
-## 7. Windows / macOS Interop
+## 8. Windows / macOS Interop
 
 For completeness: the simplest practical strategy is often to use an OS that natively supports setting creation time.
 
@@ -428,13 +518,14 @@ SetFile -d "01/01/2016 00:00:00" file.mp4
 
 ---
 
-## 8. Comparison Matrix
+## 9. Comparison Matrix
 
 | Strategy | Complexity | Risk | Requires Root | Works Mounted | Kernel Deps | External Tools | Ready |
 |----------|-----------|------|-------------|--------------|------------|---------------|-------|
-| **FUSE + faketime** | Medium | Medium | Yes (unmount) | No | No | libfaketime, mount.exfat-fuse | ✅ |
-| **ptime syscall** | Low | Low | No | Yes | ≥ 6.17 + patches | Custom tool (`utimensat`+AT_UTIME_PTIME) | 🚧 Patches submitted |
-| **Raw block** | High | High | Yes | Not recommended | No | Custom tool | ❌ |
+| **FUSE + faketime** | Medium | Medium | Yes (unmount) | No | No | libfaketime, mount.exfat-fuse | ⚠️ New files only |
+| **ptime syscall** | Low | Low | No | Yes | ≥ 6.17 + patches | Custom tool | 🚧 Patches submitted |
+| **Raw exFAT block** | High | Low | Yes | Yes | No | None (built-in) | ✅ |
+| **Raw block (theoretical)** | High | High | Yes | Not recommended | No | Custom tool | ❌ |
 | **Clock manipulation** | Low | Very High | Yes | Yes | No | date, timedatectl | ✅ |
 | **Custom FUSE** | High | Low | Maybe (mount) | Yes | No | FUSE library | ❌ |
 | **Kernel ioctl** | Medium | Low | No | Yes | Custom patch | Custom tool | ❌ |
@@ -448,10 +539,24 @@ SetFile -d "01/01/2016 00:00:00" file.mp4
 
 For the **GoPro timestamp corrector** use case:
 
-1. **Continue using FUSE + faketime** as the primary strategy for exFAT. It works reliably, is already implemented, and has no kernel version dependency.
+1. **Use raw exFAT block manipulation as the primary strategy** for exFAT. It is the only
+   approach that correctly sets btime on existing files, works mounted, has no external
+   tool dependencies, and does not disrupt the system. It is already implemented and
+   passes integration tests.
 
-2. **Add ptime support as a future backend** once the ptime patches land in a stable kernel that NixOS and major distros ship. The API is cleaner and requires no unmount. When available, it should become the default for kernel-mode exFAT mounts, with FUSE+faketime as fallback.
+2. **Use debugfs** for ext4 filesystems (SD cards formatted as ext4 or internal storage).
 
-3. **Raw block manipulation** and **kernel ioctl** are overkill for this use case. They may be justified for a dedicated mass-correction tool but not for a general-purpose consumer utility.
+3. **Use FUSE + faketime** only as a fallback when raw block access is unavailable (e.g.
+   the user lacks `sudo` for block device writes). Note that FUSE+faketime only affects
+   new files, not existing ones.
 
-4. **Clock manipulation** should remain as the last-resort fallback for filesystems that support neither FUSE nor ptime.
+4. **Add ptime support as a future backend** once the ptime patches land in a stable
+   kernel that NixOS and major distros ship. The API is cleaner and requires neither
+   `sudo` nor root. When available, it should become the default for exFAT, with raw
+   block manipulation as fallback.
+
+5. **Clock manipulation** should remain as the last-resort fallback for filesystems that
+   support none of the above.
+
+6. **Raw block manipulation (theoretical)** and **kernel ioctl** remain as documented
+   but are superseded by the implemented raw exFAT block approach.
