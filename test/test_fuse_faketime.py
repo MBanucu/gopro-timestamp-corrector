@@ -212,9 +212,19 @@ class TestFuseFaketimeBtime(unittest.TestCase):
         """Make sure the loop device is mounted at self.mount_point."""
         if not self.mount_point:
             self.skipTest('No mount point')
-        Path(self.mount_point).mkdir(parents=True, exist_ok=True)
-        if not os.path.ismount(self.mount_point):
-            r = run(['sudo', 'mount', self.loop_dev, self.mount_point])
+        mp = Path(self.mount_point)
+        try:
+            mp.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            run(['sudo', 'umount', '-l', str(mp)])
+            mp.mkdir(parents=True, exist_ok=True)
+        try:
+            mounted = os.path.ismount(str(mp))
+        except OSError:
+            run(['sudo', 'umount', '-l', str(mp)])
+            mounted = False
+        if not mounted:
+            r = run(['sudo', 'mount', self.loop_dev, str(mp)])
             if r.returncode != 0:
                 self.skipTest(f'Failed to restore mount: {r.stderr.strip()}')
 
@@ -243,7 +253,7 @@ class TestFuseFaketimeBtime(unittest.TestCase):
         proc = subprocess.Popen(
             ['sudo', 'faketime', '-f', offset,
              'mount.exfat-fuse', self.loop_dev, mount_path,
-             '-o', 'allow_other', '-o', 'nonempty'],
+             '-o', 'allow_other', '-o', 'nonempty', '-o', 'auto_unmount'],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
 
         for _ in range(5000):
