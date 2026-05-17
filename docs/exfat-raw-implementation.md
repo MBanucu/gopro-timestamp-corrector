@@ -448,7 +448,7 @@ The `exfat_raw` method is registered in four places:
 | `fix_file('exfat_raw', ...)` | Routes to `_fix_exfat_raw()` |
 | `setup/teardown` | No-op for `exfat_raw` (no setup needed) |
 
-Note: `resolve_method('auto', 'exfat')` still returns `'fuse'` — the user must explicitly request `exfat_raw` until ptime is available and the auto-detection logic is updated.
+Note: `resolve_method('auto', 'exfat')` returns `'exfat_raw'` since May 2026, making it the default for exFAT. Explicitly requesting `'fuse'` or `'clock'` still works for manual override.
 
 ---
 
@@ -526,7 +526,7 @@ These test the pure-logic functions of `btime.py` without requiring block device
 
 | Test | What it validates |
 |------|-------------------|
-| `test_resolve_method_auto_exfat` | `resolve_method('auto', 'exfat')` returns `'fuse'` |
+| `test_resolve_method_auto_exfat` | `resolve_method('auto', 'exfat')` returns `'exfat_raw'` |
 | `test_resolve_method_explicit` | `resolve_method('exfat_raw', 'exfat')` returns `'exfat_raw'` |
 | `test_needs_processing_after` | `needs_processing_after('exfat_raw')` returns `True` |
 | `test_fix_file_dry_run_clock` | `fix_file('exfat_raw', ...)` doesn't crash on dry run |

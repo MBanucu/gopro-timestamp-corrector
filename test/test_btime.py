@@ -93,7 +93,7 @@ class TestBtimePureFunctions(unittest.TestCase):
         self.assertEqual(btime.resolve_method('auto', 'ext4'), 'debugfs')
 
     def test_resolve_method_auto_exfat(self):
-        self.assertEqual(btime.resolve_method('auto', 'exfat'), 'fuse')
+        self.assertEqual(btime.resolve_method('auto', 'exfat'), 'exfat_raw')
 
     def test_resolve_method_auto_vfat(self):
         self.assertEqual(btime.resolve_method('auto', 'vfat'), 'fuse')

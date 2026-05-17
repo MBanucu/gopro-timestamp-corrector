@@ -48,7 +48,9 @@ def resolve_method(requested, fs_type):
         return 'clock'
     if fs_type == 'ext4':
         return 'debugfs'
-    elif fs_type in ('exfat', 'vfat', 'msdos'):
+    elif fs_type == 'exfat':
+        return 'exfat_raw'
+    elif fs_type in ('vfat', 'msdos'):
         return 'fuse'
     return 'clock'
 
