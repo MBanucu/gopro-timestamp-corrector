@@ -11,10 +11,12 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 import calibration
 import history
-from gui.cal_file import CalibrationFileBar
-from gui.calibration_panel import CalibrationPanel, compute_delta
-from gui.file_table import FileSetTable
 from writer import Writer, WriteJob
+from gui.sidebar import Sidebar
+from gui.steps.directory import StepDirectory
+from gui.steps.calibration import StepCalibration
+from gui.steps.review import StepReview
+from gui.steps.run import StepRun
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -33,179 +35,178 @@ class ToolGUI:
         style = ttk.Style()
         style.theme_use('clam')
 
-        main = ttk.Frame(root, padding=12)
+        main = ttk.Frame(root, padding=8)
         main.pack(fill=tk.BOTH, expand=True)
 
-        # --- Directory ---
-        row = ttk.Frame(main)
-        row.pack(fill=tk.X, pady=(0, 4))
-        ttk.Label(row, text='Directory:', width=14).pack(side=tk.LEFT)
-        self.dir_var = tk.StringVar(value=str(Path.cwd()))
-        ttk.Entry(row, textvariable=self.dir_var).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        ttk.Button(row, text='Browse...', command=self.browse_dir, width=10).pack(side=tk.RIGHT, padx=(0, 2))
-        self.analyze_btn = ttk.Button(row, text='Analyze', command=self.analyze_files, width=10)
-        self.analyze_btn.pack(side=tk.RIGHT)
-
-        # --- Calibration file ---
-        self.cal_bar = CalibrationFileBar(main, on_set_data=self.set_cal_data,
-                                           log_fn=self.log)
-        self.cal_bar.pack(fill=tk.X, pady=4)
-
-        # --- Calibration panel (notebook + GPS + delta) ---
-        self.cal_panel = CalibrationPanel(
+        # --- Sidebar ---
+        self.sidebar = Sidebar(
             main,
-            get_dir_fn=lambda: self.dir_var.get(),
+            on_step_click=self._on_step_click,
+            on_history=self._open_history,
+        )
+        self.sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
+
+        # --- Content area ---
+        self.content = ttk.Frame(main)
+        self.content.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # --- Step panels ---
+        self.step1 = StepDirectory(
+            self.content,
+            on_analyzed=self._on_analyzed,
+            log_fn=self.log,
+            set_status_fn=self.set_status,
+        )
+        self.step2 = StepCalibration(
+            self.content,
+            get_dir_fn=lambda: self.step1.dir_var.get(),
             log_fn=self.log,
             set_status_fn=self.set_status,
             delta_changed_cb=self._on_delta_changed,
         )
-        self.cal_panel.pack(fill=tk.X)
+        self.step3 = StepReview(
+            self.content,
+            manual_delta_changed_cb=self._on_strategy_changed,
+        )
+        self.step4 = StepRun(
+            self.content,
+            log_fn=self.log,
+            set_status_fn=self.set_status,
+        )
 
-        # --- File Analysis Table ---
-        sep = ttk.Separator(main, orient=tk.HORIZONTAL)
-        sep.pack(fill=tk.X, pady=4)
+        # --- Cross-step wiring ---
+        self.step1.set_on_set_cal_data(lambda data: self.step2.cal_panel.set_data(data))
+        self.step2.set_on_next(self._advance_2to3)
+        self.step2.set_on_skip(self._skip_to_run)
+        self.step3.set_on_back(lambda: self._show_step(2))
+        self.step3.set_on_next(self._advance_3to4)
+        self.step4.set_on_back(self._go_back_from_run)
+        self.step4.set_commands(
+            apply_all=self.run_tool,
+            exif=self.run_exif,
+            mtime=self.run_mtime,
+            btime=self.run_btime,
+            cancel=self.cancel_run,
+        )
 
-        table_frame = ttk.LabelFrame(main, text='File Analysis', padding=4)
-        table_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 4))
+        # --- Navigation state ---
+        self._current_step = 1
+        self._step_completed = [False] * 5  # 1-indexed
+        self._step_frames = [None, self.step1, self.step2, self.step3, self.step4]
 
-        self.file_table = FileSetTable(table_frame, manual_delta_changed_cb=self._on_strategy_changed)
-        self.file_table.pack(fill=tk.BOTH, expand=True)
-
-        # --- Options ---
-        opt = ttk.LabelFrame(main, text='Options', padding=8)
-        opt.pack(fill=tk.X, pady=(0, 6))
-
-        btime_row = ttk.Frame(opt)
-        btime_row.pack(fill=tk.X, pady=2)
-        ttk.Label(btime_row, text='Fix btime:', width=14).pack(side=tk.LEFT)
-        self.btime_var = tk.StringVar(value='off')
-        bm = ttk.Combobox(btime_row, textvariable=self.btime_var, state='readonly', width=14)
-        bm['values'] = ('off', 'auto', 'debugfs', 'fuse', 'clock')
-        bm.pack(side=tk.LEFT)
-        ttk.Label(btime_row, text='  ext4\u2192debugfs  exFAT\u2192fuse  fallback\u2192clock',
-                  foreground='gray').pack(side=tk.LEFT)
-
-        flags1 = ttk.Frame(opt)
-        flags1.pack(fill=tk.X, pady=2)
-        self.dry_run_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(flags1, text='Dry run', variable=self.dry_run_var).pack(side=tk.LEFT, padx=(0, 16))
-        self.force_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(flags1, text='Force (ignore manifest)', variable=self.force_var).pack(side=tk.LEFT)
-
-        # --- Run buttons ---
-        btn_row = ttk.Frame(main)
-        btn_row.pack(fill=tk.X, pady=4)
-        self.run_btn = ttk.Button(btn_row, text='Apply All', command=self.run_tool, width=12)
-        self.run_btn.pack(side=tk.LEFT)
-        self.exif_btn = ttk.Button(btn_row, text='Run exiftool', command=self.run_exif, width=12)
-        self.exif_btn.pack(side=tk.LEFT, padx=(4, 0))
-        self.mtime_btn = ttk.Button(btn_row, text='Adapt mtime', command=self.run_mtime, width=12)
-        self.mtime_btn.pack(side=tk.LEFT, padx=(4, 0))
-        self.btime_btn = ttk.Button(btn_row, text='Adapt btime', command=self.run_btime, width=12)
-        self.btime_btn.pack(side=tk.LEFT, padx=(4, 0))
-        self.cancel_btn = ttk.Button(btn_row, text='Cancel', command=self.cancel_run, width=10, state=tk.DISABLED)
-        self.cancel_btn.pack(side=tk.RIGHT)
-
-        # --- Output ---
-        out_frame = ttk.LabelFrame(main, text='Output', padding=4)
-        out_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 2))
-
-        self.output = scrolledtext.ScrolledText(out_frame, wrap=tk.WORD, font=('Consolas', 10),
-                                                 bg='#1e1e1e', fg='#d4d4d4', insertbackground='white',
-                                                 height=6)
-        self.output.pack(fill=tk.BOTH, expand=True)
-        self.output.config(state=tk.DISABLED)
-
-        # --- Status bar ---
-        self.status = ttk.Label(main, text='Ready', relief=tk.SUNKEN, anchor=tk.W, padding=(4, 2))
-        self.status.pack(fill=tk.X, pady=(4, 0))
+        self._show_step(1)
 
         root.bind('<Return>', lambda e: self.run_tool())
-        self.cal_bar.load_default()
+        self.step1.cal_bar.load_default()
 
-    # ----- Calibration file delegation -----
+    # ===================== Step Navigation =====================
 
-    def set_cal_data(self, data):
-        self.cal_panel.set_data(data)
+    def _show_step(self, n):
+        for i in range(1, 5):
+            self._step_frames[i].pack_forget()
+        self._current_step = n
+        self._step_frames[n].pack(fill=tk.BOTH, expand=True)
+        self.sidebar.update_steps(self._current_step, self._step_completed)
 
-    def get_cal_data(self):
-        return self.cal_bar.get_data()
+    def _advance_2to3(self):
+        self._step_completed[2] = True
+        self._show_step(3)
+
+    def _advance_3to4(self):
+        self._step_completed[3] = True
+        self._show_step(4)
+
+    def _skip_to_run(self):
+        self._step_completed[2] = True
+        self._step_completed[3] = True
+        self._show_step(4)
+
+    def _go_back_from_run(self):
+        self._show_step(3 if self._step_completed[3] else 2)
+
+    def _on_step_click(self, n):
+        if n == self._current_step:
+            return
+        if n < self._current_step:
+            self._show_step(n)
+            return
+        if self._current_step == 2:
+            if n == 4:
+                self._skip_to_run()
+            elif n == 3:
+                self._advance_2to3()
+            return
+        if n == self._current_step + 1 and self._step_completed[self._current_step]:
+            self._show_step(n)
+
+    # ===================== Analysis callback =====================
+
+    def _on_analyzed(self, result):
+        self.step3.load_analysis(result)
+        self._step_completed[1] = True
+        self._show_step(2)
+
+    # ===================== Calibration / Delta wiring =====================
 
     def _on_delta_changed(self, delta):
-        self.file_table.manual_delta = delta
+        self.step3.manual_delta = delta
 
     def _on_strategy_changed(self):
-        delta = self.cal_panel.manual_delta
+        delta = self.step2.manual_delta
         if delta is not None:
-            self.file_table.manual_delta = delta
+            self.step3.manual_delta = delta
 
-    # ----- Analyze -----
+    # ===================== History =====================
 
-    def analyze_files(self):
-        target_dir = self.dir_var.get()
+    def _open_history(self):
+        target_dir = self.step1.dir_var.get()
         if not target_dir:
+            messagebox.showinfo('History', 'Select a directory first.')
             return
-        target = Path(target_dir)
-        if not target.is_dir():
-            messagebox.showerror('Error', 'Directory does not exist.')
-            return
+        from gui.history_viewer import HistoryViewer
+        HistoryViewer(self.root, Path(target_dir))
 
-        import media
-        if not media.exiftool_available():
-            messagebox.showerror('Error', 'exiftool not found.')
-            return
+    # ===================== Log / Status (wired to step4) =====================
 
-        self.set_status('Analyzing files...')
+    def log(self, msg):
+        self.step4.output.config(state=tk.NORMAL)
+        self.step4.output.insert(tk.END, msg + '\n')
+        self.step4.output.see(tk.END)
+        self.step4.output.config(state=tk.DISABLED)
         self.root.update_idletasks()
 
-        import analysis as an_mod
-        try:
-            result = an_mod.analyze(target)
-            if result.total_files == 0:
-                messagebox.showinfo('Analysis', 'No media files found in this directory.')
-                self.set_status('Ready')
-                return
-            self.file_table.load_analysis(result)
-            delta = self.cal_panel.manual_delta
-            if delta is not None:
-                self.file_table.manual_delta = delta
-            self.log(f'Analysis: {len(result.sets)} file sets, {result.total_files} files')
-            for fs in result.sets:
-                gps = 'GPS' if fs.has_any_gps else 'no GPS'
-                self.log(f'  Set {fs.id}: {fs.kind} ({gps})')
-            self.set_status(f'Ready \u2014 {len(result.sets)} sets, {result.total_files} files')
-        except Exception as e:
-            messagebox.showerror('Analysis Error', str(e))
-            self.set_status('Error during analysis')
+    def set_status(self, msg):
+        self.step4.status.config(text=msg)
+        self.root.update_idletasks()
 
-    # ----- Run -----
+    # ===================== Run logic =====================
+
+    def get_cal_data(self):
+        return self.step1.cal_bar.get_data()
 
     def run_tool(self):
         if self.running:
             return
-        if self.file_table.analysis is None:
+        if self.step3.file_table.analysis is None:
             if not messagebox.askyesno('No Analysis',
                                        'No file analysis was performed.\nRun correction anyway?'):
                 return
 
         self.running = True
-        self._set_buttons(tk.DISABLED)
-        self.cancel_btn.config(state=tk.NORMAL)
-        self.output.config(state=tk.NORMAL)
-        self.output.delete(1.0, tk.END)
-        self.output.config(state=tk.DISABLED)
+        self.step4.set_buttons_enabled(False)
+        self.step4.set_cancel_enabled(True)
+        self.step4.clear_output()
 
         self.log('Applying corrections...')
         self.set_status('Running...')
 
         def run():
             try:
-                target_dir = Path(self.dir_var.get())
-                dry_run = self.dry_run_var.get()
+                target_dir = Path(self.step1.dir_var.get())
+                dry_run = self.step4.dry_run_var.get()
 
-                if self.file_table.analysis is not None:
-                    jobs = self.file_table.get_write_jobs()
+                if self.step3.file_table.analysis is not None:
+                    jobs = self.step3.get_write_jobs()
                     if not jobs:
                         self.root.after(0, self.log, 'No files to process.')
                         self.root.after(0, self.on_finish, 0)
@@ -215,12 +216,13 @@ class ToolGUI:
                         self.root.after(0, self.log, str(job.path.name))
 
                     if dry_run:
-                        self.root.after(0, self.log, f'\nDRY RUN - {len(jobs)} would be processed')
+                        self.root.after(0, self.log,
+                                        f'\nDRY RUN - {len(jobs)} would be processed')
                     else:
-                        delta = self.cal_panel.manual_delta
-                        decisions = self.file_table.get_decisions()
+                        delta = self.step2.manual_delta
+                        decisions = self.step3.get_decisions()
                         history_meta = {
-                            'fix_btime': self.btime_var.get() or 'off',
+                            'fix_btime': self.step4.btime_var.get() or 'off',
                             'global_delta': str(delta) if delta else None,
                             'sets': {
                                 sid: {'strategy': d['strategy']}
@@ -230,23 +232,27 @@ class ToolGUI:
                         run_dir = history.begin_run(target_dir, history_meta)
                         history.capture_before(run_dir, [j.path for j in jobs])
 
-                        with Writer(target_dir, fix_btime=self.btime_var.get(),
+                        with Writer(target_dir,
+                                    fix_btime=self.step4.btime_var.get(),
                                     delta=delta, dry_run=False) as w:
                             summary = w.write_all(jobs)
 
                         history.capture_after(run_dir, [j.path for j in jobs])
-                        history.finalize_run(run_dir, summary.written, summary.skipped, summary.errors)
-                        self.root.after(0, self.log, f'\n{summary.written} corrected')
+                        history.finalize_run(run_dir, summary.written,
+                                             summary.skipped, summary.errors)
+                        self.root.after(0, self.log,
+                                        f'\n{summary.written} corrected')
                 else:
                     data = self.get_cal_data()
-                    cmd = [sys.executable, str(SCRIPT_DIR / 'correct_timestamps.py'),
-                           self.dir_var.get()]
+                    cmd = [sys.executable,
+                           str(SCRIPT_DIR / 'correct_timestamps.py'),
+                           self.step1.dir_var.get()]
                     if dry_run:
                         cmd.append('--dry-run')
-                    btime = self.btime_var.get()
+                    btime = self.step4.btime_var.get()
                     if btime != 'off':
                         cmd.append(f'--fix-btime={btime}')
-                    cal_path = self.cal_bar.get_path()
+                    cal_path = self.step1.cal_bar.get_path()
                     if cal_path and Path(cal_path).exists():
                         cmd.extend(['--translation', cal_path])
                     else:
@@ -273,25 +279,23 @@ class ToolGUI:
     def _run_single_writer(self, label: str, write_fn):
         if self.running:
             return
-        jobs = self.file_table.get_write_jobs()
+        jobs = self.step3.get_write_jobs()
         if not jobs:
             self.log('No files to process.')
             return
 
         self.running = True
-        self._set_buttons(tk.DISABLED)
-        self.cancel_btn.config(state=tk.NORMAL)
-        self.output.config(state=tk.NORMAL)
-        self.output.delete(1.0, tk.END)
-        self.output.config(state=tk.DISABLED)
+        self.step4.set_buttons_enabled(False)
+        self.step4.set_cancel_enabled(True)
+        self.step4.clear_output()
 
         self.log(f'{label}...')
         self.set_status('Running...')
 
         def run():
             try:
-                target_dir = Path(self.dir_var.get())
-                delta = self.cal_panel.manual_delta
+                target_dir = Path(self.step1.dir_var.get())
+                delta = self.step2.manual_delta
 
                 history_meta = {
                     'partial_write': label,
@@ -300,14 +304,16 @@ class ToolGUI:
                 run_dir = history.begin_run(target_dir, history_meta)
                 history.capture_before(run_dir, [j.path for j in jobs])
 
-                with Writer(target_dir, fix_btime='off', delta=delta, dry_run=False) as w:
+                with Writer(target_dir, fix_btime='off', delta=delta,
+                            dry_run=False) as w:
                     for job in jobs:
                         self.root.after(0, self.log, str(job.path.name))
                         write_fn(w, job)
 
                 history.capture_after(run_dir, [j.path for j in jobs])
                 history.finalize_run(run_dir, len(jobs))
-                self.root.after(0, self.log, f'\n{label} done \u2014 {len(jobs)} files')
+                self.root.after(0, self.log,
+                                f'\n{label} done \u2014 {len(jobs)} files')
                 self.root.after(0, self.on_finish, 0)
             except Exception as e:
                 self.root.after(0, self.log, f'Error: {e}')
@@ -316,13 +322,16 @@ class ToolGUI:
         threading.Thread(target=run, daemon=True).start()
 
     def run_exif(self):
-        self._run_single_writer('Exiftool', lambda w, j: w.write_embedded_only(j))
+        self._run_single_writer('Exiftool',
+                                lambda w, j: w.write_embedded_only(j))
 
     def run_mtime(self):
-        self._run_single_writer('mtime', lambda w, j: w.write_mtime_only(j))
+        self._run_single_writer('mtime',
+                                lambda w, j: w.write_mtime_only(j))
 
     def run_btime(self):
-        self._run_single_writer('btime', lambda w, j: w.write_btime_only(j))
+        self._run_single_writer('btime',
+                                lambda w, j: w.write_btime_only(j))
 
     def validate_cal(self):
         data = self.get_cal_data()
@@ -331,18 +340,14 @@ class ToolGUI:
             return True
         err = rest[0] if rest else 'Invalid values'
         messagebox.showerror('Calibration error',
-                              f'Invalid calibration values:\n{err}')
+                             f'Invalid calibration values:\n{err}')
         return False
-
-    def _set_buttons(self, state):
-        for btn in (self.run_btn, self.exif_btn, self.mtime_btn, self.btime_btn):
-            btn.config(state=state)
 
     def on_finish(self, code):
         self.running = False
         self.process = None
-        self._set_buttons(tk.NORMAL)
-        self.cancel_btn.config(state=tk.DISABLED)
+        self.step4.set_buttons_enabled(True)
+        self.step4.set_cancel_enabled(False)
         if code == 0:
             self.set_status('Completed')
             self.log('\nDone.')
@@ -352,7 +357,7 @@ class ToolGUI:
         self.cleanup_temp()
 
     def cleanup_temp(self):
-        d = Path(self.dir_var.get())
+        d = Path(self.step1.dir_var.get())
         for name in ('.gui_calibration.json', '.gui_strategy.json'):
             p = d / name
             if p.exists():
@@ -364,25 +369,6 @@ class ToolGUI:
             self.log('\nCancelled')
             self.set_status('Cancelled')
         self.on_finish(-1)
-
-    # ----- Helpers -----
-
-    def log(self, msg):
-        self.output.config(state=tk.NORMAL)
-        self.output.insert(tk.END, msg + '\n')
-        self.output.see(tk.END)
-        self.output.config(state=tk.DISABLED)
-        self.root.update_idletasks()
-
-    def set_status(self, msg):
-        self.status.config(text=msg)
-        self.root.update_idletasks()
-
-    def browse_dir(self):
-        d = filedialog.askdirectory(initialdir=self.dir_var.get())
-        if d:
-            self.dir_var.set(d)
-            self.cal_bar.auto(d)
 
 
 def main():
