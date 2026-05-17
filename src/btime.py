@@ -110,6 +110,16 @@ def _fix_debugfs(filepath, dt, dry_run):
     print(f"    \u2713  btime corrected via debugfs")
 
 
+def _resolve_mount_point(path):
+    """Resolve the mount point for *path* using findmnt."""
+    r = subprocess.run(
+        ['findmnt', '-n', '-o', 'TARGET', '--target', str(path)],
+        capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        return r.stdout.strip()
+    return None
+
+
 def _setup_fuse(target_path, delta, dry_run):
     if not shutil.which('faketime'):
         print("  ! faketime not found. Install libfaketime or use --fix-btime clock.")
@@ -123,47 +133,68 @@ def _setup_fuse(target_path, delta, dry_run):
         print("  ! Could not resolve device. Falling back to clock method.")
         return None
 
+    mount_point = _resolve_mount_point(target_path)
+    if not mount_point:
+        print(f"  ! Could not resolve mount point for {target_path}.")
+        return None
+
     total_sec = int(delta.total_seconds())
     offset = str(total_sec)
 
     if dry_run:
-        print(f"    Would unmount {target_path} and remount with FUSE + faketime")
+        print(f"    Would unmount {mount_point} and remount with FUSE + faketime")
         return {'device': device, 'offset': offset}
 
     result = subprocess.run(
-        ['sudo', 'umount', str(target_path)],
+        ['sudo', 'umount', mount_point],
         capture_output=True, text=True
     )
     if result.returncode != 0:
         result = subprocess.run(
-            ['sudo', 'umount', '-l', str(target_path)],
+            ['sudo', 'umount', '-l', mount_point],
             capture_output=True, text=True
         )
     if result.returncode != 0:
         print(f"    ! Failed to unmount: {result.stderr.strip()}")
         return None
 
+    subprocess.run(['sudo', 'mkdir', '-p', mount_point], capture_output=True)
+
+    uid = os.getuid()
+    gid = os.getgid()
+
     proc = subprocess.Popen(
-        ['sudo', 'faketime', '-f', offset, 'mount.exfat-fuse', device, str(target_path),
+        ['sudo', 'faketime', '-f', offset, 'mount.exfat-fuse', device, mount_point,
+         '-o', f'uid={uid}', '-o', f'gid={gid}',
          '-o', 'allow_other', '-o', 'nonempty', '-o', 'auto_unmount'],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
     )
 
     for _ in range(5000):
         if proc.poll() is not None:
-            print(f"    ! FUSE mount failed")
-            subprocess.run(['sudo', 'mount', device, str(target_path)], capture_output=True)
+            err = proc.stderr.read().strip() if proc.stderr else ''
+            print(f"    ! FUSE mount failed: {err}")
+            subprocess.run(['sudo', 'mkdir', '-p', mount_point], capture_output=True)
+            r = subprocess.run(['sudo', 'mount', device, mount_point], capture_output=True, text=True)
+            if r.returncode != 0:
+                print(f"    ! Failed to remount kernel: {r.stderr.strip()}")
             return None
-        if os.path.ismount(str(target_path)):
+        if os.path.ismount(mount_point):
             break
         time.sleep(0.002)
     else:
-        print(f"    ! FUSE mount timed out")
-        subprocess.run(['sudo', 'mount', device, str(target_path)], capture_output=True)
+        err = proc.stderr.read().strip() if proc.stderr else ''
+        print(f"    ! FUSE mount timed out: {err}")
+        subprocess.run(['sudo', 'mkdir', '-p', mount_point], capture_output=True)
+        r = subprocess.run(['sudo', 'mount', device, mount_point], capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"    ! Failed to remount kernel: {r.stderr.strip()}")
         return None
 
     print(f"    \u2713  FUSE + faketime mounted ({delta})")
-    return {'proc': proc, 'mount': target_path, 'device': device}
+    if proc.stderr:
+        proc.stderr.close()
+    return {'proc': proc, 'mount': mount_point, 'device': device}
 
 
 def _teardown_fuse(ctx, dry_run):
@@ -181,6 +212,10 @@ def _teardown_fuse(ctx, dry_run):
         r = subprocess.run(['sudo', 'umount', '-f', str(mount)], capture_output=True)
         if r.returncode != 0:
             subprocess.run(['sudo', 'umount', '-l', str(mount)], capture_output=True)
+        device = ctx.get('device')
+        if device:
+            subprocess.run(['sudo', 'mkdir', '-p', mount], capture_output=True)
+            subprocess.run(['sudo', 'mount', device, mount], capture_output=True)
     print(f"    FUSE mount torn down.")
 
 
