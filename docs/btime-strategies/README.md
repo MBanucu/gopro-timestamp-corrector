@@ -350,6 +350,11 @@ The code lives entirely in `src/btime.py`:
 - `_exfat_entry_set_crc(entries)` — recalculates CRC-16/CCITT
 - `_exfat_encode_time(dt)` — encodes UTC datetime into exFAT fields
 
+For a comprehensive deep dive — including exFAT on-disk structures,
+CRC-16/CCITT details, the field offset bug that was discovered during
+development, and full test coverage — see
+[`../exfat-raw-implementation.md`](../exfat-raw-implementation.md).
+
 ---
 
 ## 5. System Clock Manipulation

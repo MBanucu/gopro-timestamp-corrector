@@ -37,8 +37,9 @@ and on the filesystem. This tool corrects them in one pass.
 - Corrects **filesystem timestamps** (mtime/atime)
 - Corrects **birth time** (btime) via:
   - `debugfs` on ext4 (Linux)
-  - `mount.exfat-fuse` + `faketime` on exFAT
-  - direct system‑clock manipulation (fallback)
+  - raw exFAT block manipulation (primary, for existing files)
+  - `mount.exfat-fuse` + `faketime` on exFAT (fallback, new files only)
+  - direct system‑clock manipulation (last resort)
 - **Daylight‑saving detection** — warns about ambiguous hours (fall‑back /
   spring‑forward) and shows fold selectors
 - **Idempotent** — a manifest file prevents double‑correction on re‑runs
@@ -249,14 +250,19 @@ loaded directly from the compiled TZif v2+ binary files on disk.
 ## Birth time (btime) support
 
 | Filesystem | Method | Sudo | Notes |
-|---|---|---|---|
+|---|---|---|---|---|
 | ext4 | `debugfs` | required | Sets inode crtime directly |
-| exFAT | FUSE + `faketime` | for mount | Unmounts kernel driver, remounts FUSE exFAT under faked time; auto-remounts kernel driver on teardown |
+| exFAT | raw block (`exfat_raw`) | required | Direct block device manipulation; works on existing files (recommended) |
+| exFAT | FUSE + `faketime` | for mount | Unmounts kernel driver, remounts FUSE exFAT under faked time; new files only |
 | any | system clock | required | Temporarily sets `CLOCK_REALTIME` (disruptive) |
 
 When `--fix-btime` is used, the tool auto‑detects the filesystem and picks
-the best method. On exFAT without FUSE tools it falls back gracefully to the
-clock method.
+the best method. On exFAT the raw block method is attempted first; without
+`sudo` it falls back to FUSE+faketime, and finally to the clock method.
+
+See [`docs/exfat-raw-implementation.md`](docs/exfat-raw-implementation.md)
+for a detailed report on the exFAT filesystem internals, the raw block
+implementation, and how it was tested.
 
 ## Architecture
 
@@ -320,7 +326,9 @@ PYTHONPATH=src python3 test/run_parallel.py -j 4 -v
 | Auto calibration (mock) | 4 unit | `test_calibration_panel.py` |
 | CLI integration | 1 integration | `test_img.py` |
 | Strategy manifest | 6 integration | `test_strategy.py` |
-| Btime | 14 unit/int | `test_btime.py` |
+| Btime (unit) | 14 unit | `test_btime.py` |
+| Btime (FUSE+faketime) | 4 integration | `test_fuse_faketime.py` |
+| Btime (exFAT raw) | 3 integration | `test_exfat_raw_btime.py` |
 | Auto calibration (real) | 3 integration | `test_auto_calibrate_integration.py` |
 | Full pipeline | 1 integration | `test_full_auto_integration.py` |
 
@@ -346,7 +354,7 @@ $COV/bin/coverage-report
 │   ├── writer.py           # Pure I/O dispatcher (takes WriteJob list)
 │   ├── media.py            # EXIF/QuickTime read/write via exiftool (batch JSON)
 │   ├── calibration.py      # JSON calibration load/save/parse
-│   ├── btime.py            # Birth‑time fixing methods
+│   ├── btime.py            # Birth‑time fixing methods (incl. exFAT raw block)
 │   ├── dst.py              # DST ambiguity detection
 │   ├── correct_timestamps.py  # CLI orchestrator
 │   ├── gui/
@@ -366,6 +374,9 @@ $COV/bin/coverage-report
 │   ├── perf_decompress.py   # Benchmark decompress + mount pipeline
 │   ├── run_parallel.py      # Parallel test runner
 │   ├── SPARSE_EXFAT_REPORT.md
+│   ├── debug_exfat.py       # Debug helper: raw hex dump of exFAT dir entries
+│   ├── test_exfat_raw_btime.py  # Integration tests for raw exFAT btime
+│   ├── test_fuse_faketime.py    # Integration tests for FUSE+faketime btime
 │   ├── test_analysis.py
 │   ├── test_preview.py
 │   ├── test_file_table.py
@@ -383,6 +394,9 @@ $COV/bin/coverage-report
 │   ├── test_common_prefix.py
 │   └── test_proposals.py
 └── docs/
+    ├── btime-strategies/
+    │   └── README.md       # All known btime-on-exFAT strategies
+    ├── exfat-raw-implementation.md  # Detailed exFAT impl. report
     └── images/
         └── Screenshot From 2026-05-15 22-41-44.png
 ```
