@@ -251,7 +251,7 @@ loaded directly from the compiled TZif v2+ binary files on disk.
 | Filesystem | Method | Sudo | Notes |
 |---|---|---|---|
 | ext4 | `debugfs` | required | Sets inode crtime directly |
-| exFAT | FUSE + `faketime` | for mount | Mounts FUSE exFAT driver under faked time |
+| exFAT | FUSE + `faketime` | for mount | Unmounts kernel driver, remounts FUSE exFAT under faked time; auto-remounts kernel driver on teardown |
 | any | system clock | required | Temporarily sets `CLOCK_REALTIME` (disruptive) |
 
 When `--fix-btime` is used, the tool auto‑detects the filesystem and picks

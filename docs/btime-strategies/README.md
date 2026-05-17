@@ -25,16 +25,18 @@ This document catalogs all known strategies for modifying btime on exFAT filesys
 
 The standard kernel-mode exFAT driver (`exfat.ko`, since Linux 5.7) does not allow userspace to influence btime. This approach side-steps it entirely by using the FUSE-based exFAT driver instead:
 
-1. **Unmount** the kernel-mode exFAT mount (`sudo umount /path`)
-2. **Compute** a time offset from the correction delta (e.g., the GoPro clock was off by 2 days 3 hours → offset `-2d -3h`)
-3. **Remount via FUSE** under `faketime`:
+1. **Resolve the mount point** — the target path may be a subdirectory (e.g. `/mnt/exfat/DCIM/100GOPRO`). The tool uses `findmnt --target <path>` to find the actual filesystem mount point before unmounting.
+2. **Unmount** the kernel-mode exFAT mount (`sudo umount <mount_point>`)
+3. **Compute** a time offset from the correction delta (e.g., the GoPro clock was off by 2 days 3 hours → offset `-183600` seconds)
+4. **Remount via FUSE** under `faketime`, passing the user's UID/GID so created files are not owned by root:
    ```
-   faketime -f -{days}d -{hours}h -{minutes}m \
-     mount.exfat-fuse <device> <path> \
-     -o allow_other -o nonempty
+   sudo faketime -f <offset_sec> \
+     mount.exfat-fuse <device> <mount_point> \
+     -o uid=<uid> -o gid=<gid> \
+     -o allow_other -o nonempty -o auto_unmount
    ```
-4. **Write corrected timestamps** — when the tool uses `touch` or `utimensat` to set mtime, the FUSE daemon writes the file. Since the daemon runs under `faketime`, its time-of-day queries return the shifted time. The kernel records this shifted time as the file's btime.
-5. **Teardown**: unmount the FUSE mount (`sudo umount`), kill the faketime process.
+5. **Write corrected timestamps** — when the tool uses `utimensat` to set mtime, the FUSE daemon writes the file. Since the daemon runs under `faketime`, its time-of-day queries return the shifted time. The kernel records this shifted time as the file's btime.
+6. **Teardown**: kill the faketime process, unmount the FUSE mount, then **remount the kernel exFAT driver** at the same mount point to restore normal access. Without this final remount step, the mount point would be left empty.
 
 ### Key detail
 
@@ -62,12 +64,12 @@ The standard kernel-mode exFAT driver (`exfat.ko`, since Linux 5.7) does not all
 - `sudo` required for unmount
 - FUSE may have performance overhead vs kernel driver
 - `libfaketime` must be installed
-- Fragile: if `faketime` crashes or the FUSE mount fails, the original mount must be restored
+- The mount point must be correctly resolved: a subdirectory path (e.g. `DCIM/100GOPRO`) does not equal the mount point. The tool uses `findmnt --target` to resolve this automatically.
 - On modern systems, the kernel exFAT driver may claim the device first; blacklisting the kernel module may be needed (`modprobe.blacklist=exfat`)
 
 ### References
 
-- `src/btime.py` lines 113–173 in this repository
+- `src/btime.py` lines 113–197 in this repository (`_resolve_mount_point`, `_setup_fuse`)
 - [`mount.exfat-fuse` man page](https://man.archlinux.org/man/extra/exfat-utils/mount.exfat-fuse.8.en)
 - [libfaketime upstream](https://github.com/wolfcw/libfaketime)
 
