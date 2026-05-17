@@ -144,6 +144,7 @@ class ToolGUI:
         self.step3.load_analysis(result)
         self._step_completed[1] = True
         self._show_step(2)
+        self.step2.auto_calibrate()
 
     # ===================== Calibration / Delta wiring =====================
 

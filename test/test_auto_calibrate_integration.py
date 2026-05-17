@@ -172,7 +172,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         panel, logged, delta_result = self._make_panel()
         pairs, median = self._collect_gps_pairs()
 
-        panel._auto_calibrate_from_gps()
+        panel.auto_calibrate()
         self.root.update_idletasks()
 
         best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
@@ -193,7 +193,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
 
         pairs, median = self._collect_gps_pairs()
 
-        panel._auto_calibrate_from_gps()
+        panel.auto_calibrate()
         self.root.update_idletasks()
 
         best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
@@ -236,7 +236,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         panel, logged, delta_result = self._make_panel()
         pairs, median = self._collect_gps_pairs()
 
-        panel._auto_calibrate_from_gps()
+        panel.auto_calibrate()
         self.root.update_idletasks()
 
         self.assertGreater(len(delta_result), 0, 'Delta callback should fire')

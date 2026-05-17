@@ -141,7 +141,7 @@ class CalibrationPanel(ttk.Frame):
         ttk.Button(gps_row, text='Single GPS...', command=self._auto_gps,
                    width=13).pack(side=tk.RIGHT, padx=(2, 0))
         ttk.Button(gps_row, text='Auto calibrate',
-                   command=self._auto_calibrate_from_gps,
+                   command=self.auto_calibrate,
                    width=13).pack(side=tk.RIGHT)
 
         # ── Preview / status line ──────────────────────────────
@@ -252,7 +252,7 @@ class CalibrationPanel(ttk.Frame):
         self._log(f'Extracted calibration from GPS: {gps_file.name}')
         self._set_status('Ready')
 
-    def _auto_calibrate_from_gps(self):
+    def auto_calibrate(self):
         target_dir = self._get_dir()
         if not target_dir:
             return

@@ -67,7 +67,7 @@ class TestAutoCalibrateGUI(unittest.TestCase):
     def _run_auto_calibrate(self):
         with patch.object(self.panel, '_auto_gps') as mock_fallback, \
              patch('pathlib.Path.is_dir', return_value=True):
-            self.panel._auto_calibrate_from_gps()
+            self.panel.auto_calibrate()
             self.root.update_idletasks()
             return mock_fallback
 
@@ -143,7 +143,7 @@ class TestAutoCalibrateGUI(unittest.TestCase):
         ):
             with patch.object(self.panel, '_auto_gps') as fallback, \
                  patch('pathlib.Path.is_dir', return_value=True):
-                self.panel._auto_calibrate_from_gps()
+                self.panel.auto_calibrate()
                 self.root.update_idletasks()
 
         self.assertFalse(fallback.called,
@@ -165,7 +165,7 @@ class TestAutoCalibrateGUI(unittest.TestCase):
         ):
             with patch.object(self.panel, '_auto_gps') as fallback, \
                  patch('pathlib.Path.is_dir', return_value=True):
-                self.panel._auto_calibrate_from_gps()
+                self.panel.auto_calibrate()
                 self.root.update_idletasks()
 
         fallback.assert_called_once()

@@ -42,6 +42,10 @@ class StepCalibration(ttk.Frame):
     def set_on_skip(self, cb):
         self._on_skip = cb
 
+    def auto_calibrate(self):
+        """Trigger auto-calibration from GPS data."""
+        self.cal_panel.auto_calibrate()
+
     @property
     def manual_delta(self):
         return self.cal_panel.manual_delta
