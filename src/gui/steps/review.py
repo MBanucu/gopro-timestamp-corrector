@@ -23,10 +23,10 @@ class StepReview(ttk.Frame):
         nav = ttk.Frame(self)
         nav.pack(fill=tk.X, pady=(8, 0))
         self._back_btn = ttk.Button(nav, text='\u2190 Back',
-                                    command=self._on_back, width=10)
+                                    command=lambda: self._on_back(), width=10)
         self._back_btn.pack(side=tk.LEFT)
         self._next_btn = ttk.Button(nav, text='Proceed to Run \u2192',
-                                    command=self._on_next, width=18)
+                                    command=lambda: self._on_next(), width=18)
         self._next_btn.pack(side=tk.RIGHT)
 
     _on_back = lambda self: None

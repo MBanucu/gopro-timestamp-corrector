@@ -27,10 +27,10 @@ class StepCalibration(ttk.Frame):
         nav = ttk.Frame(self)
         nav.pack(fill=tk.X, pady=(12, 0))
         self._next_btn = ttk.Button(nav, text='Review Files \u2192',
-                                    command=self._on_next, width=16)
+                                    command=lambda: self._on_next(), width=16)
         self._next_btn.pack(side=tk.RIGHT, padx=(4, 0))
         self._skip_btn = ttk.Button(nav, text='Skip to Run \u2192',
-                                    command=self._on_skip, width=16)
+                                    command=lambda: self._on_skip(), width=16)
         self._skip_btn.pack(side=tk.RIGHT)
 
     _on_next = lambda self: None
