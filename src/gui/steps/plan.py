@@ -19,6 +19,7 @@ class StepPlan(ttk.Frame):
                               foreground='#07c', cursor='hand2', font=('', 9))
         back_link.pack(side=tk.LEFT)
         back_link.bind('<Button-1>', lambda e: self._on_back())
+        self._back_link = back_link
 
         opt = ttk.LabelFrame(self, text='Corrections', padding=8)
         opt.pack(fill=tk.X, pady=(0, 6))
@@ -74,6 +75,7 @@ class StepPlan(ttk.Frame):
 
     def set_on_next(self, cb):
         self._on_next = cb
+        self.next_btn.config(command=cb)
 
     def _toggle_btime(self):
         state = tk.NORMAL if self.fix_btime_var.get() else tk.DISABLED
