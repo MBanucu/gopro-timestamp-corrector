@@ -4,7 +4,8 @@
 Usage:
     PYTHONPATH=src python3 test/run_parallel.py
     PYTHONPATH=src python3 test/run_parallel.py -j 4
-    PYTHONPATH=src python3 test/run_parallel.py test.test_analysis test.test_gps
+    PYTHONPATH=src python3 test/run_parallel.py --coverage
+    PYTHONPATH=src python3 test/run_parallel.py test_analysis test_gps
 """
 import argparse
 import os
@@ -38,12 +39,17 @@ def discover_all():
     return sorted(modules)
 
 
-def run_one(name: str, verbose: bool) -> tuple[str, bool, float, str, str]:
+def run_one(name: str, verbose: bool, coverage_source: str | None) -> tuple[str, bool, float, str, str]:
     t0 = time.perf_counter()
     env = os.environ.copy()
     env['PYTHONPATH'] = f'{SRC}{os.pathsep}{env.get("PYTHONPATH", "")}'
-    cmd = [sys.executable, '-m', 'unittest', '-v' if verbose else '-q',
-           f'test.{name}']
+    if coverage_source:
+        cmd = [sys.executable, '-m', 'coverage', 'run',
+               '--parallel-mode', '--source', coverage_source,
+               '-m', 'unittest', f'test.{name}']
+    else:
+        cmd = [sys.executable, '-m', 'unittest',
+               '-v' if verbose else '-q', f'test.{name}']
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.perf_counter() - t0
     return name, r.returncode == 0, elapsed, r.stdout, r.stderr
@@ -53,6 +59,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count() or 4)
     parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('--coverage', action='store_true',
+                        help='Collect coverage data from subprocesses')
     parser.add_argument('modules', nargs='*')
     args = parser.parse_args()
 
@@ -62,9 +70,10 @@ def main():
 
     passed = failed = 0
     t_start = time.perf_counter()
+    coverage_source = str(SRC) if args.coverage else None
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(run_one, name, args.verbose): name
+        futs = {pool.submit(run_one, name, args.verbose, coverage_source): name
                 for name in modules}
         for fut in as_completed(futs):
             name, ok, elapsed, out, err = fut.result()
@@ -81,6 +90,13 @@ def main():
 
     total = time.perf_counter() - t_start
     print(f'\n{passed} passed, {failed} failed ({total:.1f}s)')
+
+    if args.coverage:
+        subprocess.run([sys.executable, '-m', 'coverage', 'combine', '--quiet'])
+        if passed > 0:
+            subprocess.run([sys.executable, '-m', 'coverage', 'report', '-m',
+                           f'--include={coverage_source}/*'])
+
     return 1 if failed else 0
 
 
