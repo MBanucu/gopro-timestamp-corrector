@@ -1,6 +1,6 @@
 # GoPro Timestamp Corrector
 
-![GUI screenshot](docs/images/Screenshot%20From%202026-05-15%2022-41-44.png)
+![GUI screenshot](docs/images/Screenshot%20From%202026-05-18%2023-21-46.png)
 
 Correct the creation timestamps of GoPro videos and thumbnails when the
 camera's clock was wrong (e.g. after a dead battery reset or timezone
@@ -141,7 +141,7 @@ Sets not listed in the manifest default to `manual`.
 
 ## GUI
 
-![GUI screenshot](docs/images/Screenshot%20From%202026-05-15%2022-41-44.png)
+![GUI screenshot](docs/images/Screenshot%20From%202026-05-18%2023-21-46.png)
 
 ```bash
 nix run .#gui
