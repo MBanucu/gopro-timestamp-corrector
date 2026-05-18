@@ -34,13 +34,14 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ## Architecture
 
 | Layer | Directory | Entrypoint |
-|---|---|---|
+|---|---|---|---|
 | CLI orchestrator | `src/` | `correct_timestamps.py` |
+| Plan / Planner | `src/` | `plan.py` — `Planner`, `CorrectionPlan`, `PlanBuilder`, `Instruction` |
 | GUI app | `src/gui/` | `app.py` |
 | GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
 | Tests | `test/` | one file per area |
 
-Key flow: `analysis.analyze()` → `preview` calculator → `Writer` I/O.
+Key flow: `analysis.analyze()` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer` I/O.
 
 All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`.
 
@@ -70,3 +71,8 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
   interpret it as local time on readback.
 - Manifest file: `.timestamp_correction_log` (idempotency guard).
 - History: `.timestamp_correction_history/` with before/after exiftool JSON.
+- `Planner` in `plan.py` is the single source of truth for plan-step options
+  (which corrections to apply, btime chain, dry-run, force).
+  `PlanBuilder.build()` produces a list of `Instruction` objects from the
+  `Planner` + `CorrectionPlan`.  `PlanBuilder.execute()` runs them
+  sequentially with progress callbacks (`log_fn`, `progress_fn`).

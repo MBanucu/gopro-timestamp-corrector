@@ -225,9 +225,24 @@ The btime correction uses a **priority‑ordered fallback list**:
 
 ### 4. Apply (Run)
 
-A single **Apply** button writes all corrections selected in the Plan step.
-Dry-run mode shows what would be done without writing. The plan is computed
-once and reused — no recalculation on apply.
+The Run step displays an **execution plan** as a list of instructions:
+
+| Step | Description |
+|---|---|
+| Build | Collect file jobs from strategy decisions |
+| Capture before | Save exiftool JSON + btime snapshot |
+| Write embedded | EXIF / QuickTime metadata correction |
+| Write mtime | Filesystem modification time |
+| Write btime | Filesystem birth time (method chain) |
+| Capture after | Save exiftool JSON + btime snapshot |
+| Report | Finalize run history |
+
+Each instruction shows a live status icon during execution
+(▶ running, ✓ done, ✗ failed, – skipped). The shared output log
+at the bottom displays detailed progress messages.
+
+A single **Apply** button executes all enabled instructions in order.
+Dry-run mode shows what would be done without writing.
 
 ## Calibration file
 
@@ -301,26 +316,27 @@ implementation, and how it was tested.
 ## Architecture
 
 ```
-  ┌──────────┐
-  │  media   │  Low-level file I/O (exiftool, os.utime)
-  │ btime    │
-  └────┬─────┘
-       │ reads / writes
-  ┌────▼─────┐
-  │ analysis │  Collects files, reads all metadata (batch exiftool JSON)
-  └────┬─────┘
-       │
-  ┌────▼──────┐
-  │  preview  │  Calculator — pure computation on in-memory data
-  │  resolve  │  target_time(), gps_delta(), weighted_median_delta()
-  └────┬──────┘
-       │ plan (list of FilePreview / WriteJob)
-  ┌────▼──────┐
-  │  writer   │  Pure I/O — dispatches WriteJobs to media + btime
-  │           │  (batch exiftool JSON import for writes)
-  └───────────┘
+   ┌──────────┐
+   │  Planner  │  Plan-step options (which corrections to apply)
+   │  plan.py  │  Planner, CorrectionPlan, PlanBuilder, Instruction
+   └────┬──────┘
+        │
+   ┌────▼──────┐
+   │  preview  │  Calculator — pure computation on in-memory data
+   │  resolve  │  target_time(), gps_delta(), weighted_median_delta()
+   └────┬──────┘
+        │ plan (list of FilePreview / WriteJob)
+   ┌────▼──────┐
+   │  writer   │  Pure I/O — dispatches WriteJobs to media + btime
+   │           │  (batch exiftool JSON import for writes)
+   └───────────┘
 ```
 
+- **Planner** (`plan.py`): holds plan-step options (which corrections to
+  apply, btime chain, dry-run, force) via the :class:`Planner` dataclass.
+  :class:`CorrectionPlan` manages per-set strategies and the preview
+  computation.  :class:`PlanBuilder` transforms these into a list of
+  :class:`Instruction` objects that the Run step executes sequentially.
 - **Calculator** (`resolve.py` + `preview.py`): pure math, no file I/O,
   no `media` import. `resolve` has `target_time()`, `gps_delta()` and
   `weighted_median_delta()`.
@@ -394,7 +410,7 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 │   ├── history.py          # Modification history logger (before/after exiftool JSON)
 │   ├── media.py            # EXIF/QuickTime read/write via exiftool (batch JSON)
 │   ├── options.py          # Single source of truth for strategy/btime/format constants
-│   ├── plan.py             # Correction plan (SetDecision, CorrectionPlan)
+│   ├── plan.py             # Correction plan (Planner, CorrectionPlan, PlanBuilder, Instruction)
 │   ├── preview.py          # Calculator — computes the correction plan
 │   ├── resolve.py          # Pure math helpers (target_time, gps_delta, median)
 │   ├── scanner.py          # GoPro device mount scanner
