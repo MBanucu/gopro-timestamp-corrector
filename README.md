@@ -185,17 +185,24 @@ Right-click any set row to choose its correction strategy:
 Three **All *** buttons set the strategy for every set at once (All manual /
 All GPS / All skip). The **Target** and **Δ applied** columns update live.
 
-### 3. Apply (Run)
+### 3. Plan
 
-Four buttons write the corrections:
+Check which corrections to apply:
 
-| Button | Writes |
+| Option | Description |
 |---|---|
-| Apply All | EXIF, mtime, btime (if enabled) |
-| Run exiftool | EXIF/QuickTime metadata only |
-| Adapt mtime | Filesystem modification time only |
-| Adapt btime | Filesystem birth time only (needs FUSE or sudo) |
+| EXIF / QuickTime metadata | Correct embedded timestamps via `exiftool` |
+| Filesystem mtime | Correct modification time via `os.utime` |
+| Filesystem btime | Correct birth/creation time (method selector) |
+| Dry run | Preview changes without writing |
+| Force | Ignore the manifest and re‑process all files |
 
+The btime method selector offers the same strategies documented below
+(ext4 debugfs, exFAT raw block, FUSE+faketime, or system clock).
+
+### 4. Apply (Run)
+
+A single **Apply** button writes all corrections selected in the Plan step.
 Dry-run mode shows what would be done without writing. The plan is computed
 once and reused — no recalculation on apply.
 
@@ -294,8 +301,8 @@ implementation, and how it was tested.
   `analysis.analyze()`, calls the calculator to build a plan, passes the
   same plan to the writer. No recalculation on apply.
   The GUI uses a **sidebar/stepper hybrid** layout (`gui/sidebar.py` +
-  `gui/steps/`) that guides the user through three sequential steps:
-  directory selection, review & calibration, and execution. A
+  `gui/steps/`) that guides the user through four sequential steps:
+  directory selection, review & calibration, plan options, and execution. A
   history viewer (`gui/history_viewer.py`) provides a side-by-side
   JSON diff of before/after exiftool data for past correction runs.
 
@@ -366,13 +373,14 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 │   ├── gui/
 │   │   ├── __init__.py
 │   │   ├── app.py                # Tkinter orchestrator (sidebar + step panels)
-│   │   ├── sidebar.py            # Step indicator sidebar (①–③ + History)
+│   │   ├── sidebar.py            # Step indicator sidebar (①–④ + History)
 │   │   ├── history_viewer.py     # History browser + side-by-side diff viewer
 │   │   ├── steps/
 │   │   │   ├── __init__.py
 │   │   │   ├── directory.py      # Step 1: directory selection + analyze
 │   │   │   ├── review.py         # Step 2: review table + calibration
-│   │   │   └── run.py            # Step 3: options, run buttons, output
+│   │   │   ├── plan.py           # Step 3: correction options checkboxes
+│   │   │   └── run.py            # Step 4: single Apply button
 │   │   ├── file_table.py         # FileSetTable widget (10 columns, delta support)
 │   │   ├── editor.py             # Calibration editor widget (HH:MM:SS.mmm)
 │   │   ├── cal_file.py           # Calibration file management bar

@@ -25,7 +25,7 @@ PYTHONPATH=src:test python3 -m unittest test.test_datepicker -v
 PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ```
 
-- GUI tests require `tkinter` and a display (skipped otherwise).
+- GUI tests run headlessly via Xvfb (no display required).
 - Integration tests (`test_exfat_raw_btime.py`, `test_fuse_faketime.py`, `test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`.
 - `test/test_strategy.py` writes temp files, must be run from repo root (`PYTHONPATH=src:test`).
 - Large fixture: `test/sdcard.img.gz` (~14 MB, decompressed on first test run).
@@ -37,7 +37,7 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 |---|---|---|
 | CLI orchestrator | `src/` | `correct_timestamps.py` |
 | GUI app | `src/gui/` | `app.py` |
-| GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `run.py` |
+| GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
 | Tests | `test/` | one file per area |
 
 Key flow: `analysis.analyze()` → `preview` calculator → `Writer` I/O.
