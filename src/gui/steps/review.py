@@ -5,7 +5,7 @@ from gui.file_table import FileSetTable
 
 
 class StepReview(ttk.Frame):
-    def __init__(self, parent, *, manual_delta_changed_cb=None, **kw):
+    def __init__(self, parent, **kw):
         super().__init__(parent, **kw)
 
         ttk.Label(self, text='3. Review Files',
@@ -14,10 +14,7 @@ class StepReview(ttk.Frame):
         table_frame = ttk.Frame(self)
         table_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.file_table = FileSetTable(
-            table_frame,
-            manual_delta_changed_cb=manual_delta_changed_cb,
-        )
+        self.file_table = FileSetTable(table_frame)
         self.file_table.pack(fill=tk.BOTH, expand=True)
 
         nav = ttk.Frame(self)
@@ -38,6 +35,10 @@ class StepReview(ttk.Frame):
     def set_on_next(self, cb):
         self._on_next = cb
 
+    @property
+    def plan(self):
+        return self.file_table.plan
+
     def load_analysis(self, analysis):
         self.file_table.load_analysis(analysis)
 
@@ -51,9 +52,6 @@ class StepReview(ttk.Frame):
 
     def get_write_jobs(self):
         return self.file_table.get_write_jobs()
-
-    def get_decisions(self):
-        return self.file_table.get_decisions()
 
     def clear(self):
         self.file_table.clear()

@@ -4,10 +4,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from analysis import AnalysisResult, FileInfo
-from preview import (
-    compute_preview, SetDecision, PreviewResult, FilePreview,
-    STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP,
-)
+from plan import CorrectionPlan
+from preview import SetDecision
+from options import STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP
 from gui.tz_info import get_iana_id, TzInfoPanel
 
 
@@ -79,9 +78,8 @@ def _fmt_delta(delta):
 class FileSetTable(ttk.Frame):
     def __init__(self, parent, manual_delta_changed_cb=None, **kw):
         super().__init__(parent, **kw)
-        self.analysis: AnalysisResult | None = None
-        self.decisions: dict[str, SetDecision] = {}
-        self._manual_delta: timedelta = timedelta()
+        self.plan: CorrectionPlan | None = None
+        self._manual_delta: timedelta | None = None
         self._delta_changed_cb = manual_delta_changed_cb
 
         outer = ttk.Frame(self)
@@ -106,8 +104,8 @@ class FileSetTable(ttk.Frame):
             'mtime': 'FS mtime',
             'exif': 'EXIF time',
             'gps': 'GPS time (UTC)',
-            'delta': 'Δ GPS−EXIF',
-            'applied': 'Δ applied',
+            'delta': '\u0394 GPS\u2212EXIF',
+            'applied': '\u0394 applied',
             'strategy': 'Strategy',
             'target': 'Target',
         }
@@ -151,44 +149,32 @@ class FileSetTable(ttk.Frame):
     # ---- Public API ----
 
     @property
-    def manual_delta(self) -> timedelta:
+    def manual_delta(self) -> timedelta | None:
+        if self.plan:
+            return self.plan.manual_delta
         return self._manual_delta
 
     @manual_delta.setter
-    def manual_delta(self, delta: timedelta):
+    def manual_delta(self, delta: timedelta | None):
         self._manual_delta = delta
-        self._refresh_manual_previews()
+        if self.plan:
+            self.plan.set_manual_delta(delta)
+            self._rebuild_tree()
 
     def load_analysis(self, analysis: AnalysisResult):
-        self.analysis = analysis
-        self.decisions = {}
-        for fs in analysis.sets:
-            self.decisions[fs.id] = SetDecision(
-                strategy=STRATEGY_MANUAL, manual_delta=self._manual_delta)
+        self.plan = CorrectionPlan(analysis=analysis)
         self._rebuild_tree()
         self._status_var.set(
             f'{len(analysis.sets)} sets, {analysis.total_files} files')
 
     def get_decisions(self) -> dict[str, dict]:
-        return {
-            sid: {'strategy': d.strategy}
-            for sid, d in self.decisions.items()
-        }
+        return self.plan.get_decisions() if self.plan else {}
 
     def get_write_jobs(self):
-        if not self.analysis:
-            return []
-        import preview as pr_mod
-        from writer import WriteJob
-        plan = pr_mod.compute_preview(self.analysis, self.decisions, self._manual_delta)
-        return [
-            WriteJob(path=fp.path, target_embedded=fp.target_embedded, target_mtime=fp.target_mtime)
-            for pr in plan for fp in pr.file_results
-        ]
+        return self.plan.to_jobs() if self.plan else []
 
     def clear(self):
-        self.analysis = None
-        self.decisions = {}
+        self.plan = None
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._status_var.set('No files analyzed yet')
@@ -201,14 +187,16 @@ class FileSetTable(ttk.Frame):
     def _rebuild_tree(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
-        if not self.analysis:
+        if not self.plan:
             return
 
-        previews = compute_preview(self.analysis, self.decisions, self._manual_delta)
-        preview_map: dict[str, PreviewResult] = {p.set_id: p for p in previews}
+        preview_map: dict[str, type(PreviewResult)] = {
+            p.set_id: p for p in self.plan.preview
+        }
 
-        for fs in self.analysis.sets:
-            dec = self.decisions.get(fs.id, SetDecision(strategy=STRATEGY_MANUAL))
+        for fs in self.plan.analysis.sets:
+            dec = self.plan.decisions.get(
+                fs.id, SetDecision(strategy=STRATEGY_MANUAL))
             pr = preview_map.get(fs.id)
 
             gps_tag = 'gps_avail' if fs.has_any_gps else 'no_gps'
@@ -263,12 +251,6 @@ class FileSetTable(ttk.Frame):
                     tags=(gps_tag,),
                 )
 
-    def _refresh_manual_previews(self):
-        for sid, dec in self.decisions.items():
-            if dec.strategy == STRATEGY_MANUAL:
-                dec.manual_delta = self._manual_delta
-        self._rebuild_tree()
-
     def _get_set_id_from_selection(self) -> str | None:
         sel = self.tree.selection()
         if not sel:
@@ -285,38 +267,24 @@ class FileSetTable(ttk.Frame):
             return
         self.tree.selection_set(iid)
         set_id = self._get_set_id_from_selection()
-        if set_id and set_id in self.decisions:
+        if set_id and self.plan and set_id in self.plan.decisions:
             self.menu.tk_popup(event.x_root, event.y_root)
 
     def set_all_strategies(self, strategy: str):
-        for sid in self.decisions:
-            if strategy == STRATEGY_GPS and not self._set_has_gps(sid):
+        if not self.plan:
+            return
+        for fs in self.plan.analysis.sets:
+            if strategy == STRATEGY_GPS and not fs.has_any_gps:
                 continue
-            if strategy == STRATEGY_MANUAL:
-                self.decisions[sid] = SetDecision(
-                    strategy=strategy, manual_delta=self._manual_delta)
-            else:
-                self.decisions[sid] = SetDecision(strategy=strategy)
+            self.plan.set_strategy(fs.id, strategy)
         self._rebuild_tree()
         if self._delta_changed_cb:
             self._delta_changed_cb()
 
-    def _set_has_gps(self, set_id: str) -> bool:
-        if not self.analysis:
-            return False
-        for fs in self.analysis.sets:
-            if fs.id == set_id:
-                return fs.has_any_gps
-        return False
-
     def set_strategy_for_set(self, set_id: str, strategy: str):
-        if set_id not in self.decisions:
+        if not self.plan or set_id not in self.plan.decisions:
             return
-        if strategy == STRATEGY_MANUAL:
-            self.decisions[set_id] = SetDecision(
-                strategy=strategy, manual_delta=self._manual_delta)
-        else:
-            self.decisions[set_id] = SetDecision(strategy=strategy)
+        self.plan.set_strategy(set_id, strategy)
         self._rebuild_tree()
         if self._delta_changed_cb:
             self._delta_changed_cb()

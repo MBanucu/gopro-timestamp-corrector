@@ -135,13 +135,14 @@ class TestFileSetTable(unittest.TestCase):
         ar = AnalysisResult(directory='/d', sets=[fs])
         self.table.load_analysis(ar)
 
-        self.assertEqual(self.table.decisions['010001'].strategy, 'manual')
+        decs = self.table.plan.decisions
+        self.assertEqual(decs['010001'].strategy, 'manual')
 
         self.table.set_strategy_for_set('010001', STRATEGY_GPS)
-        self.assertEqual(self.table.decisions['010001'].strategy, 'gps')
+        self.assertEqual(decs['010001'].strategy, 'gps')
 
         self.table.set_strategy_for_set('010001', STRATEGY_SKIP)
-        self.assertEqual(self.table.decisions['010001'].strategy, 'skip')
+        self.assertEqual(decs['010001'].strategy, 'skip')
 
     def test_set_strategy_updates_treeview_display(self):
         fs = _make_fs('010001', ['.mp4'], has_gps=True)

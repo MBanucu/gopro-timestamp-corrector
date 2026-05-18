@@ -68,10 +68,7 @@ class ToolGUI:
             set_status_fn=self.set_status,
             delta_changed_cb=self._on_delta_changed,
         )
-        self.step3 = StepReview(
-            self.content,
-            manual_delta_changed_cb=self._on_strategy_changed,
-        )
+        self.step3 = StepReview(self.content)
         self.step4 = StepRun(self.content)
 
         # --- Cross-step wiring ---
@@ -152,11 +149,6 @@ class ToolGUI:
     def _on_delta_changed(self, delta):
         self.step3.manual_delta = delta
 
-    def _on_strategy_changed(self):
-        delta = self.step2.manual_delta
-        if delta is not None:
-            self.step3.manual_delta = delta
-
     # ===================== History =====================
 
     def _open_history(self):
@@ -228,8 +220,9 @@ class ToolGUI:
                 target_dir = Path(self.step1.dir_var.get())
                 dry_run = self.step4.dry_run_var.get()
 
-                if self.step3.file_table.analysis is not None:
-                    jobs = self.step3.get_write_jobs()
+                plan = self.step3.plan
+                if plan is not None:
+                    jobs = plan.to_jobs()
                     if not jobs:
                         self.root.after(0, self.log, 'No files to process.')
                         self.root.after(0, self.on_finish, 0)
@@ -242,8 +235,8 @@ class ToolGUI:
                         self.root.after(0, self.log,
                                         f'\nDRY RUN - {len(jobs)} would be processed')
                     else:
-                        delta = self.step2.manual_delta
-                        decisions = self.step3.get_decisions()
+                        delta = plan.manual_delta
+                        decisions = plan.get_decisions()
                         history_meta = {
                             'fix_btime': self.step4.btime_var.get() or 'off',
                             'global_delta': str(delta) if delta else None,
@@ -272,9 +265,9 @@ class ToolGUI:
                            self.step1.dir_var.get()]
                     if dry_run:
                         cmd.append('--dry-run')
-        btime = self.step4.btime_var.get()
-        if btime != BTIME_OFF:
-            cmd.append(f'--fix-btime={btime}')
+                    btime = self.step4.btime_var.get()
+                    if btime != BTIME_OFF:
+                        cmd.append(f'--fix-btime={btime}')
                     cal_path = self.step1.cal_bar.get_path()
                     if cal_path and Path(cal_path).exists():
                         cmd.extend(['--translation', cal_path])
@@ -302,7 +295,11 @@ class ToolGUI:
     def _run_single_writer(self, label: str, btime_method: str, write_fn):
         if self.running:
             return
-        jobs = self.step3.get_write_jobs()
+        plan = self.step3.plan
+        if plan is None:
+            self.log('No analysis loaded.')
+            return
+        jobs = plan.to_jobs()
         if not jobs:
             self.log('No files to process.')
             return
@@ -318,7 +315,7 @@ class ToolGUI:
         def run():
             try:
                 target_dir = Path(self.step1.dir_var.get())
-                delta = self.step2.manual_delta
+                delta = plan.manual_delta
 
                 history_meta = {
                     'partial_write': label,
