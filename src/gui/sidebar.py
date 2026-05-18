@@ -2,9 +2,8 @@ import tkinter as tk
 from tkinter import ttk
 
 
-_STEP_NAMES = {1: 'Select Directory', 2: 'Calibration',
-               3: 'Review Files', 4: 'Run'}
-_CIRCLED = {1: '\u2460', 2: '\u2461', 3: '\u2462', 4: '\u2463'}
+_STEP_NAMES = {1: 'Select Directory', 2: 'Review & Calibrate', 3: 'Run'}
+_CIRCLED = {1: '\u2460', 2: '\u2461', 3: '\u2462'}
 
 _COLORS = {
     'active_bg': '#cce5ff',
@@ -36,7 +35,7 @@ class Sidebar(ttk.Frame):
         sep = tk.Frame(self, height=1, bg=_COLORS['separator'])
         sep.pack(fill=tk.X, padx=8)
 
-        for n in range(1, 5):
+        for n in range(1, 4):
             row = tk.Frame(self, bg='#f5f5f5', cursor='hand2', padx=14, pady=8)
             row.pack(fill=tk.X)
 
@@ -65,7 +64,7 @@ class Sidebar(ttk.Frame):
         hist_btn.pack(fill=tk.X, padx=14, pady=(0, 10))
 
     def update_steps(self, current: int, completed: list[bool]):
-        for n in range(1, 5):
+        for n in range(1, 4):
             row, icon, label = self._rows[n]
             is_current = n == current
             is_done = completed[n] if n < len(completed) else False

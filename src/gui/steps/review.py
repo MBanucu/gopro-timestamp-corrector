@@ -2,14 +2,31 @@ import tkinter as tk
 from tkinter import ttk
 
 from gui.file_table import FileSetTable
+from gui.calibration_panel import CalibrationPanel
 
 
 class StepReview(ttk.Frame):
-    def __init__(self, parent, **kw):
+    def __init__(self, parent, *, get_dir_fn=None, log_fn=None,
+                 set_status_fn=None, delta_changed_cb=None, **kw):
         super().__init__(parent, **kw)
 
-        ttk.Label(self, text='3. Review Files',
+        ttk.Label(self, text='2. Review & Calibration',
                   font=('', 13, 'bold')).pack(anchor=tk.W, pady=(0, 8))
+
+        top = ttk.Frame(self)
+        top.pack(fill=tk.X, pady=(0, 6))
+
+        self.cal_panel = CalibrationPanel(
+            top,
+            get_dir_fn=get_dir_fn,
+            log_fn=log_fn or (lambda m: None),
+            set_status_fn=set_status_fn or (lambda m: None),
+            delta_changed_cb=delta_changed_cb,
+        )
+        self.cal_panel.pack(fill=tk.X)
+
+        sep = ttk.Separator(self, orient=tk.HORIZONTAL)
+        sep.pack(fill=tk.X, pady=(0, 6))
 
         table_frame = ttk.Frame(self)
         table_frame.pack(fill=tk.BOTH, expand=True)
@@ -41,6 +58,9 @@ class StepReview(ttk.Frame):
 
     def load_analysis(self, analysis):
         self.file_table.load_analysis(analysis)
+
+    def auto_calibrate(self):
+        self.cal_panel.auto_calibrate()
 
     @property
     def manual_delta(self):

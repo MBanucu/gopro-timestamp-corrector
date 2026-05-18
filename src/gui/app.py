@@ -15,7 +15,6 @@ from options import BTIME_OFF, BTIME_AUTO
 from writer import Writer, WriteJob
 from gui.sidebar import Sidebar
 from gui.steps.directory import StepDirectory
-from gui.steps.calibration import StepCalibration
 from gui.steps.review import StepReview
 from gui.steps.run import StepRun
 
@@ -61,24 +60,21 @@ class ToolGUI:
             log_fn=self.log,
             set_status_fn=self.set_status,
         )
-        self.step2 = StepCalibration(
+        self.step2 = StepReview(
             self.content,
             get_dir_fn=lambda: self.step1.dir_var.get(),
             log_fn=self.log,
             set_status_fn=self.set_status,
             delta_changed_cb=self._on_delta_changed,
         )
-        self.step3 = StepReview(self.content)
-        self.step4 = StepRun(self.content)
+        self.step3 = StepRun(self.content)
 
         # --- Cross-step wiring ---
         self.step1.set_on_set_cal_data(lambda data: self.step2.cal_panel.set_data(data))
-        self.step2.set_on_next(self._advance_2to3)
-        self.step2.set_on_skip(self._skip_to_run)
-        self.step3.set_on_back(lambda: self._show_step(2))
-        self.step3.set_on_next(self._advance_3to4)
-        self.step4.set_on_back(self._go_back_from_run)
-        self.step4.set_commands(
+        self.step2.set_on_back(lambda: self._show_step(1))
+        self.step2.set_on_next(self._advance_to_run)
+        self.step3.set_on_back(self._go_back_from_run)
+        self.step3.set_commands(
             apply_all=self.run_tool,
             exif=self.run_exif,
             mtime=self.run_mtime,
@@ -88,8 +84,8 @@ class ToolGUI:
 
         # --- Navigation state ---
         self._current_step = 1
-        self._step_completed = [False] * 5  # 1-indexed
-        self._step_frames = [None, self.step1, self.step2, self.step3, self.step4]
+        self._step_completed = [False] * 4  # 1-indexed
+        self._step_frames = [None, self.step1, self.step2, self.step3]
 
         self._show_step(1)
 
@@ -99,27 +95,18 @@ class ToolGUI:
     # ===================== Step Navigation =====================
 
     def _show_step(self, n):
-        for i in range(1, 5):
+        for i in range(1, 4):
             self._step_frames[i].pack_forget()
         self._current_step = n
         self._step_frames[n].pack(fill=tk.BOTH, expand=True)
         self.sidebar.update_steps(self._current_step, self._step_completed)
 
-    def _advance_2to3(self):
+    def _advance_to_run(self):
         self._step_completed[2] = True
         self._show_step(3)
 
-    def _advance_3to4(self):
-        self._step_completed[3] = True
-        self._show_step(4)
-
-    def _skip_to_run(self):
-        self._step_completed[2] = True
-        self._step_completed[3] = True
-        self._show_step(4)
-
     def _go_back_from_run(self):
-        self._show_step(3 if self._step_completed[3] else 2)
+        self._show_step(2)
 
     def _on_step_click(self, n):
         if n == self._current_step:
@@ -127,19 +114,13 @@ class ToolGUI:
         if n < self._current_step:
             self._show_step(n)
             return
-        if self._current_step == 2:
-            if n == 4:
-                self._skip_to_run()
-            elif n == 3:
-                self._advance_2to3()
-            return
         if n == self._current_step + 1 and self._step_completed[self._current_step]:
             self._show_step(n)
 
     # ===================== Analysis callback =====================
 
     def _on_analyzed(self, result):
-        self.step3.load_analysis(result)
+        self.step2.load_analysis(result)
         self._step_completed[1] = True
         self._show_step(2)
         self.step2.auto_calibrate()
@@ -147,7 +128,7 @@ class ToolGUI:
     # ===================== Calibration / Delta wiring =====================
 
     def _on_delta_changed(self, delta):
-        self.step3.manual_delta = delta
+        self.step2.manual_delta = delta
 
     # ===================== History =====================
 
@@ -202,14 +183,14 @@ class ToolGUI:
     def run_tool(self):
         if self.running:
             return
-        if self.step3.file_table.analysis is None:
+        if self.step2.file_table.analysis is None:
             if not messagebox.askyesno('No Analysis',
                                        'No file analysis was performed.\nRun correction anyway?'):
                 return
 
         self.running = True
-        self.step4.set_buttons_enabled(False)
-        self.step4.set_cancel_enabled(True)
+        self.step3.set_buttons_enabled(False)
+        self.step3.set_cancel_enabled(True)
         self.clear_output()
 
         self.log('Applying corrections...')
@@ -218,9 +199,9 @@ class ToolGUI:
         def run():
             try:
                 target_dir = Path(self.step1.dir_var.get())
-                dry_run = self.step4.dry_run_var.get()
+                dry_run = self.step3.dry_run_var.get()
 
-                plan = self.step3.plan
+                plan = self.step2.plan
                 if plan is not None:
                     jobs = plan.to_jobs()
                     if not jobs:
@@ -238,7 +219,7 @@ class ToolGUI:
                         delta = plan.manual_delta
                         decisions = plan.get_decisions()
                         history_meta = {
-                            'fix_btime': self.step4.btime_var.get() or 'off',
+                            'fix_btime': self.step3.btime_var.get() or 'off',
                             'global_delta': str(delta) if delta else None,
                             'sets': {
                                 sid: {'strategy': d['strategy']}
@@ -249,7 +230,7 @@ class ToolGUI:
                         history.capture_before(run_dir, [j.path for j in jobs])
 
                         with Writer(target_dir,
-                                    fix_btime=self.step4.btime_var.get(),
+                                    fix_btime=self.step3.btime_var.get(),
                                     delta=delta, dry_run=False) as w:
                             summary = w.write_all(jobs)
 
@@ -265,7 +246,7 @@ class ToolGUI:
                            self.step1.dir_var.get()]
                     if dry_run:
                         cmd.append('--dry-run')
-                    btime = self.step4.btime_var.get()
+                    btime = self.step3.btime_var.get()
                     if btime != BTIME_OFF:
                         cmd.append(f'--fix-btime={btime}')
                     cal_path = self.step1.cal_bar.get_path()
@@ -295,7 +276,7 @@ class ToolGUI:
     def _run_single_writer(self, label: str, btime_method: str, write_fn):
         if self.running:
             return
-        plan = self.step3.plan
+        plan = self.step2.plan
         if plan is None:
             self.log('No analysis loaded.')
             return
@@ -305,8 +286,8 @@ class ToolGUI:
             return
 
         self.running = True
-        self.step4.set_buttons_enabled(False)
-        self.step4.set_cancel_enabled(True)
+        self.step3.set_buttons_enabled(False)
+        self.step3.set_cancel_enabled(True)
         self.clear_output()
 
         self.log(f'{label}...')
@@ -350,7 +331,7 @@ class ToolGUI:
                                 lambda w, j: w.write_mtime_only(j))
 
     def run_btime(self):
-        btime_val = self.step4.btime_var.get()
+        btime_val = self.step3.btime_var.get()
         if btime_val == BTIME_OFF:
             btime_val = BTIME_AUTO
         self._run_single_writer('btime', btime_val,
@@ -369,8 +350,8 @@ class ToolGUI:
     def on_finish(self, code):
         self.running = False
         self.process = None
-        self.step4.set_buttons_enabled(True)
-        self.step4.set_cancel_enabled(False)
+        self.step3.set_buttons_enabled(True)
+        self.step3.set_cancel_enabled(False)
         if code == 0:
             self.set_status('Completed')
             self.log('\nDone.')
