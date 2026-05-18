@@ -1,8 +1,21 @@
 import tkinter as tk
 from tkinter import ttk
 
+from plan import Instruction, INSTRUCTION_STATUS
+
+
+_STATUS_ICONS = {
+    'pending': '\u25cb',   # ○
+    'running': '\u25b6',   # ▶
+    'done':    '\u2713',   # ✓
+    'failed':  '\u2717',   # ✗
+    'skipped': '\u2013',   # –
+}
+
 
 class StepRun(ttk.Frame):
+    """Run step displaying an instruction tree and progress feedback."""
+
     def __init__(self, parent, **kw):
         super().__init__(parent, **kw)
 
@@ -17,12 +30,36 @@ class StepRun(ttk.Frame):
         self._back_link.pack(side=tk.LEFT)
         self._back_link.bind('<Button-1>', lambda e: self._on_back())
 
-        summary_frame = ttk.LabelFrame(self, text='Plan summary', padding=8)
-        summary_frame.pack(fill=tk.X, pady=(0, 6))
-        self._summary_var = tk.StringVar(value='No plan loaded.')
-        ttk.Label(summary_frame, textvariable=self._summary_var,
-                  wraplength=700).pack(anchor=tk.W)
+        # ── Instruction tree ──────────────────────────────────
+        tree_frame = ttk.LabelFrame(self, text='Execution plan', padding=4)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
 
+        columns = ('status', 'instruction')
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings',
+                                 height=8, selectmode='none')
+        self.tree.heading('status', text='')
+        self.tree.column('status', width=36, anchor=tk.CENTER, stretch=False)
+        self.tree.heading('instruction', text='Step')
+        self.tree.column('instruction', width=700)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
+                            command=self.tree.yview)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.configure(yscrollcommand=vsb.set)
+
+        self._instruction_items: list[str] = []  # iid per instruction
+
+        # ── Output log ─────────────────────────────────────────
+        out_frame = ttk.LabelFrame(self, text='Output', padding=4)
+        out_frame.pack(fill=tk.X, expand=False, pady=(0, 6))
+
+        self.output = tk.Text(out_frame, wrap=tk.WORD, font=('Consolas', 10),
+                              bg='#1e1e1e', fg='#d4d4d4', insertbackground='white',
+                              height=6, state=tk.DISABLED)
+        self.output.pack(fill=tk.BOTH, expand=True)
+
+        # ── Buttons ────────────────────────────────────────────
         btn_row = ttk.Frame(self)
         btn_row.pack(fill=tk.X, pady=4)
         self.apply_btn = ttk.Button(btn_row, text='Apply', width=12)
@@ -31,7 +68,7 @@ class StepRun(ttk.Frame):
                                      state=tk.DISABLED)
         self.cancel_btn.pack(side=tk.RIGHT)
 
-    _on_back = lambda self: None
+    _on_back = lambda self: None  # overridden by set_on_back
 
     def set_on_back(self, cb):
         self._on_back = cb
@@ -42,8 +79,42 @@ class StepRun(ttk.Frame):
         if cancel:
             self.cancel_btn.config(command=cancel)
 
-    def set_summary(self, text: str):
-        self._summary_var.set(text)
+    # ── Instruction management ───────────────────────────────────
+
+    def set_instructions(self, instructions: list[Instruction]):
+        """Populate the tree from a list of *Instruction* objects."""
+        self._instruction_items = []
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for inst in instructions:
+            icon = _STATUS_ICONS.get(inst.status, '?')
+            item_id = self.tree.insert('', tk.END,
+                                       values=(icon, inst.label))
+            self._instruction_items.append(item_id)
+
+    def update_instruction(self, index: int, status: str):
+        """Update the status icon of the instruction at *index*."""
+        item = self._instruction_items[index]
+        icon = _STATUS_ICONS.get(status, '?')
+        self.tree.set(item, column='status', value=icon)
+        self.tree.set(item, column='instruction',
+                      value=self.tree.set(item, 'instruction'))
+
+    # ── Output log ──────────────────────────────────────────────
+
+    def log(self, msg: str):
+        self.output.config(state=tk.NORMAL)
+        self.output.insert(tk.END, msg + '\n')
+        self.output.see(tk.END)
+        self.output.config(state=tk.DISABLED)
+        self.update_idletasks()
+
+    def clear_output(self):
+        self.output.config(state=tk.NORMAL)
+        self.output.delete(1.0, tk.END)
+        self.output.config(state=tk.DISABLED)
+
+    # ── Button state ────────────────────────────────────────────
 
     def set_buttons_enabled(self, enabled):
         self.apply_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)

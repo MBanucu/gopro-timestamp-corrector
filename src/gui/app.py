@@ -13,6 +13,7 @@ import calibration
 import history
 import btime
 from options import BTIME_OFF
+from plan import Planner, PlanBuilder, CorrectionPlan
 from writer import Writer, WriteJob
 from gui.sidebar import Sidebar
 from gui.steps.directory import StepDirectory
@@ -115,16 +116,10 @@ class ToolGUI:
         self._step_completed[3] = True
         plan = self.step2.plan
         if plan is not None:
-            opts = self.step3.planner.to_dict()
-            btime_val = opts['fix_btime']
-            btime_chain: list[str] | str | None
-            if isinstance(btime_val, list):
-                btime_chain = btime_val
-            elif btime_val in ('off', None):
-                btime_chain = 'off'
-            else:
-                btime_chain = None
-            self.step4.set_summary(plan.to_string(btime_chain=btime_chain))
+            target_dir = Path(self.step1.dir_var.get())
+            instructions = PlanBuilder().build(
+                self.step3.planner, plan, target_dir)
+            self.step4.set_instructions(instructions)
         else:
             self.step4.set_summary('No analysis loaded \u2014 will run CLI fallback.')
         self._show_step(4)
@@ -215,134 +210,34 @@ class ToolGUI:
                                        'No file analysis was performed.\nRun correction anyway?'):
                 return
 
-        opts = self.step3.get_options()
-        target_dir = Path(self.step1.dir_var.get())
-        dry_run = opts['dry_run']
-        btime_val = opts['fix_btime']
-
         self.running = True
         self.step4.set_buttons_enabled(False)
         self.step4.set_cancel_enabled(True)
-        self.clear_output()
+        self.step4.clear_output()
 
-        self.log('Applying corrections...')
-        self.set_status('Running...')
+        instruction_items = list(self.step4._instruction_items)
+        log_fn = lambda msg: self.root.after(0, self.step4.log, msg)
+        progress_fn = lambda idx, status: self.root.after(
+            0, self.step4.update_instruction, idx, status)
 
         def run():
             try:
+                from plan import PlanBuilder
+                instructions = self.step4._instruction_items
+                # Re‑build instructions from the planner (they may have
+                # changed since _advance_to_run was called).
                 plan = self.step2.plan
+                target_dir = Path(self.step1.dir_var.get())
                 if plan is not None:
-                    jobs = plan.to_jobs()
-                    if not jobs:
-                        self.root.after(0, self.log, 'No files to process.')
-                        self.root.after(0, self.on_finish, 0)
-                        return
+                    instructions = PlanBuilder().build(
+                        self.step3.planner, plan, target_dir)
+                    # Push updated instructions to the UI
+                    self.root.after(0, self.step4.set_instructions, instructions)
 
-                    selected = [k for k, v in opts.items()
-                                if k.startswith('fix_') and v
-                                and not (k == 'fix_btime'
-                                         and (v == BTIME_OFF or not v))]
-                    summary_parts = [f'{len(jobs)} files']
-                    if not opts['fix_embedded']:
-                        summary_parts.append('(no exif)')
-                    if not opts['fix_mtime']:
-                        summary_parts.append('(no mtime)')
-                    if btime_val in (BTIME_OFF, 'off'):
-                        summary_parts.append('(no btime)')
-                    else:
-                        chain = ' > '.join(btime_val) if isinstance(btime_val, list) else btime_val
-                        summary_parts.append(f'(btime={chain})')
-                    self.root.after(0, self.log, ' '.join(summary_parts))
-
-                    if dry_run:
-                        self.root.after(0, self.log,
-                                        f'\nDRY RUN \u2014 {len(jobs)} files ready')
-
-                        self.root.after(0, self.log, '\nWhat would be done:')
-                        if opts['fix_embedded']:
-                            self.root.after(0, self.log,
-                                            '  \u2022 EXIF / QuickTime metadata')
-                        if opts['fix_mtime']:
-                            self.root.after(0, self.log,
-                                            '  \u2022 Filesystem mtime')
-                        if btime_val not in (BTIME_OFF, 'off'):
-                            chain = ' > '.join(btime_val) if isinstance(btime_val, list) else btime_val
-                            self.root.after(0, self.log,
-                                            f'  \u2022 Filesystem btime ({chain})')
-                    else:
-                        delta = plan.manual_delta
-                        decisions = plan.get_decisions()
-                        history_meta = {
-                            'fix_btime': btime_val,
-                            'fix_embedded': opts['fix_embedded'],
-                            'fix_mtime': opts['fix_mtime'],
-                            'global_delta': str(delta) if delta else None,
-                            'sets': {
-                                sid: {'strategy': d['strategy']}
-                                for sid, d in decisions.items()
-                            },
-                        }
-                        run_dir = history.begin_run(target_dir, history_meta)
-                        history.capture_before(run_dir, [j.path for j in jobs])
-
-                        with Writer(target_dir, fix_btime=btime_val,
-                                    delta=delta, dry_run=False) as w:
-                            if opts['fix_embedded'] and opts['fix_mtime'] and btime_val not in (BTIME_OFF, 'off'):
-                                # All three: use batch write_all
-                                summary = w.write_all(jobs)
-                                written = summary.written
-                                skipped = summary.skipped
-                                errors = len(summary.errors) if summary.errors else 0
-                            else:
-                                # Partial: use individual methods
-                                written = skipped = errors = 0
-                                for job in jobs:
-                                    try:
-                                        if opts['fix_embedded']:
-                                            w.write_embedded_only(job)
-                                        if opts['fix_mtime']:
-                                            w.write_mtime_only(job)
-                                        if btime_val not in (BTIME_OFF, 'off'):
-                                            w.write_btime_only(job)
-                                        written += 1
-                                    except Exception as e:
-                                        errors += 1
-                                        self.root.after(0, self.log,
-                                                        f'  Error on {job.path.name}: {e}')
-
-                        history.capture_after(run_dir, [j.path for j in jobs])
-                        history.finalize_run(run_dir, written, skipped, errors)
-                        self.root.after(0, self.log,
-                                        f'\n{written} corrected, {errors} errors')
-                else:
-                    # No plan — CLI fallback
-                    data = self.get_cal_data()
-                    cmd = [sys.executable,
-                           str(SCRIPT_DIR / 'correct_timestamps.py'),
-                           self.step1.dir_var.get()]
-                    if dry_run:
-                        cmd.append('--dry-run')
-                    if btime_val not in (BTIME_OFF, 'off'):
-                        cli_btime = btime_val[0] if isinstance(btime_val, list) else btime_val
-                        cmd.append(f'--fix-btime={cli_btime}')
-                    cal_path = self.step1.cal_bar.get_path()
-                    if cal_path and Path(cal_path).exists():
-                        cmd.extend(['--translation', cal_path])
-                    else:
-                        tmp = target_dir / '.gui_calibration.json'
-                        calibration.save_json(tmp, data)
-                        cmd.extend(['--translation', str(tmp)])
-                    self.root.after(0, self.log, f'$ {" ".join(cmd)}\n')
-                    self.process = subprocess.Popen(
-                        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        text=True, bufsize=1)
-                    for line in self.process.stdout:
-                        self.root.after(0, self.log, line.rstrip())
-                    self.process.wait()
-                    self.root.after(0, self.on_finish, self.process.returncode)
-                    return
-
-                self.root.after(0, self.on_finish, 0)
+                result = PlanBuilder().execute(
+                    instructions, log_fn=log_fn, progress_fn=progress_fn)
+                code = result.get('exit_code', 0)
+                self.root.after(0, self.on_finish, code)
             except Exception as e:
                 self.root.after(0, self.log, f'Error: {e}')
                 self.root.after(0, self.on_finish, -1)
