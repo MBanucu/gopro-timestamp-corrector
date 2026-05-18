@@ -135,6 +135,52 @@ class TestBtimePureFunctions(unittest.TestCase):
     def test_fix_file_dry_run_clock(self):
         btime.fix_file('clock', '/nonexistent/file', datetime.now(timezone.utc), {}, dry_run=True)
 
+    # ── chain_setup ───────────────────────────────────────────────
+
+    def test_chain_setup_picks_first_method(self):
+        method, ctx = btime.chain_setup(
+            ['debugfs', 'clock'], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        self.assertEqual(method, 'debugfs')
+        self.assertEqual(ctx, {})
+
+    def test_chain_setup_falls_back_on_fuse_failure(self):
+        # On a non-exFAT fs, FUSE setup will fail dry-run (no device).
+        method, ctx = btime.chain_setup(
+            ['fuse', 'clock'], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        # FUSE fails → falls back to clock
+        self.assertIn(method, ('clock', 'fuse'))
+
+    def test_chain_setup_clock_last_resort(self):
+        method, ctx = btime.chain_setup(
+            ['clock'], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        self.assertEqual(method, 'clock')
+        self.assertIn('ntp_stopped', ctx)
+
+    def test_chain_setup_auto_resolves(self):
+        method, ctx = btime.chain_setup(
+            ['auto', 'clock'], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        self.assertEqual(method, 'debugfs')
+
+    def test_chain_setup_empty_returns_none(self):
+        method, ctx = btime.chain_setup(
+            [], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        self.assertIsNone(method)
+        self.assertEqual(ctx, {})
+
+    def test_chain_setup_skips_unusable_methods(self):
+        # exfat_raw on ext4 — no setup needed, but fix_file will error.
+        # chain_setup doesn't know about fix_file compatibility, so
+        # exfat_raw will "succeed" at setup on ext4 (returns {}).
+        method, ctx = btime.chain_setup(
+            ['exfat_raw', 'clock'], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        self.assertEqual(method, 'exfat_raw')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -91,7 +91,8 @@ class TestStepPanels(unittest.TestCase):
         self.assertTrue(hasattr(s, 'fix_embedded_var'))
         self.assertTrue(hasattr(s, 'fix_mtime_var'))
         self.assertTrue(hasattr(s, 'fix_btime_var'))
-        self.assertTrue(hasattr(s, 'btime_method_var'))
+        self.assertTrue(hasattr(s, '_btime_list'))
+        self.assertTrue(hasattr(s, '_btime_methods'))
         self.assertTrue(hasattr(s, 'next_btn'))
 
     def test_step3_proceed_to_run_button(self):
@@ -102,6 +103,84 @@ class TestStepPanels(unittest.TestCase):
         s.set_on_next(lambda: called.append('next'))
         s.next_btn.invoke()
         self.assertIn('next', called)
+
+    def test_step3_btime_list_defaults(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        self.assertTrue(len(s._btime_methods) >= 2)
+        self.assertIn('auto', s._btime_methods)
+        self.assertIn('clock', s._btime_methods)
+
+    def test_step3_btime_toggle_disables_widgets(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.fix_btime_var.set(False)
+        s._toggle_btime()
+        self.assertEqual(str(s._btime_list.cget('state')), tk.DISABLED)
+
+    def test_step3_btime_toggle_enables_widgets(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.fix_btime_var.set(True)
+        s._toggle_btime()
+        self.assertEqual(str(s._btime_list.cget('state')), tk.NORMAL)
+
+    def test_step3_get_options_btime_off(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.fix_btime_var.set(False)
+        opts = s.get_options()
+        self.assertEqual(opts['fix_btime'], 'off')
+
+    def test_step3_get_options_btime_list(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.fix_btime_var.set(True)
+        opts = s.get_options()
+        btime_val = opts['fix_btime']
+        self.assertIsInstance(btime_val, list)
+        self.assertGreater(len(btime_val), 0)
+        self.assertIn('auto', btime_val)
+
+    def test_step3_btime_move_up(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.fix_btime_var.set(True)
+        s._toggle_btime()
+        original = list(s._btime_methods)
+        # Select last item and move it up
+        s._btime_list.selection_clear(0)
+        s._btime_list.selection_set(len(original) - 1)
+        s._move_up()
+        self.assertNotEqual(s._btime_methods, original)
+
+    def test_step3_btime_move_down(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.fix_btime_var.set(True)
+        s._toggle_btime()
+        original = list(s._btime_methods)
+        s._btime_list.selection_set(0)
+        s._move_down()
+        self.assertNotEqual(s._btime_methods, original)
+
+    def test_step3_btime_remove_method(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.fix_btime_var.set(True)
+        s._toggle_btime()
+        count_before = len(s._btime_methods)
+        s._btime_list.selection_set(0)
+        s._remove_method()
+        self.assertEqual(len(s._btime_methods), count_before - 1)
 
     def test_step4_import_and_create(self):
         s = StepRun(self.root)
