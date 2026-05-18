@@ -30,14 +30,36 @@ def _resolve_device(path):
 
 
 def detect_fs(path):
-    result = subprocess.run(
-        ['df', '--output=fstype', str(path)],
-        capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        lines = result.stdout.strip().splitlines()
-        return lines[1].strip() if len(lines) >= 2 else None
-    return None
+    try:
+        result = subprocess.run(
+            ['df', '--output=fstype', str(path)],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            lines = result.stdout.strip().splitlines()
+            if len(lines) >= 2:
+                fs = lines[1].strip()
+                if fs:
+                    return fs
+    except (FileNotFoundError, OSError):
+        pass
+    return _detect_fs_from_mounts(path)
+
+
+def _detect_fs_from_mounts(path):
+    """Fallback: parse /proc/mounts when df is unavailable."""
+    try:
+        with open('/proc/mounts') as f:
+            mounts = [(ln.split()[0], ln.split()[1], ln.split()[2])
+                      for ln in f if len(ln.split()) >= 3]
+    except OSError:
+        return None
+    path_str = str(path)
+    best = (None, 0)
+    for dev, mp, fs in mounts:
+        if path_str.startswith(mp) and len(mp) > best[1]:
+            best = (fs, len(mp))
+    return best[0]
 
 
 def resolve_method(requested, fs_type):
@@ -97,15 +119,15 @@ def compatible_methods(fs_type):
 
     Args:
         fs_type: filesystem type as returned by ``detect_fs()``
-                 (e.g. ``'ext4'``, ``'exfat'``, ``'vfat'``, ``'msdos'``).
+                 (e.g. ``'ext4'``, ``'exfat'``, ``'vfat'``, ``'fuseblk'``).
 
     Returns:
         tuple of method name strings in a sensible default order.
     """
     methods = [BTIME_AUTO, BTIME_CLOCK]
-    if fs_type == 'ext4':
+    if fs_type and fs_type.startswith('ext'):
         methods.insert(1, BTIME_DEBUGFS)
-    elif fs_type in ('exfat', 'vfat', 'msdos'):
+    elif fs_type in ('exfat', 'vfat', 'msdos', 'fuseblk'):
         methods.insert(1, BTIME_EXFAT_RAW)
         methods.insert(2, BTIME_FUSE)
     return tuple(methods)

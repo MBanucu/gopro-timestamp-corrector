@@ -5,11 +5,13 @@ key classes can be instantiated (when Tk is available).  Business
 logic is covered by existing tests for the underlying components.
 """
 import unittest
+import subprocess
+import re
 from pathlib import Path
 import json
 import tempfile
 
-from shared import HAS_TK
+from shared import HAS_TK, decompress_sparse_image
 
 if HAS_TK:
     import tkinter as tk
@@ -20,6 +22,7 @@ if HAS_TK:
     from gui.steps.plan import StepPlan
     from gui.steps.run import StepRun
     from gui.history_viewer import HistoryViewer, DiffViewer
+    from gui.app import ToolGUI
 
 
 @unittest.skipUnless(HAS_TK, 'Tkinter not available')
@@ -108,7 +111,7 @@ class TestStepPanels(unittest.TestCase):
         s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
-        self.assertTrue(len(s._btime_methods) >= 2)
+        self.assertEqual(s._btime_methods, ['auto', 'clock'])
         self.assertIn('auto', s._btime_methods)
         self.assertIn('clock', s._btime_methods)
 
@@ -144,8 +147,7 @@ class TestStepPanels(unittest.TestCase):
         opts = s.get_options()
         btime_val = opts['fix_btime']
         self.assertIsInstance(btime_val, list)
-        self.assertGreater(len(btime_val), 0)
-        self.assertIn('auto', btime_val)
+        self.assertEqual(btime_val, ['auto', 'clock'])
 
     def test_step3_btime_move_up(self):
         s = StepPlan(self.root)
@@ -193,18 +195,64 @@ class TestStepPanels(unittest.TestCase):
         self.assertNotIn('exfat_raw', s._btime_methods)
         self.assertNotIn('fuse', s._btime_methods)
 
-    def test_step3_set_filesystem_none_restores_all(self):
+    def test_step3_set_filesystem_none_keeps_auto_clock_only(self):
         s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
         s.set_filesystem('ext4')
+        # ext4 adds debugfs
         self.assertNotIn('exfat_raw', s._btime_methods)
-        s.set_filesystem(None)
-        self.assertIn('auto', s._btime_methods)
-        self.assertIn('clock', s._btime_methods)
-        self.assertIn('exfat_raw', s._btime_methods)
         self.assertIn('debugfs', s._btime_methods)
+        s.set_filesystem(None)
+        # None (unknown fs) must only keep auto + clock
+        self.assertEqual(s._btime_methods, ['auto', 'clock'],
+                         'Unknown fs must only show auto and clock')
+
+    def test_step3_set_filesystem_exfat_excludes_debugfs(self):
+        """Reproduces user report: debugfs must not appear on exFAT."""
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.set_filesystem('exfat')
+        self.assertNotIn('debugfs', s._btime_methods,
+                         'debugfs must not appear on exFAT filesystems')
+        self.assertIn('exfat_raw', s._btime_methods)
         self.assertIn('fuse', s._btime_methods)
+
+    def test_step3_unknown_fs_does_not_include_ext_specific(self):
+        """When detect_fs fails (returns None), only auto+clock are safe."""
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.set_filesystem(None)
+        self.assertNotIn('debugfs', s._btime_methods,
+                         'debugfs must not show when filesystem is unknown')
+        self.assertNotIn('exfat_raw', s._btime_methods,
+                         'exfat_raw must not show when filesystem is unknown')
+        self.assertNotIn('fuse', s._btime_methods,
+                         'fuse must not show when filesystem is unknown')
+
+    def test_step3_set_filesystem_exfat_includes_exfat_fuse(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.set_filesystem('exfat')
+        self.assertEqual(set(s._btime_methods),
+                         {'auto', 'exfat_raw', 'fuse', 'clock'},
+                         'exFAT must include auto, exfat_raw, fuse, clock')
+
+    def test_step3_set_filesystem_preserves_user_order(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        # User reorders before fs is known
+        s._btime_methods = ['clock', 'auto']
+        s._rebuild_listbox()
+        # Now fs becomes known as ext4
+        s.set_filesystem('ext4')
+        self.assertEqual(s._btime_methods,
+                         ['clock', 'auto', 'debugfs'],
+                         'User order preserved, debugfs appended')
 
     def test_step4_import_and_create(self):
         s = StepRun(self.root)
@@ -283,6 +331,112 @@ class TestHistoryViewer(unittest.TestCase):
             vals = hv.run_tree.item(children[0], 'values')
             self.assertIn('5', vals)  # written count
             hv.destroy()
+
+
+@unittest.skipUnless(HAS_TK, 'Tkinter not available')
+class TestPlanBtimeFsIntegration(unittest.TestCase):
+    """Mount the sdcard.img (exFAT) and verify the plan step shows
+    the correct btime methods for the detected filesystem."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.loop_dev = None
+        cls.mount_point = None
+
+        gz_path = Path(__file__).parent / 'sdcard.img.gz'
+        if not gz_path.exists():
+            raise unittest.SkipTest(f'Compressed image not found at {gz_path}')
+        img_path = Path(__file__).parent / 'sdcard.img'
+        cls.img_path = decompress_sparse_image(gz_path, img_path)
+
+        try:
+            r = subprocess.run(
+                ['udisksctl', 'loop-setup', '-f', str(cls.img_path),
+                 '--no-user-interaction'],
+                capture_output=True, text=True)
+            if r.returncode != 0:
+                raise unittest.SkipTest('udisksctl loop-setup failed')
+            m = re.search(r'as (/dev/loop\d+)', r.stdout)
+            cls.loop_dev = m.group(1) if m else None
+            if not cls.loop_dev:
+                raise unittest.SkipTest('Could not parse loop device')
+
+            r = subprocess.run(
+                ['udisksctl', 'mount', '-b', cls.loop_dev,
+                 '--no-user-interaction'],
+                capture_output=True, text=True)
+            if r.returncode != 0:
+                if 'AlreadyMounted' in r.stderr:
+                    m = re.search(r"at `([^`]+)'", r.stderr)
+                    if m:
+                        cls.mount_point = m.group(1)
+                if not cls.mount_point:
+                    raise unittest.SkipTest('udisksctl mount failed')
+            else:
+                m = re.search(r'at ([^ \n]+)', r.stdout)
+                if m:
+                    cls.mount_point = m.group(1).rstrip('.')
+                else:
+                    raise unittest.SkipTest('Could not parse mount point')
+        except FileNotFoundError:
+            raise unittest.SkipTest('udisksctl not found')
+
+        cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
+        if not cls.target.exists():
+            raise unittest.SkipTest(f'{cls.target} not found')
+
+    @classmethod
+    def tearDownClass(cls):
+        if getattr(cls, 'loop_dev', None):
+            r = subprocess.run(
+                ['udisksctl', 'unmount', '-b', cls.loop_dev,
+                 '--no-user-interaction'],
+                capture_output=True, text=True)
+            if r.returncode != 0:
+                subprocess.run(['sudo', 'umount', cls.loop_dev],
+                               capture_output=True)
+            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev],
+                           capture_output=True)
+
+    def setUp(self):
+        self.root = tk.Tk()
+        self.root.update_idletasks()
+
+    def tearDown(self):
+        self.root.destroy()
+
+    def test_step3_plan_shows_exfat_methods_after_advance(self):
+        """Full flow: GUI advances to plan step on exFAT — must show
+        exfat_raw and fuse, must NOT show debugfs."""
+        gui = ToolGUI(self.root)
+        gui.step1.dir_var.set(str(self.target))
+        self.root.update_idletasks()
+
+        gui._advance_to_plan()
+        self.root.update_idletasks()
+
+        methods = gui.step3._btime_methods
+        self.assertIn('exfat_raw', methods,
+                      'exfat_raw must be available on exFAT')
+        self.assertIn('fuse', methods,
+                      'fuse must be available on exFAT')
+        self.assertNotIn('debugfs', methods,
+                         'debugfs must NOT appear on exFAT filesystems')
+
+    def test_advance_to_plan_calls_set_filesystem_on_exfat(self):
+        """Verify that _advance_to_plan detects exFAT and filters the list."""
+        gui = ToolGUI(self.root)
+        gui.step1.dir_var.set(str(self.target))
+        self.root.update_idletasks()
+
+        calls = []
+        gui.step3.set_filesystem = lambda fs: calls.append(fs)
+        gui._advance_to_plan()
+
+        self.assertEqual(len(calls), 1,
+                         '_advance_to_plan must call set_filesystem once')
+        self.assertEqual(calls[0], 'exfat',
+                         'set_filesystem must receive exfat for sdcard.img')
 
 
 if __name__ == '__main__':

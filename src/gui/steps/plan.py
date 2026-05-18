@@ -88,8 +88,9 @@ class StepPlan(ttk.Frame):
                   foreground='gray', font=('', 8)).pack(side=tk.LEFT,
                                                         padx=(12, 0))
 
-        # Initialise with the default ordered list.
-        self._btime_methods = list(BTIME_PRIORITY_ORDERED)
+        # Initialise with a conservative default (auto + clock only).
+        # set_filesystem() expands to compatible methods once the fs is known.
+        self._btime_methods = ['auto', 'clock']
         self._compatible_methods = list(_BTIME_METHODS)
         self._rebuild_listbox()
         self._toggle_btime()
@@ -137,17 +138,21 @@ class StepPlan(ttk.Frame):
         """Filter btime methods to only those compatible with *fs_type*.
 
         Call after the target directory is known (post‑analysis).
-        Pass ``None`` to reset to the full default list.
+        Pass ``None`` when detection fails — only ``auto`` and ``clock``
+        are shown (the add button still offers all methods).
         """
         if fs_type is None:
             self._compatible_methods = list(_BTIME_METHODS)
-            self._btime_methods = list(BTIME_PRIORITY_ORDERED)
+            self._btime_methods = [m for m in ('auto', 'clock')
+                                   if m in self._btime_methods] or ['auto', 'clock']
         else:
             self._compatible_methods = list(btime.compatible_methods(fs_type))
-            self._btime_methods = [m for m in self._btime_methods
-                                   if m in self._compatible_methods]
-            if not self._btime_methods:
-                self._btime_methods = list(self._compatible_methods)
+            kept = [m for m in self._btime_methods
+                    if m in self._compatible_methods]
+            for m in self._compatible_methods:
+                if m not in kept:
+                    kept.append(m)
+            self._btime_methods = kept
         self._rebuild_listbox()
 
     def _rebuild_listbox(self):
