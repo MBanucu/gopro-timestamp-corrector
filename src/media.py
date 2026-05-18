@@ -234,16 +234,19 @@ def write_embedded_batch(pairs: list[tuple[Path, datetime]]) -> bool:
     exif_records = []
     for path, dt in pairs:
         fmt = dt.strftime('%Y:%m:%d %H:%M:%S')
+        fmt_creation = dt.strftime('%Y:%m:%d %H:%M:%S+00:00')
         ext = Path(path).suffix.lower()
         if ext in ('.mp4', '.lrv'):
             qt_records.append({'SourceFile': str(path),
-                               **{t: fmt for t in _QT_JSON_TAGS}})
+                               **{t: fmt for t in _QT_JSON_TAGS},
+                               'QuickTime:CreationDate': fmt_creation})
         elif ext == '.thm':
             exif_records.append({'SourceFile': str(path),
                                  **{t: fmt for t in _EXIF_JSON_TAGS}})
         else:
             qt_records.append({'SourceFile': str(path),
-                               **{t: fmt for t in _QT_JSON_TAGS}})
+                               **{t: fmt for t in _QT_JSON_TAGS},
+                               'QuickTime:CreationDate': fmt_creation})
 
     ok = True
     for records in (qt_records, exif_records):
