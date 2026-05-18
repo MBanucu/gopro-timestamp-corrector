@@ -29,6 +29,8 @@ and on the filesystem. This tool corrects them in one pass.
   and what they will become, with per-entry DST (CET/CEST) detected from
   the actual IANA transition data
 - **CLI** for batch-processing entire SD cards
+- **Auto‑detect GoPro devices** — scans mounted devices for GoPro media
+  directories on startup, with recently used paths persisted in a dropdown
 - **GUI** with searchable timezone picker, calendar date picker, live
   delta preview, one-click GPS calibration, and an interactive file analysis table
 - Corrects **embedded metadata** via `exiftool`:
@@ -134,8 +136,10 @@ The GUI provides a complete workflow:
 
 ### 1. Select Directory
 
-Select a directory containing GoPro files. Click **Analyze** to scan and group
-files by recording set (e.g. `GX010063.MP4` + `GL010063.LRV` + `GX010063.THM`).
+Select a directory containing GoPro files. The directory combobox
+auto‑detects mounted GoPro devices and shows recently used paths.
+Click **Analyze** to scan and group files by recording set
+(e.g. `GX010063.MP4` + `GL010063.LRV` + `GX010063.THM`).
 
 ### 2. Review & Calibrate
 
@@ -299,7 +303,9 @@ implementation, and how it was tested.
 
 ```bash
 # Via the Nix derivation (parallel, 4 workers, includes coverage):
-nix run .#test
+nix run .#test                     # full suite
+nix run .#test -- test_datepicker  # single module (omit test. prefix)
+nix run .#test -- test_analysis test_gps  # multiple specific modules
 # then:
 COV=$(nix eval .#packages.x86_64-linux.test.outPath --raw)
 $COV/bin/coverage-report
@@ -345,15 +351,18 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ├── .gitignore
 ├── src/
 │   ├── analysis.py         # File scanning, grouping, metadata extraction
+│   ├── btime.py            # Birth‑time fixing methods (incl. exFAT raw block)
+│   ├── calibration.py      # JSON calibration load/save/parse
+│   ├── correct_timestamps.py  # CLI orchestrator
+│   ├── dst.py              # DST ambiguity detection
+│   ├── history.py          # Modification history logger (before/after exiftool JSON)
+│   ├── media.py            # EXIF/QuickTime read/write via exiftool (batch JSON)
+│   ├── options.py          # Single source of truth for strategy/btime/format constants
+│   ├── plan.py             # Correction plan (SetDecision, CorrectionPlan)
 │   ├── preview.py          # Calculator — computes the correction plan
 │   ├── resolve.py          # Pure math helpers (target_time, gps_delta, median)
+│   ├── scanner.py          # GoPro device mount scanner
 │   ├── writer.py           # Pure I/O dispatcher (takes WriteJob list)
-│   ├── media.py            # EXIF/QuickTime read/write via exiftool (batch JSON)
-│   ├── calibration.py      # JSON calibration load/save/parse
-│   ├── btime.py            # Birth‑time fixing methods (incl. exFAT raw block)
-│   ├── history.py          # Modification history logger (before/after exiftool JSON)
-│   ├── dst.py              # DST ambiguity detection
-│   ├── correct_timestamps.py  # CLI orchestrator
 │   ├── gui/
 │   │   ├── __init__.py
 │   │   ├── app.py                # Tkinter orchestrator (sidebar + step panels)
@@ -369,6 +378,7 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 │   │   ├── cal_file.py           # Calibration file management bar
 │   │   ├── calibration_panel.py  # Calendar editors + delta spinboxes + GPS
 │   │   ├── tz_info.py            # IANA TZif parser + TzInfoPanel
+│   │   ├── time_selector.py      # Reusable HH:MM:SS.mmm spinbox widget
 │   │   ├── tzcombobox.py         # FilteringCombobox widget
 │   │   └── datepicker.py         # Calendar popup widget
 ├── test/
