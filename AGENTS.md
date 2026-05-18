@@ -58,5 +58,15 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
   `delete()`/`insert()` — tkinter silently ignores these calls when the widget is `DISABLED`.
 - `Writer.__init__` accepts `fix_btime: str | list[str] | tuple[str]` — a list
   produces a fallback chain; a single string is wrapped for backward compatibility.
+- `_fix_exfat_raw` in `btime.py` writes **both** creation time AND modification time
+  fields in one raw-block access.  Before any raw device read it calls `sync` to
+  flush pending kernel writes (e.g. from the embedded exiftool batch).  After the
+  write it calls `sync` + `drop_caches`.
+- `Writer.close()` remounts the partition after `exfat_raw` corrections to clear the
+  exFAT driver's private metadata cache (not invalidated by `drop_caches`).
+- When writing embedded metadata, `QuickTime:CreationDate` receives an explicit
+  `+00:00` suffix — this tag is stored as a string (unlike the integer-based
+  `CreateDate`/`TrackCreateDate`), and omitting the timezone causes exiftool to
+  interpret it as local time on readback.
 - Manifest file: `.timestamp_correction_log` (idempotency guard).
 - History: `.timestamp_correction_history/` with before/after exiftool JSON.

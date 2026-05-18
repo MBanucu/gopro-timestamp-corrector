@@ -366,19 +366,26 @@ Takes a Python `datetime` (timezone-aware) and returns three packed values:
 
 The encoding discards microsecond precision beyond 10ms (exFAT's maximum resolution).
 
-### 2.8 Entry Modification and CRC Update
+### 2.8 Entry Modification and Time Fields
 
-**File**: `src/btime.py:450-461`
+**File**: `src/btime.py` (inside `_fix_exfat_raw`)
 
-Once the file's entry set is located, the first entry (File Directory Entry, type `0x85`) is modified:
+The creation TIME and DATE words (2 bytes each) as well as the milliseconds
+byte and timezone byte are written into the file entry.  The implementation
+now also sets the **modification time** fields (offsets 0x0C, 0x0E, 0x16, 0x17)
+to the same target time, so both btime and mtime are corrected in a single
+atomic cluster write:
 
 ```python
-entry = bytearray(fentries[0])  # mutable copy
 date_word, time_word, time_ms_val = _exfat_encode_time(utc)
-struct.pack_into('<H', entry, 0x08, time_word)   # CreateTime
-struct.pack_into('<H', entry, 0x0A, date_word)   # CreateDate
-entry[0x14] = time_ms_val                         # CreateTimeMs
-entry[0x15] = 0                                   # CreateTimezone = UTC
+struct.pack_into('<H', entry, 0x08, time_word)  # CreateTime
+struct.pack_into('<H', entry, 0x0A, date_word)  # CreateDate
+entry[0x14] = time_ms_val                        # CreateTimeMs
+entry[0x15] = 0                                  # CreateTimezone = UTC
+struct.pack_into('<H', entry, 0x0C, time_word)  # ModifyTime
+struct.pack_into('<H', entry, 0x0E, date_word)  # ModifyDate
+entry[0x16] = time_ms_val                        # ModifyTimeMs
+entry[0x17] = 0                                  # ModifyTimezone = UTC
 ```
 
 Then the set checksum is recalculated across all entries:
@@ -392,9 +399,18 @@ modified_entries[0] = bytes(entry)
 
 ### 2.9 Cluster Write and Cache Flush
 
-**File**: `src/btime.py:463-478`
+**File**: `src/btime.py` (inside `_fix_exfat_raw`)
 
-The modified entries are spliced into the original cluster buffer:
+Before any raw device read, `sync` is called to flush pending kernel writes
+(e.g. from the embedded exiftool batch that runs before the per-file loop).
+Without this, the kernel's dirty metadata cache would overwrite the raw block
+changes when it eventually flushes:
+
+```python
+subprocess.run(['sync'])
+```
+
+Then the modified entries are spliced into the original cluster buffer:
 
 ```python
 cluster_data = _exfat_read_clusters(boot, device, [fchain[fci]])[0]
@@ -420,20 +436,23 @@ subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
 
 ### 2.10 Main Orchestrator (`_fix_exfat_raw`)
 
-**File**: `src/btime.py:391-478`
+**File**: `src/btime.py` (around line 489)
 
 The orchestrator ties everything together:
 
 1. **Resolve block device** → `_resolve_device()` maps the file to e.g. `/dev/loop0`
 2. **Parse boot sector** → `_exfat_parse_boot()` gets volume geometry
-3. **Find mount point** → `_resolve_mount_point()` via `findmnt`
-4. **Compute relative path** → e.g. `DCIM/100GOPRO/GL010063.LRV`
-5. **Traverse directory tree** → for each path component except the filename:
+3. **`sync`** → flush pending kernel writes (exiftool batch) before any raw read
+4. **Find mount point** → `_resolve_mount_point()` via `findmnt`
+5. **Compute relative path** → e.g. `DCIM/100GOPRO/GL010063.LRV`
+6. **Traverse directory tree** → for each path component except the filename:
    - Call `_exfat_find_in_dir()` with the current directory cluster
    - Extract the subdirectory's first cluster from the Stream Extension Entry
-6. **Find file entry** → `_exfat_find_in_dir()` in the leaf directory
-7. **Modify creation time** → update fields and recalculate CRC
-8. **Write cluster** → single-cluster write + cache flush
+7. **Find file entry** → `_exfat_find_in_dir()` in the leaf directory
+8. **Modify creation AND modification time** → write both field groups and recalculate CRC
+9. **Read cluster** → re-read from the (now-synced) device
+10. **Write cluster** → single-cluster write
+11. **`sync` + `drop_caches`** → make the write durable and clear the VFS page cache
 
 ### 2.11 Method Registration
 
@@ -449,6 +468,11 @@ The `exfat_raw` method is registered in four places:
 | `setup/teardown` | No-op for `exfat_raw` (no setup needed) |
 
 Note: `resolve_method('auto', 'exfat')` returns `'exfat_raw'` since May 2026, making it the default for exFAT. Explicitly requesting `'fuse'` or `'clock'` still works for manual override.
+
+After applying corrections, `Writer.close()` runs `mount -o remount` on the
+partition to flush the exFAT kernel driver's private metadata cache (which is
+not invalidated by `drop_caches`).  Without this, `stat` returns stale btime
+from the driver cache even though the raw block write succeeded.
 
 ---
 

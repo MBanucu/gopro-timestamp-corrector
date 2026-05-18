@@ -295,19 +295,37 @@ and without disrupting the system clock.
    checksum field itself zeroed during calculation)
 7. **Write back the modified cluster** — only the single cluster containing the modified
    entry is written to the block device
-8. **Flush caches** — `sync` + `echo 3 > /proc/sys/vm/drop_caches` forces the kernel to
-   re-read the modified blocks from disk
+8. **Flush kernel cache before reading** — `sync` before any raw device read
+   ensures pending kernel writes (e.g. from an embedded exiftool batch) are
+   flushed to disk, so the cluster read gets up‑to‑date data.
+9. **Read the cluster** containing the file's entry set from the raw block device
+10. **Update creation AND modification time** fields in the File Directory Entry —
+    both are set to the target time in a single atomic cluster write, eliminating
+    the need for a separate `os.utime()` call that would trigger the driver's
+    cached entry.
+11. **Recalculate the set checksum** — CRC-16/CCITT over all entries in the set
+12. **Write back the modified cluster** — only the single cluster is written
+13. **Flush caches** — `sync` + `echo 3 > /proc/sys/vm/drop_caches` forces the
+    kernel to re-read the modified blocks from disk
+14. **Remount on Writer close** — `mount -o remount` clears the exFAT driver's
+    private metadata cache (which `drop_caches` does not invalidate)
 
 ### Key detail
 
-exFAT creation time is encoded in three fields within the File Directory Entry:
+exFAT creation time is encoded in three fields within the File Directory Entry.
+The implementation now writes **both** creation time AND modification time fields
+in a single cluster write, so no separate `os.utime()` call is needed:
 
 | Field | Offset | Size | Encoding |
 |-------|--------|------|----------|
-| `CreateDate` | 0x08 | 2 bytes | `(year-1980)<<9 \| month<<5 \| day` |
-| `CreateTime` | 0x0A | 2 bytes | `hour<<11 \| minute<<5 \| second//2` |
-| `CreateTimeMs` | 0x0C | 1 byte | `(sec%2)*100 + ms//10` (0–199, 10ms units) |
-| `CreateTimezone` | 0x0D | 1 byte | `0x00` = UTC |
+| `CreateTime` | 0x08 | 2 bytes | `hour<<11 \| minute<<5 \| second//2` |
+| `CreateDate` | 0x0A | 2 bytes | `(year-1980)<<9 \| month<<5 \| day` |
+| `ModifyTime` | 0x0C | 2 bytes | Same encoding as CreateTime |
+| `ModifyDate` | 0x0E | 2 bytes | Same encoding as CreateDate |
+| `CreateTimeMs` | 0x14 | 1 byte | `(sec%2)*100 + ms//10` (0–199, 10ms units) |
+| `CreateTimezone` | 0x15 | 1 byte | `0x00` = UTC |
+| `ModifyTimeMs` | 0x16 | 1 byte | Same as CreateTimeMs |
+| `ModifyTimezone` | 0x17 | 1 byte | `0x00` = UTC |
 
 The checksum is CRC-16/CCITT (polynomial `0x1021`) over all entries in the set, with
 the checksum field itself zeroed during the calculation.
