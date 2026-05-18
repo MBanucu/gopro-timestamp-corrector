@@ -19,6 +19,9 @@ misconfiguration).
 Files recorded in these states get wrong timestamps — both in embedded metadata
 and on the filesystem. This tool corrects them in one pass.
 
+All observations above were made on a **GoPro HERO10 Black** running
+firmware **v1.62** (last updated around 2025).
+
 ## Features
 
 - **Per-file-set strategy** — analyse all files grouped by recording, then
