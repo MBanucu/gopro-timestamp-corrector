@@ -55,6 +55,36 @@ def resolve_method(requested, fs_type):
     return 'clock'
 
 
+def chain_setup(methods, target_path, fs_type, delta, dry_run):
+    """Try *methods* in order, returning the first one whose setup succeeds.
+
+    Args:
+        methods: iterable of method names (str).  ``'auto'`` is resolved
+                 via ``resolve_method``; explicit names are used as-is.
+        target_path: Path for filesystem detection.
+        fs_type: pre‑detected filesystem type.
+        delta: timedelta offset for setup.
+        dry_run: True to only simulate.
+
+    Returns:
+        (method, ctx) tuple where *method* is the resolved concrete name
+        (e.g. ``'exfat_raw'``) and *ctx* the setup context dict (may be {}).
+        Returns (None, {}) when every method fails.
+    """
+    for method in methods:
+        resolved = resolve_method(method, fs_type)
+        if needs_processing_before(resolved):
+            ctx = setup(resolved, target_path, delta, dry_run) or {}
+            if not ctx and resolved == 'fuse':
+                continue
+            return resolved, ctx
+        if resolved == 'clock':
+            ctx = setup(resolved, target_path, delta, dry_run) or {}
+            return resolved, ctx
+        return resolved, {}
+    return None, {}
+
+
 def needs_processing_before(method):
     return method == 'fuse'
 

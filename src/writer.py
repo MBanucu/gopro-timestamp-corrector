@@ -21,6 +21,21 @@ class WriteJob:
     target_mtime: datetime | None
 
 
+def _normalize_btime(value):
+    """Normalise *value* to an ordered list of btime method names.
+
+    Accepts ``'off'`` (or None/False), a single method string, or an
+    iterable of strings.  Returns a list of method names (possibly empty).
+    """
+    if value is None or value is False:
+        return []
+    if isinstance(value, str):
+        if value == BTIME_OFF:
+            return []
+        return [value]
+    return list(value)
+
+
 @dataclass
 class WriteSummary:
     written: int = 0
@@ -34,7 +49,7 @@ class Writer:
     def __init__(
         self,
         target_dir: Path,
-        fix_btime: str = BTIME_OFF,
+        fix_btime: str | list[str] | tuple[str] = BTIME_OFF,
         delta: timedelta | None = None,
         dry_run: bool = False,
     ):
@@ -44,16 +59,11 @@ class Writer:
         self._b_ctx: dict = {}
         self._delta = delta
 
-        if fix_btime != BTIME_OFF:
+        methods = _normalize_btime(fix_btime)
+        if methods:
             fs = btime.detect_fs(target_dir)
-            self._b_method = btime.resolve_method(fix_btime, fs)
-            if self._b_method and btime.needs_processing_before(self._b_method):
-                self._b_ctx = btime.setup(self._b_method, target_dir, delta or timedelta(), dry_run) or {}
-                if not self._b_ctx and self._b_method == 'fuse':
-                    self._b_method = 'clock'
-                    self._b_ctx = btime.setup(self._b_method, target_dir, delta or timedelta(), dry_run) or {}
-            if self._b_method == 'clock':
-                self._b_ctx = btime.setup(self._b_method, target_dir, delta or timedelta(), dry_run) or {}
+            self._b_method, self._b_ctx = btime.chain_setup(
+                methods, target_dir, fs, delta or timedelta(), dry_run)
 
     def write(self, job: WriteJob) -> bool:
         """Write a single job to embedded metadata, mtime, and optionally btime."""

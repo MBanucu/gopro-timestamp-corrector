@@ -32,6 +32,12 @@ BTIME_CLI_CHOICES = (
 # Choices shown in the GUI combobox (includes 'off' to disable).
 BTIME_GUI_CHOICES = (BTIME_OFF,) + BTIME_CLI_CHOICES
 
+# Default ordered priority list for btime fallback chain.
+# At runtime the system tries each method in order; the first one
+# that succeeds is used for all files.
+BTIME_PRIORITY_ORDERED = (BTIME_AUTO, BTIME_EXFAT_RAW, BTIME_DEBUGFS,
+                          BTIME_FUSE, BTIME_CLOCK)
+
 # Methods that need setup before writes (e.g. FUSE remount).
 BTIME_PROCESSING_BEFORE = frozenset({BTIME_FUSE})
 
