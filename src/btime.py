@@ -502,6 +502,12 @@ def _fix_exfat_raw(filepath, dt, dry_run):
         print(f"    Would set btime via exFAT raw block write to {label} UTC")
         return
 
+    # Sync before touching the raw device: the kernel may have pending
+    # dirty entries from exiftool's embedded write that must be flushed
+    # to disk first.  Without this the cluster read gets stale data and
+    # the subsequent cluster write‑back gets overwritten by the flusher.
+    subprocess.run(['sync'])
+
     # Walk the directory tree from mount point to file
     mount_point = _resolve_mount_point(filepath)
     if not mount_point:
@@ -533,13 +539,17 @@ def _fix_exfat_raw(filepath, dt, dry_run):
         raise RuntimeError(f"exFAT: file '{filename}' not found in directory")
     fchain, fci, foff, fsc, fentries = found
 
-    # Found the file entry set — modify creation time in the first entry
+    # Found the file entry set — modify creation time and modification time
     entry = bytearray(fentries[0])
     date_word, time_word, time_ms_val = _exfat_encode_time(utc)
     struct.pack_into('<H', entry, 0x08, time_word)
     struct.pack_into('<H', entry, 0x0A, date_word)
     entry[0x14] = time_ms_val
     entry[0x15] = 0  # timezone = UTC
+    struct.pack_into('<H', entry, 0x0C, time_word)
+    struct.pack_into('<H', entry, 0x0E, date_word)
+    entry[0x16] = time_ms_val
+    entry[0x17] = 0  # timezone = UTC
 
     # Update the set checksum (written to the first entry; kernel only checks first entry)
     modified_entries = [bytes(entry)] + list(fentries[1:])
@@ -547,7 +557,6 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     struct.pack_into('<H', entry, 2, crc)
     modified_entries[0] = bytes(entry)
 
-    # Write the modified cluster back
     cs = boot['cluster_size']
     cluster_data = _exfat_read_clusters(boot, device, [fchain[fci]])[0]
     cluster_buf = bytearray(cluster_data)

@@ -11,7 +11,7 @@ from typing import Literal
 
 import media
 import btime
-from options import BTIME_OFF
+from options import BTIME_OFF, BTIME_EXFAT_RAW
 
 
 @dataclass
@@ -65,18 +65,18 @@ class Writer:
             self._b_method, self._b_ctx = btime.chain_setup(
                 methods, target_dir, fs, delta or timedelta(), dry_run)
 
+    def _btime_handles_mtime(self) -> bool:
+        return self._b_method == BTIME_EXFAT_RAW
+
     def write(self, job: WriteJob) -> bool:
         """Write a single job to embedded metadata, mtime, and optionally btime."""
         if self.dry_run:
             return True
 
         ok = bool(job.target_embedded and media.write_embedded(job.path, job.target_embedded))
-        # Write btime BEFORE mtime: _fix_exfat_raw syncs+drop_caches.  If we
-        # write mtime first the kernel's pending utime cache overwrites the
-        # raw block btime change when sync flushes.
         if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
             btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
-        if job.target_mtime is not None:
+        if job.target_mtime is not None and not self._btime_handles_mtime():
             media.write_mtime(job.path, job.target_mtime)
         return ok
 
@@ -116,10 +116,9 @@ class Writer:
         else:
             batch_ok = True
 
-        # ── Per-file: btime then mtime ──────────────────────────
-        # btime first: _fix_exfat_raw syncs+drop_caches.  If we write
-        # mtime first the kernel's pending utime cache overwrites the
-        # raw block btime change when sync flushes.
+        # ── Per-file: btime + mtime ──────────────────────────────
+        # ``exfat_raw`` writes both timestamps in one raw-block access;
+        # the separate media.write_mtime is skipped for it.
         for job in jobs:
             if not self.dry_run and job.target_embedded is not None and not batch_ok:
                 (summary.errors or []).append(str(job.path))
@@ -129,7 +128,7 @@ class Writer:
 
             if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
                 btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
-            if job.target_mtime is not None:
+            if job.target_mtime is not None and not self._btime_handles_mtime():
                 media.write_mtime(job.path, job.target_mtime)
 
         return summary
@@ -138,6 +137,17 @@ class Writer:
         """Tear down btime if needed."""
         if self._b_method and (btime.needs_processing_before(self._b_method) or self._b_method == 'clock'):
             btime.teardown(self._b_method, self._b_ctx, self.dry_run)
+        # Remount to flush the exFAT driver's private metadata cache.
+        # _fix_exfat_raw writes via dd (bypasses the driver), so the
+        # driver's cache becomes stale.  mount -o remount clears it.
+        if self._b_method == BTIME_EXFAT_RAW and not self.dry_run:
+            try:
+                mp = btime._resolve_mount_point(self.target_dir)
+                if mp:
+                    subprocess.run(['sudo', 'mount', '-o', 'remount', mp],
+                                   capture_output=True, timeout=15)
+            except Exception:
+                pass
 
     def __enter__(self):
         return self
