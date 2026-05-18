@@ -298,7 +298,7 @@ class ToolGUI:
 
         threading.Thread(target=run, daemon=True).start()
 
-    def _run_single_writer(self, label: str, write_fn):
+    def _run_single_writer(self, label: str, btime_method: str, write_fn):
         if self.running:
             return
         jobs = self.step3.get_write_jobs()
@@ -326,7 +326,7 @@ class ToolGUI:
                 run_dir = history.begin_run(target_dir, history_meta)
                 history.capture_before(run_dir, [j.path for j in jobs])
 
-                with Writer(target_dir, fix_btime='off', delta=delta,
+                with Writer(target_dir, fix_btime=btime_method, delta=delta,
                             dry_run=False) as w:
                     for job in jobs:
                         self.root.after(0, self.log, str(job.path.name))
@@ -344,15 +344,18 @@ class ToolGUI:
         threading.Thread(target=run, daemon=True).start()
 
     def run_exif(self):
-        self._run_single_writer('Exiftool',
+        self._run_single_writer('Exiftool', 'off',
                                 lambda w, j: w.write_embedded_only(j))
 
     def run_mtime(self):
-        self._run_single_writer('mtime',
+        self._run_single_writer('mtime', 'off',
                                 lambda w, j: w.write_mtime_only(j))
 
     def run_btime(self):
-        self._run_single_writer('btime',
+        btime_val = self.step4.btime_var.get()
+        if btime_val == 'off':
+            btime_val = 'auto'
+        self._run_single_writer('btime', btime_val,
                                 lambda w, j: w.write_btime_only(j))
 
     def validate_cal(self):
