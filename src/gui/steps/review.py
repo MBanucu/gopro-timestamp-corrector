@@ -39,7 +39,7 @@ class StepReview(ttk.Frame):
         self._back_btn = ttk.Button(nav, text='\u2190 Back',
                                     command=lambda: self._on_back(), width=10)
         self._back_btn.pack(side=tk.LEFT)
-        self._next_btn = ttk.Button(nav, text='Proceed to Run \u2192',
+        self._next_btn = ttk.Button(nav, text='Proceed to Plan \u2192',
                                     command=lambda: self._on_next(), width=18)
         self._next_btn.pack(side=tk.RIGHT)
 

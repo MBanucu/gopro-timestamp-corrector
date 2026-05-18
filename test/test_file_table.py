@@ -63,6 +63,11 @@ class TestFileSetTable(unittest.TestCase):
         self.assertEqual(len(rows), 0)
         self.assertEqual(self.table._status_var.get(), 'No files analyzed yet')
 
+    def test_plan_is_none_before_analysis(self):
+        self.assertIsNone(self.table.plan)
+        with self.assertRaises(AttributeError):
+            _ = self.table.analysis  # guard in app.py must use .plan, not .analysis
+
     def test_load_analysis_creates_rows(self):
         fs = _make_fs('010001', ['.mp4', '.lrv', '.thm'])
         ar = AnalysisResult(directory='/d', sets=[fs])

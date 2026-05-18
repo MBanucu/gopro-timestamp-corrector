@@ -197,7 +197,7 @@ class ToolGUI:
     def run_tool(self):
         if self.running:
             return
-        if self.step2.file_table.analysis is None:
+        if self.step2.file_table.plan is None:
             if not messagebox.askyesno('No Analysis',
                                        'No file analysis was performed.\nRun correction anyway?'):
                 return
