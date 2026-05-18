@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 
+import btime
 from options import BTIME_PRIORITY_ORDERED, BTIME_AUTO
 
 
@@ -89,6 +90,7 @@ class StepPlan(ttk.Frame):
 
         # Initialise with the default ordered list.
         self._btime_methods = list(BTIME_PRIORITY_ORDERED)
+        self._compatible_methods = list(_BTIME_METHODS)
         self._rebuild_listbox()
         self._toggle_btime()
 
@@ -131,6 +133,23 @@ class StepPlan(ttk.Frame):
         for w in self._btime_widgets():
             w.config(state=state)
 
+    def set_filesystem(self, fs_type: str | None):
+        """Filter btime methods to only those compatible with *fs_type*.
+
+        Call after the target directory is known (post‑analysis).
+        Pass ``None`` to reset to the full default list.
+        """
+        if fs_type is None:
+            self._compatible_methods = list(_BTIME_METHODS)
+            self._btime_methods = list(BTIME_PRIORITY_ORDERED)
+        else:
+            self._compatible_methods = list(btime.compatible_methods(fs_type))
+            self._btime_methods = [m for m in self._btime_methods
+                                   if m in self._compatible_methods]
+            if not self._btime_methods:
+                self._btime_methods = list(self._compatible_methods)
+        self._rebuild_listbox()
+
     def _rebuild_listbox(self):
         self._btime_list.delete(0, tk.END)
         for method in self._btime_methods:
@@ -158,7 +177,7 @@ class StepPlan(ttk.Frame):
 
     def _add_method(self):
         existing = set(self._btime_methods)
-        avail = [m for m in _BTIME_METHODS if m not in existing]
+        avail = [m for m in self._compatible_methods if m not in existing]
         if not avail:
             return
         menu = tk.Menu(self._btime_list, tearoff=0)

@@ -135,6 +135,35 @@ class TestBtimePureFunctions(unittest.TestCase):
     def test_fix_file_dry_run_clock(self):
         btime.fix_file('clock', '/nonexistent/file', datetime.now(timezone.utc), {}, dry_run=True)
 
+    # ── compatible_methods ────────────────────────────────────────
+
+    def test_compatible_methods_ext4(self):
+        methods = btime.compatible_methods('ext4')
+        self.assertIn('auto', methods)
+        self.assertIn('debugfs', methods)
+        self.assertIn('clock', methods)
+        self.assertNotIn('exfat_raw', methods)
+        self.assertNotIn('fuse', methods)
+
+    def test_compatible_methods_exfat(self):
+        methods = btime.compatible_methods('exfat')
+        self.assertIn('auto', methods)
+        self.assertIn('exfat_raw', methods)
+        self.assertIn('fuse', methods)
+        self.assertIn('clock', methods)
+        self.assertNotIn('debugfs', methods)
+
+    def test_compatible_methods_vfat(self):
+        methods = btime.compatible_methods('vfat')
+        self.assertIn('auto', methods)
+        self.assertIn('exfat_raw', methods)
+        self.assertIn('fuse', methods)
+        self.assertNotIn('debugfs', methods)
+
+    def test_compatible_methods_unknown(self):
+        methods = btime.compatible_methods('btrfs')
+        self.assertEqual(set(methods), {'auto', 'clock'})
+
     # ── chain_setup ───────────────────────────────────────────────
 
     def test_chain_setup_picks_first_method(self):

@@ -11,6 +11,7 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 import calibration
 import history
+import btime
 from options import BTIME_OFF
 from writer import Writer, WriteJob
 from gui.sidebar import Sidebar
@@ -104,6 +105,10 @@ class ToolGUI:
 
     def _advance_to_plan(self):
         self._step_completed[2] = True
+        target_dir = Path(self.step1.dir_var.get())
+        if target_dir.is_dir():
+            fs_type = btime.detect_fs(target_dir)
+            self.step3.set_filesystem(fs_type)
         self._show_step(3)
 
     def _advance_to_run(self):

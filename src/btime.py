@@ -8,6 +8,9 @@ import time
 from datetime import timezone
 from pathlib import Path
 
+from options import (BTIME_AUTO, BTIME_CLOCK, BTIME_DEBUGFS,
+                     BTIME_FUSE, BTIME_EXFAT_RAW)
+
 
 def _resolve_device(path):
     st = os.stat(path)
@@ -83,6 +86,29 @@ def chain_setup(methods, target_path, fs_type, delta, dry_run):
             return resolved, ctx
         return resolved, {}
     return None, {}
+
+
+def compatible_methods(fs_type):
+    """Return the btime method names applicable to *fs_type*.
+
+    ``'auto'`` and ``'clock'`` are always included (clock is the universal
+    last‑resort).  Methods that cannot possibly work on the given
+    filesystem are excluded so the UI can filter them out.
+
+    Args:
+        fs_type: filesystem type as returned by ``detect_fs()``
+                 (e.g. ``'ext4'``, ``'exfat'``, ``'vfat'``, ``'msdos'``).
+
+    Returns:
+        tuple of method name strings in a sensible default order.
+    """
+    methods = [BTIME_AUTO, BTIME_CLOCK]
+    if fs_type == 'ext4':
+        methods.insert(1, BTIME_DEBUGFS)
+    elif fs_type in ('exfat', 'vfat', 'msdos'):
+        methods.insert(1, BTIME_EXFAT_RAW)
+        methods.insert(2, BTIME_FUSE)
+    return tuple(methods)
 
 
 def needs_processing_before(method):

@@ -182,6 +182,30 @@ class TestStepPanels(unittest.TestCase):
         s._remove_method()
         self.assertEqual(len(s._btime_methods), count_before - 1)
 
+    def test_step3_set_filesystem_filters_incompatible(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.set_filesystem('ext4')
+        for m in ('debugfs', 'clock', 'auto'):
+            self.assertIn(m, s._btime_methods,
+                          f'{m} should be available on ext4')
+        self.assertNotIn('exfat_raw', s._btime_methods)
+        self.assertNotIn('fuse', s._btime_methods)
+
+    def test_step3_set_filesystem_none_restores_all(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        s.set_filesystem('ext4')
+        self.assertNotIn('exfat_raw', s._btime_methods)
+        s.set_filesystem(None)
+        self.assertIn('auto', s._btime_methods)
+        self.assertIn('clock', s._btime_methods)
+        self.assertIn('exfat_raw', s._btime_methods)
+        self.assertIn('debugfs', s._btime_methods)
+        self.assertIn('fuse', s._btime_methods)
+
     def test_step4_import_and_create(self):
         s = StepRun(self.root)
         s.pack()
