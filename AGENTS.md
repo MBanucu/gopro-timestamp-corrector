@@ -6,7 +6,9 @@
 # All deps via Nix flakes; no system Python packages needed.
 nix run .#gui          # launch GUI
 nix run . -- --help    # CLI
-nix run .#test         # full test suite (parallel, coverage)
+nix run .#test              # full test suite (parallel, coverage)
+nix run .#test -- test_datepicker  # single module (omit test. prefix)
+nix run .#test -- test_analysis test_gps  # multiple specific modules
 nix develop            # dev shell with exiftool, e2fsprogs, etc.
 ```
 

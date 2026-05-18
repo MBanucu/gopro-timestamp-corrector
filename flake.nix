@@ -73,7 +73,7 @@ WRAPPER
             cat > $out/bin/run-tests << WRAPPER
 #!${pkgs.bash}/bin/bash
 export PYTHONPATH="\$PYTHONPATH:$src:$src/src:${pkgs.lib.makeBinPath deps}:$out/lib"
-exec $python_test -m coverage run --source $src/src -m test.run_parallel -j 4
+exec $python_test -m coverage run --source $src/src -m test.run_parallel -j 4 "\$@"
 WRAPPER
             cat > $out/bin/coverage-report << WRAPPER
 #!${pkgs.bash}/bin/bash
