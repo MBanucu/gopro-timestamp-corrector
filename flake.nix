@@ -10,7 +10,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime xorg.xvfb ];
+        deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime xvfb ];
         python = pkgs.python3.withPackages (ps: [ ps.tkinter ]);
         src = pkgs.lib.cleanSource ./.;
       in {
