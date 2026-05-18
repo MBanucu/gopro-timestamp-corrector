@@ -393,13 +393,11 @@ def _exfat_find_in_dir(boot: dict, device: str, dir_cluster: int, target_name: s
 def _fix_exfat_raw(filepath, dt, dry_run):
     device = _resolve_device(filepath)
     if not device:
-        print("  ! Could not resolve device")
-        return
+        raise RuntimeError("Could not resolve block device for file")
 
     boot = _exfat_parse_boot(device)
     if not boot:
-        print("  ! Could not parse exFAT boot sector")
-        return
+        raise RuntimeError("Could not parse exFAT boot sector on " + device)
 
     utc = dt.replace(tzinfo=timezone.utc)
     label = utc.strftime("%Y-%m-%d %H:%M:%S")
@@ -411,15 +409,13 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     # Walk the directory tree from mount point to file
     mount_point = _resolve_mount_point(filepath)
     if not mount_point:
-        print("  ! Could not resolve mount point")
-        return
+        raise RuntimeError("Could not resolve mount point for " + filepath)
     fp = Path(filepath).resolve()
     mp = Path(mount_point).resolve()
     try:
         rel = fp.relative_to(mp)
     except ValueError:
-        print(f"  ! File is not under mount point {mount_point}")
-        return
+        raise RuntimeError(f"File {fp} is not under mount point {mount_point}")
     parts = list(rel.parts)
 
     # The last part is the filename — remove it from traversal, handle separately
@@ -429,8 +425,7 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     for component in parts:
         found = _exfat_find_in_dir(boot, device, current_cluster, component)
         if not found:
-            print(f"  ! exFAT: directory component '{component}' not found")
-            return
+            raise RuntimeError(f"exFAT: directory component '{component}' not found")
         dchain, dci, doff, dsc, dentries = found
         stream = dentries[1]
         first_cl = struct.unpack_from('<I', stream, 0x14)[0]
@@ -439,24 +434,18 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     # Find the file's entry set
     found = _exfat_find_in_dir(boot, device, current_cluster, filename)
     if not found:
-        print(f"  ! exFAT: file '{filename}' not found in directory")
-        return
-
+        raise RuntimeError(f"exFAT: file '{filename}' not found in directory")
     fchain, fci, foff, fsc, fentries = found
 
-    # Found the file entry set — modify creation time in the first entry (File Directory Entry)
-    # Kernel struct layout: type(0), secondary_count(1), set_checksum(2),
-    # file_attributes(4), reserved1(6), create_time(8), create_date(0xA),
-    # modify_time(0xC), modify_date(0xE), access_time(0x10), access_date(0x12),
-    # create_time_ms(0x14), create_timezone(0x15), ...
-    entry = bytearray(fentries[0])  # mutable copy
+    # Found the file entry set — modify creation time in the first entry
+    entry = bytearray(fentries[0])
     date_word, time_word, time_ms_val = _exfat_encode_time(utc)
     struct.pack_into('<H', entry, 0x08, time_word)
     struct.pack_into('<H', entry, 0x0A, date_word)
     entry[0x14] = time_ms_val
     entry[0x15] = 0  # timezone = UTC
 
-    # Update the set checksum
+    # Update the set checksum (written to the first entry; kernel only checks first entry)
     modified_entries = [bytes(entry)] + list(fentries[1:])
     crc = _exfat_entry_set_crc(modified_entries)
     struct.pack_into('<H', entry, 2, crc)
@@ -466,7 +455,6 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     cs = boot['cluster_size']
     cluster_data = _exfat_read_clusters(boot, device, [fchain[fci]])[0]
     cluster_buf = bytearray(cluster_data)
-    set_total = (1 + fsc) * 32
     off = foff
     for e in modified_entries:
         cluster_buf[off:off + 32] = e
