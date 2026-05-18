@@ -156,9 +156,12 @@ class StepPlan(ttk.Frame):
         self._rebuild_listbox()
 
     def _rebuild_listbox(self):
+        state = self._btime_list.cget('state')
+        self._btime_list.config(state=tk.NORMAL)
         self._btime_list.delete(0, tk.END)
         for method in self._btime_methods:
             self._btime_list.insert(tk.END, _BTIME_LABELS.get(method, method))
+        self._btime_list.config(state=state)
 
     def _move_up(self):
         sel = self._btime_list.curselection()

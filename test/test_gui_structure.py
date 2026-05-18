@@ -254,6 +254,51 @@ class TestStepPanels(unittest.TestCase):
                          ['clock', 'auto', 'debugfs'],
                          'User order preserved, debugfs appended')
 
+    def test_step3_exfat_entries_present_when_btime_disabled(self):
+        """Reproduces user observation: after set_filesystem('exfat')
+        with the btime checkbox still OFF, the exFAT-specific methods
+        MUST be stored in _btime_methods (they will become visible once
+        the user checks btime)."""
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        # btime is OFF by default — listbox is disabled
+        self.assertFalse(s.fix_btime_var.get())
+
+        # Simulate advance_to_plan
+        s.set_filesystem('exfat')
+        self.root.update_idletasks()
+
+        # The methods must be present in the data
+        methods = s._btime_methods
+        self.assertIn('exfat_raw', methods,
+                      'exfat_raw must be stored even when btime disabled')
+        self.assertIn('fuse', methods,
+                      'fuse must be stored even when btime disabled')
+        self.assertNotIn('debugfs', methods,
+                         'debugfs must be filtered out')
+
+        # Listbox items must reflect _btime_methods (even when disabled)
+        items_before = [s._btime_list.get(i)
+                        for i in range(s._btime_list.size())]
+        self.assertEqual(len(items_before), 4,
+                         f'Listbox must have 4 items after set_filesystem, '
+                         f'got {len(items_before)}: {items_before}')
+
+        # After enabling btime the items must still be there
+        s.fix_btime_var.set(True)
+        s._toggle_btime()
+        self.root.update_idletasks()
+        items_after = [s._btime_list.get(i)
+                       for i in range(s._btime_list.size())]
+        self.assertEqual(len(items_after), 4,
+                         f'Listbox must still have 4 items after enabling '
+                         f'btime, got {len(items_after)}: {items_after}')
+        self.assertTrue(
+            any('exFAT' in label for label in items_after),
+            f'Listbox must contain exFAT labels after enabling btime, '
+            f'got {items_after}')
+
     def test_step4_import_and_create(self):
         s = StepRun(self.root)
         s.pack()
