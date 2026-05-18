@@ -108,9 +108,12 @@ class DateTimePicker(DatePicker):
     """A date picker with time and timezone fields."""
 
     def __init__(self, parent, callback, all_zones=None,
-                 initial_hour=12, initial_minute=0, initial_tz=''):
+                 initial_hour=12, initial_minute=0, initial_second=0,
+                 initial_ms=0, initial_tz=''):
         self._hour = initial_hour
         self._minute = initial_minute
+        self._second = initial_second
+        self._ms = initial_ms
         self._tz = initial_tz
         self._all_zones = all_zones or []
         super().__init__(parent, callback)
@@ -122,12 +125,14 @@ class DateTimePicker(DatePicker):
         body.pack(fill=tk.X, padx=8, pady=(0, 8))
 
         # Time row
-        self.time_selector = TimeSelector(body, label='Time:', label_width=6,
-                                          show_seconds=False)
+        self.time_selector = TimeSelector(body, label='Time:', label_width=6)
         self.time_selector.pack(fill=tk.X, pady=2)
-        self.time_selector.set_time(hour=self._hour, minute=self._minute)
+        self.time_selector.set_time(hour=self._hour, minute=self._minute,
+                                     second=self._second, ms=self._ms)
         self.hour_var = self.time_selector.hour_var
         self.min_var = self.time_selector.min_var
+        self.sec_var = self.time_selector.sec_var
+        self.ms_var = self.time_selector.ms_var
 
         # Timezone row
         row = ttk.Frame(body)
@@ -177,7 +182,8 @@ class DateTimePicker(DatePicker):
         self.year.set(now.year)
         self.month.set(now.month)
         self.draw_days()
-        self.time_selector.set_time(hour=now.hour, minute=now.minute)
+        self.time_selector.set_time(hour=now.hour, minute=now.minute,
+                                     second=now.second, ms=now.microsecond // 1000)
         self.tz_var.set(self._system_tz())
         self._pending_day = now.day
 
@@ -189,8 +195,8 @@ class DateTimePicker(DatePicker):
         self._pending_day = day
         y, m = self.year.get(), self.month.get()
         tz = self.tz_var.get().strip()
-        h, minute = self.time_selector.get_time()[:2]
-        dt = datetime(y, m, day, h, minute)
+        h, minute, s, ms = self.time_selector.get_time()
+        dt = datetime(y, m, day, h, minute, s, ms * 1000)
         self.callback(dt, tz)
         self.destroy()
 

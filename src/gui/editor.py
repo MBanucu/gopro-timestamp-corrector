@@ -152,11 +152,12 @@ class CalibrationEditor(ttk.LabelFrame):
         self.update_dst()
 
     def pick_date(self):
-        h, m = self.time_selector.get_time()[:2]
+        h, m, s, ms = self.time_selector.get_time()
         tz = self.tz_var.get()
         DateTimePicker(self.master.master, self.on_date_picked,
                        all_zones=self.all_zones,
-                       initial_hour=h, initial_minute=m, initial_tz=tz)
+                       initial_hour=h, initial_minute=m,
+                       initial_second=s, initial_ms=ms, initial_tz=tz)
 
     def _tz_is_valid(self, tz_id):
         if not tz_id:
