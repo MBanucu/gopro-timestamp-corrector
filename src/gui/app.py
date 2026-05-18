@@ -115,7 +115,8 @@ class ToolGUI:
         self._step_completed[3] = True
         plan = self.step2.plan
         if plan is not None:
-            btime_val = self.step3.get_options().get('fix_btime', None)
+            opts = self.step3.planner.to_dict()
+            btime_val = opts['fix_btime']
             btime_chain: list[str] | str | None
             if isinstance(btime_val, list):
                 btime_chain = btime_val

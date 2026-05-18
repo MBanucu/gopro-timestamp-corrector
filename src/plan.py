@@ -25,6 +25,33 @@ from writer import WriteJob
 
 
 @dataclass
+class Planner:
+    """Single source of truth for plan‑step options.
+
+    The GUI binds to this object — when the user toggles a checkbox or
+    reorders the btime list the planner is updated immediately, and
+    external changes (e.g. filesystem detection) are pushed back to the
+    UI via :meth:`~gui.steps.plan.StepPlan.set_filesystem`.
+    """
+
+    fix_embedded: bool = True
+    fix_mtime: bool = True
+    fix_btime: bool = False
+    btime_methods: list[str] = field(default_factory=lambda: ['clock'])
+    dry_run: bool = True
+    force: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            'fix_embedded': self.fix_embedded,
+            'fix_mtime': self.fix_mtime,
+            'fix_btime': list(self.btime_methods) if self.fix_btime else 'off',
+            'dry_run': self.dry_run,
+            'force': self.force,
+        }
+
+
+@dataclass
 class CorrectionPlan:
     """A complete correction plan — analysis, decisions, settings, preview.
 

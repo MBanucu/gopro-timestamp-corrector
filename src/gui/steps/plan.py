@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import btime
+from plan import Planner
 
 
 # Human-readable labels for the btime method listbox.
@@ -17,8 +18,16 @@ _BTIME_METHODS = tuple(_BTIME_LABELS)
 
 
 class StepPlan(ttk.Frame):
-    def __init__(self, parent, *, on_back=None, on_next=None, **kw):
+    """Plan step bound to a :class:`Planner` — the single source of truth.
+
+    The planner is updated immediately when the user changes any widget,
+    and external updates (e.g. filesystem detection) are pushed via
+    :meth:`set_filesystem`.
+    """
+
+    def __init__(self, parent, *, planner=None, on_back=None, on_next=None, **kw):
         super().__init__(parent, **kw)
+        self.planner = planner or Planner()
         self._on_back = on_back or (lambda: None)
         self._on_next = on_next or (lambda: None)
 
@@ -36,17 +45,20 @@ class StepPlan(ttk.Frame):
         opt = ttk.LabelFrame(self, text='Corrections', padding=8)
         opt.pack(fill=tk.X, pady=(0, 6))
 
-        self.fix_embedded_var = tk.BooleanVar(value=True)
+        self.fix_embedded_var = tk.BooleanVar(value=self.planner.fix_embedded)
+        self.fix_embedded_var.trace('w', self._on_fix_embedded_changed)
         ttk.Checkbutton(opt, text='EXIF / QuickTime metadata',
                         variable=self.fix_embedded_var).pack(anchor=tk.W,
                                                              pady=1)
 
-        self.fix_mtime_var = tk.BooleanVar(value=True)
+        self.fix_mtime_var = tk.BooleanVar(value=self.planner.fix_mtime)
+        self.fix_mtime_var.trace('w', self._on_fix_mtime_changed)
         ttk.Checkbutton(opt, text='Filesystem modification time (mtime)',
                         variable=self.fix_mtime_var).pack(anchor=tk.W, pady=1)
 
         # ── Birth time (btime) with reorderable priority list ─────────
-        self.fix_btime_var = tk.BooleanVar(value=False)
+        self.fix_btime_var = tk.BooleanVar(value=self.planner.fix_btime)
+        self.fix_btime_var.trace('w', self._on_fix_btime_changed)
         ttk.Checkbutton(opt, text='Filesystem birth time (btime)',
                         variable=self.fix_btime_var,
                         command=self._toggle_btime).pack(anchor=tk.W, pady=1)
@@ -86,23 +98,23 @@ class StepPlan(ttk.Frame):
                   foreground='gray', font=('', 8)).pack(side=tk.LEFT,
                                                         padx=(12, 0))
 
-        # Initialise with a conservative default (clock only).
-        # set_filesystem() expands to compatible methods once the fs is known.
-        self._btime_methods = ['clock']
+        self._btime_methods = list(self.planner.btime_methods)
         self._compatible_methods = list(_BTIME_METHODS)
         self._rebuild_listbox()
         self._toggle_btime()
-
+    
         sep = ttk.Separator(opt, orient=tk.HORIZONTAL)
         sep.pack(fill=tk.X, pady=6)
 
         flags = ttk.Frame(opt)
         flags.pack(fill=tk.X, pady=2)
-        self.dry_run_var = tk.BooleanVar(value=True)
+        self.dry_run_var = tk.BooleanVar(value=self.planner.dry_run)
+        self.dry_run_var.trace('w', self._on_dry_run_changed)
         ttk.Checkbutton(flags, text='Dry run (preview, no writes)',
                         variable=self.dry_run_var).pack(side=tk.LEFT,
                                                         padx=(0, 16))
-        self.force_var = tk.BooleanVar(value=False)
+        self.force_var = tk.BooleanVar(value=self.planner.force)
+        self.force_var.trace('w', self._on_force_changed)
         ttk.Checkbutton(flags, text='Force (ignore manifest)',
                         variable=self.force_var).pack(side=tk.LEFT)
 
@@ -111,6 +123,27 @@ class StepPlan(ttk.Frame):
         self.next_btn = ttk.Button(nav, text='Proceed to Run \u2192',
                                     command=self._on_next)
         self.next_btn.pack(side=tk.RIGHT)
+
+    # ── Planner syncing (UI → Planner) ─────────────────────────────
+
+    def _on_fix_embedded_changed(self, *_):
+        self.planner.fix_embedded = self.fix_embedded_var.get()
+
+    def _on_fix_mtime_changed(self, *_):
+        self.planner.fix_mtime = self.fix_mtime_var.get()
+
+    def _on_fix_btime_changed(self, *_):
+        self.planner.fix_btime = self.fix_btime_var.get()
+
+    def _on_dry_run_changed(self, *_):
+        self.planner.dry_run = self.dry_run_var.get()
+
+    def _on_force_changed(self, *_):
+        self.planner.force = self.force_var.get()
+
+    def _sync_btime_methods(self):
+        """Push current listbox order to the planner."""
+        self.planner.btime_methods = list(self._btime_methods)
 
     # ── Step wiring ──────────────────────────────────────────────────
 
@@ -135,9 +168,7 @@ class StepPlan(ttk.Frame):
     def set_filesystem(self, fs_type: str | None):
         """Filter btime methods to only those compatible with *fs_type*.
 
-        Call after the target directory is known (post‑analysis).
-        Pass ``None`` when detection fails — only ``auto`` and ``clock``
-        are shown (the add button still offers all methods).
+        Updates both the planner and the listbox.
         """
         if fs_type is None:
             self._compatible_methods = list(_BTIME_METHODS)
@@ -146,6 +177,7 @@ class StepPlan(ttk.Frame):
         else:
             self._compatible_methods = list(btime.compatible_methods(fs_type))
             self._btime_methods = list(self._compatible_methods)
+        self._sync_btime_methods()
         self._rebuild_listbox()
 
     def _rebuild_listbox(self):
@@ -163,6 +195,7 @@ class StepPlan(ttk.Frame):
         i = sel[0]
         self._btime_methods[i], self._btime_methods[i - 1] = \
             self._btime_methods[i - 1], self._btime_methods[i]
+        self._sync_btime_methods()
         self._rebuild_listbox()
         self._btime_list.selection_set(i - 1)
 
@@ -173,6 +206,7 @@ class StepPlan(ttk.Frame):
         i = sel[0]
         self._btime_methods[i], self._btime_methods[i + 1] = \
             self._btime_methods[i + 1], self._btime_methods[i]
+        self._sync_btime_methods()
         self._rebuild_listbox()
         self._btime_list.selection_set(i + 1)
 
@@ -189,6 +223,7 @@ class StepPlan(ttk.Frame):
 
     def _do_add(self, method):
         self._btime_methods.append(method)
+        self._sync_btime_methods()
         self._rebuild_listbox()
 
     def _remove_method(self):
@@ -197,17 +232,11 @@ class StepPlan(ttk.Frame):
             return
         i = sel[0]
         del self._btime_methods[i]
+        self._sync_btime_methods()
         self._rebuild_listbox()
 
-    # ── Options accessor ──────────────────────────────────────────────
+    # ── Options accessor (deprecated — use ``self.planner`` instead) ──
 
     def get_options(self) -> dict:
-        return {
-            'fix_embedded': self.fix_embedded_var.get(),
-            'fix_mtime': self.fix_mtime_var.get(),
-            'fix_btime': list(self._btime_methods)
-                         if self.fix_btime_var.get()
-                         else 'off',
-            'dry_run': self.dry_run_var.get(),
-            'force': self.force_var.get(),
-        }
+        """Return a dict view of the current planner state."""
+        return self.planner.to_dict()
