@@ -17,6 +17,7 @@ if HAS_TK:
     from gui.steps.directory import StepDirectory
     from gui.steps.calibration import StepCalibration
     from gui.steps.review import StepReview
+    from gui.steps.plan import StepPlan
     from gui.steps.run import StepRun
     from gui.history_viewer import HistoryViewer, DiffViewer
 
@@ -57,8 +58,8 @@ class TestSidebar(unittest.TestCase):
         completed = [False] * 5
         self.sidebar.update_steps(2, completed)
         self.root.update_idletasks()
-        row, icon, label = self.sidebar._rows[3]
-        self.assertEqual(icon.cget('text'), '\u2462')
+        row, icon, label = self.sidebar._rows[4]
+        self.assertEqual(icon.cget('text'), '\u2463')
 
 
 @unittest.skipUnless(HAS_TK, 'Tkinter not available')
@@ -84,16 +85,19 @@ class TestStepPanels(unittest.TestCase):
         self.assertTrue(hasattr(s, 'cal_panel'))
 
     def test_step3_import_and_create(self):
-        s = StepReview(self.root)
+        s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
-        self.assertTrue(hasattr(s, 'file_table'))
+        self.assertTrue(hasattr(s, 'fix_embedded_var'))
+        self.assertTrue(hasattr(s, 'fix_mtime_var'))
+        self.assertTrue(hasattr(s, 'fix_btime_var'))
+        self.assertTrue(hasattr(s, 'btime_method_var'))
 
     def test_step4_import_and_create(self):
         s = StepRun(self.root)
         s.pack()
         self.root.update_idletasks()
-        self.assertTrue(hasattr(s, 'run_btn'))
+        self.assertTrue(hasattr(s, 'apply_btn'))
         self.assertTrue(hasattr(s, 'cancel_btn'))
 
     def test_step4_set_commands(self):
@@ -101,9 +105,9 @@ class TestStepPanels(unittest.TestCase):
         s.pack()
         self.root.update_idletasks()
         called = []
-        s.set_commands(apply_all=lambda: called.append('a'),
+        s.set_commands(apply=lambda: called.append('a'),
                        cancel=lambda: called.append('c'))
-        s.run_btn.invoke()
+        s.apply_btn.invoke()
         self.assertIn('a', called)
         s.set_cancel_enabled(True)
         self.root.update_idletasks()

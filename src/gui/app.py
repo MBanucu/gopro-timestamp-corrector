@@ -16,6 +16,7 @@ from writer import Writer, WriteJob
 from gui.sidebar import Sidebar
 from gui.steps.directory import StepDirectory
 from gui.steps.review import StepReview
+from gui.steps.plan import StepPlan
 from gui.steps.run import StepRun
 
 
@@ -67,25 +68,25 @@ class ToolGUI:
             set_status_fn=self.set_status,
             delta_changed_cb=self._on_delta_changed,
         )
-        self.step3 = StepRun(self.content)
+        self.step3 = StepPlan(self.content)
+        self.step4 = StepRun(self.content)
 
         # --- Cross-step wiring ---
         self.step1.set_on_set_cal_data(lambda data: self.step2.cal_panel.set_data(data))
         self.step2.set_on_back(lambda: self._show_step(1))
-        self.step2.set_on_next(self._advance_to_run)
-        self.step3.set_on_back(self._go_back_from_run)
-        self.step3.set_commands(
-            apply_all=self.run_tool,
-            exif=self.run_exif,
-            mtime=self.run_mtime,
-            btime=self.run_btime,
+        self.step2.set_on_next(self._advance_to_plan)
+        self.step3.set_on_back(self._go_back_from_plan)
+        self.step3.set_on_next(self._advance_to_run)
+        self.step4.set_on_back(self._go_back_from_run)
+        self.step4.set_commands(
+            apply=self.run_tool,
             cancel=self.cancel_run,
         )
 
         # --- Navigation state ---
         self._current_step = 1
-        self._step_completed = [False] * 4  # 1-indexed
-        self._step_frames = [None, self.step1, self.step2, self.step3]
+        self._step_completed = [False] * 5  # 1-indexed: indices 1-4
+        self._step_frames = [None, self.step1, self.step2, self.step3, self.step4]
 
         self._show_step(1)
 
@@ -95,18 +96,31 @@ class ToolGUI:
     # ===================== Step Navigation =====================
 
     def _show_step(self, n):
-        for i in range(1, 4):
+        for i in range(1, 5):
             self._step_frames[i].pack_forget()
         self._current_step = n
         self._step_frames[n].pack(fill=tk.BOTH, expand=True)
         self.sidebar.update_steps(self._current_step, self._step_completed)
 
-    def _advance_to_run(self):
+    def _advance_to_plan(self):
         self._step_completed[2] = True
         self._show_step(3)
 
-    def _go_back_from_run(self):
+    def _advance_to_run(self):
+        self._step_completed[3] = True
+        plan = self.step2.plan
+        if plan is not None:
+            summary = plan.summary()
+            self.step4.set_summary(summary)
+        else:
+            self.step4.set_summary('No analysis loaded \u2014 will run CLI fallback.')
+        self._show_step(4)
+
+    def _go_back_from_plan(self):
         self._show_step(2)
+
+    def _go_back_from_run(self):
+        self._show_step(3)
 
     def _on_step_click(self, n):
         if n == self._current_step:
@@ -188,9 +202,14 @@ class ToolGUI:
                                        'No file analysis was performed.\nRun correction anyway?'):
                 return
 
+        opts = self.step3.get_options()
+        target_dir = Path(self.step1.dir_var.get())
+        dry_run = opts['dry_run']
+        btime_val = opts['fix_btime']
+
         self.running = True
-        self.step3.set_buttons_enabled(False)
-        self.step3.set_cancel_enabled(True)
+        self.step4.set_buttons_enabled(False)
+        self.step4.set_cancel_enabled(True)
         self.clear_output()
 
         self.log('Applying corrections...')
@@ -198,9 +217,6 @@ class ToolGUI:
 
         def run():
             try:
-                target_dir = Path(self.step1.dir_var.get())
-                dry_run = self.step3.dry_run_var.get()
-
                 plan = self.step2.plan
                 if plan is not None:
                     jobs = plan.to_jobs()
@@ -209,17 +225,41 @@ class ToolGUI:
                         self.root.after(0, self.on_finish, 0)
                         return
 
-                    for job in jobs:
-                        self.root.after(0, self.log, str(job.path.name))
+                    selected = [k for k, v in opts.items()
+                                if k.startswith('fix_') and v
+                                and not (k == 'fix_btime' and v == BTIME_OFF)]
+                    summary_parts = [f'{len(jobs)} files']
+                    if not opts['fix_embedded']:
+                        summary_parts.append('(no exif)')
+                    if not opts['fix_mtime']:
+                        summary_parts.append('(no mtime)')
+                    if opts['fix_btime'] == BTIME_OFF:
+                        summary_parts.append('(no btime)')
+                    else:
+                        summary_parts.append(f'(btime={opts["fix_btime"]})')
+                    self.root.after(0, self.log, ' '.join(summary_parts))
 
                     if dry_run:
                         self.root.after(0, self.log,
-                                        f'\nDRY RUN - {len(jobs)} would be processed')
+                                        f'\nDRY RUN \u2014 {len(jobs)} files ready')
+
+                        self.root.after(0, self.log, '\nWhat would be done:')
+                        if opts['fix_embedded']:
+                            self.root.after(0, self.log,
+                                            '  \u2022 EXIF / QuickTime metadata')
+                        if opts['fix_mtime']:
+                            self.root.after(0, self.log,
+                                            '  \u2022 Filesystem mtime')
+                        if opts['fix_btime'] != BTIME_OFF:
+                            self.root.after(0, self.log,
+                                            f'  \u2022 Filesystem btime ({opts["fix_btime"]})')
                     else:
                         delta = plan.manual_delta
                         decisions = plan.get_decisions()
                         history_meta = {
-                            'fix_btime': self.step3.btime_var.get() or 'off',
+                            'fix_btime': btime_val,
+                            'fix_embedded': opts['fix_embedded'],
+                            'fix_mtime': opts['fix_mtime'],
                             'global_delta': str(delta) if delta else None,
                             'sets': {
                                 sid: {'strategy': d['strategy']}
@@ -229,26 +269,42 @@ class ToolGUI:
                         run_dir = history.begin_run(target_dir, history_meta)
                         history.capture_before(run_dir, [j.path for j in jobs])
 
-                        with Writer(target_dir,
-                                    fix_btime=self.step3.btime_var.get(),
+                        with Writer(target_dir, fix_btime=btime_val,
                                     delta=delta, dry_run=False) as w:
-                            summary = w.write_all(jobs)
+                            if opts['fix_embedded'] and opts['fix_mtime'] and opts['fix_btime'] != BTIME_OFF:
+                                # All three: use batch write_all
+                                summary = w.write_all(jobs)
+                            else:
+                                # Partial: use individual methods
+                                written = skipped = errors = 0
+                                for job in jobs:
+                                    try:
+                                        if opts['fix_embedded']:
+                                            w.write_embedded_only(job)
+                                        if opts['fix_mtime']:
+                                            w.write_mtime_only(job)
+                                        if opts['fix_btime'] != BTIME_OFF:
+                                            w.write_btime_only(job)
+                                        written += 1
+                                    except Exception as e:
+                                        errors += 1
+                                        self.root.after(0, self.log,
+                                                        f'  Error on {job.path.name}: {e}')
 
                         history.capture_after(run_dir, [j.path for j in jobs])
-                        history.finalize_run(run_dir, summary.written,
-                                             summary.skipped, summary.errors)
+                        history.finalize_run(run_dir, written, skipped, errors)
                         self.root.after(0, self.log,
-                                        f'\n{summary.written} corrected')
+                                        f'\n{written} corrected, {errors} errors')
                 else:
+                    # No plan — CLI fallback
                     data = self.get_cal_data()
                     cmd = [sys.executable,
                            str(SCRIPT_DIR / 'correct_timestamps.py'),
                            self.step1.dir_var.get()]
                     if dry_run:
                         cmd.append('--dry-run')
-                    btime = self.step3.btime_var.get()
-                    if btime != BTIME_OFF:
-                        cmd.append(f'--fix-btime={btime}')
+                    if btime_val != BTIME_OFF:
+                        cmd.append(f'--fix-btime={btime_val}')
                     cal_path = self.step1.cal_bar.get_path()
                     if cal_path and Path(cal_path).exists():
                         cmd.extend(['--translation', cal_path])
@@ -273,70 +329,6 @@ class ToolGUI:
 
         threading.Thread(target=run, daemon=True).start()
 
-    def _run_single_writer(self, label: str, btime_method: str, write_fn):
-        if self.running:
-            return
-        plan = self.step2.plan
-        if plan is None:
-            self.log('No analysis loaded.')
-            return
-        jobs = plan.to_jobs()
-        if not jobs:
-            self.log('No files to process.')
-            return
-
-        self.running = True
-        self.step3.set_buttons_enabled(False)
-        self.step3.set_cancel_enabled(True)
-        self.clear_output()
-
-        self.log(f'{label}...')
-        self.set_status('Running...')
-
-        def run():
-            try:
-                target_dir = Path(self.step1.dir_var.get())
-                delta = plan.manual_delta
-
-                history_meta = {
-                    'partial_write': label,
-                    'delta': str(delta) if delta else None,
-                }
-                run_dir = history.begin_run(target_dir, history_meta)
-                history.capture_before(run_dir, [j.path for j in jobs])
-
-                with Writer(target_dir, fix_btime=btime_method, delta=delta,
-                            dry_run=False) as w:
-                    for job in jobs:
-                        self.root.after(0, self.log, str(job.path.name))
-                        write_fn(w, job)
-
-                history.capture_after(run_dir, [j.path for j in jobs])
-                history.finalize_run(run_dir, len(jobs))
-                self.root.after(0, self.log,
-                                f'\n{label} done \u2014 {len(jobs)} files')
-                self.root.after(0, self.on_finish, 0)
-            except Exception as e:
-                self.root.after(0, self.log, f'Error: {e}')
-                self.root.after(0, self.on_finish, -1)
-
-        threading.Thread(target=run, daemon=True).start()
-
-    def run_exif(self):
-        self._run_single_writer('Exiftool', BTIME_OFF,
-                                lambda w, j: w.write_embedded_only(j))
-
-    def run_mtime(self):
-        self._run_single_writer('mtime', BTIME_OFF,
-                                lambda w, j: w.write_mtime_only(j))
-
-    def run_btime(self):
-        btime_val = self.step3.btime_var.get()
-        if btime_val == BTIME_OFF:
-            btime_val = BTIME_AUTO
-        self._run_single_writer('btime', btime_val,
-                                lambda w, j: w.write_btime_only(j))
-
     def validate_cal(self):
         data = self.get_cal_data()
         ok, *rest = calibration.try_parse(data)
@@ -350,8 +342,8 @@ class ToolGUI:
     def on_finish(self, code):
         self.running = False
         self.process = None
-        self.step3.set_buttons_enabled(True)
-        self.step3.set_cancel_enabled(False)
+        self.step4.set_buttons_enabled(True)
+        self.step4.set_cancel_enabled(False)
         if code == 0:
             self.set_status('Completed')
             self.log('\nDone.')
