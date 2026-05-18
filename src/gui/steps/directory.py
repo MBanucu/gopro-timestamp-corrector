@@ -1,8 +1,34 @@
+import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
 from gui.cal_file import CalibrationFileBar
+
+_RECENT_FILE = Path.home() / '.config' / 'gopro-timestamp-corrector' / 'recent_dirs.json'
+_MAX_RECENT = 15
+
+
+def _load_recent_dirs() -> list[str]:
+    try:
+        if _RECENT_FILE.exists():
+            data = json.loads(_RECENT_FILE.read_text())
+            if isinstance(data, list):
+                return [d for d in data if d and Path(d).is_dir()]
+    except (OSError, json.JSONDecodeError):
+        pass
+    return []
+
+
+def _save_recent_dir(path: str):
+    recent = _load_recent_dirs()
+    recent = [path] + [d for d in recent if d != path]
+    recent = recent[:_MAX_RECENT]
+    try:
+        _RECENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _RECENT_FILE.write_text(json.dumps(recent, indent=2))
+    except OSError:
+        pass
 
 
 class StepDirectory(ttk.Frame):
@@ -49,13 +75,17 @@ class StepDirectory(ttk.Frame):
     def _refresh_detected(self, select_first=False):
         import scanner
         paths = scanner.find_gopro_paths()
-        self.dir_combo['values'] = [str(p) for p in paths]
+        detected = [str(p) for p in paths]
+        recent = _load_recent_dirs()
+        recent_only = [d for d in recent if d not in detected]
+        self.dir_combo['values'] = recent_only + detected
         if select_first and not self.dir_var.get():
-            if paths:
-                first = str(paths[0])
+            if detected:
+                first = detected[0]
                 self.dir_var.set(first)
                 self._summary_var.set('')
                 self.cal_bar.auto(first)
+                _save_recent_dir(first)
             else:
                 self.dir_var.set(str(Path.cwd()))
 
@@ -64,6 +94,7 @@ class StepDirectory(ttk.Frame):
         if d:
             self._summary_var.set('')
             self.cal_bar.auto(d)
+            _save_recent_dir(d)
 
     def analyze_files(self):
         target_dir = self.dir_var.get()
@@ -105,6 +136,7 @@ class StepDirectory(ttk.Frame):
             self.dir_var.set(d)
             self._summary_var.set('')
             self.cal_bar.auto(d)
+            _save_recent_dir(d)
 
     def clear_summary(self):
         self._summary_var.set('')
