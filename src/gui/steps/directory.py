@@ -19,7 +19,7 @@ class StepDirectory(ttk.Frame):
         row = ttk.Frame(self)
         row.pack(fill=tk.X, pady=(0, 4))
         ttk.Label(row, text='Directory:', width=14).pack(side=tk.LEFT)
-        self.dir_var = tk.StringVar(value=str(Path.cwd()))
+        self.dir_var = tk.StringVar()
         self.dir_combo = ttk.Combobox(row, textvariable=self.dir_var,
                                       postcommand=self._refresh_detected)
         self.dir_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
@@ -39,17 +39,25 @@ class StepDirectory(ttk.Frame):
                                         foreground='#555', font=('', 9))
         self._summary_label.pack(anchor=tk.W, pady=(4, 0))
 
-        self._refresh_detected()
+        self._refresh_detected(select_first=True)
 
     set_cal_data = lambda self, data: None
 
     def set_on_set_cal_data(self, cb):
         self.set_cal_data = cb
 
-    def _refresh_detected(self):
+    def _refresh_detected(self, select_first=False):
         import scanner
         paths = scanner.find_gopro_paths()
         self.dir_combo['values'] = [str(p) for p in paths]
+        if select_first and not self.dir_var.get():
+            if paths:
+                first = str(paths[0])
+                self.dir_var.set(first)
+                self._summary_var.set('')
+                self.cal_bar.auto(first)
+            else:
+                self.dir_var.set(str(Path.cwd()))
 
     def _on_combo_select(self, event=None):
         d = self.dir_var.get()
