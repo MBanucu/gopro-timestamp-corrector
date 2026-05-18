@@ -282,6 +282,9 @@ class ToolGUI:
                             if opts['fix_embedded'] and opts['fix_mtime'] and btime_val not in (BTIME_OFF, 'off'):
                                 # All three: use batch write_all
                                 summary = w.write_all(jobs)
+                                written = summary.written
+                                skipped = summary.skipped
+                                errors = len(summary.errors) if summary.errors else 0
                             else:
                                 # Partial: use individual methods
                                 written = skipped = errors = 0
