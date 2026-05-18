@@ -128,14 +128,28 @@ class DiffViewer(tk.Toplevel):
         before_data = json.loads(before_path.read_text())
         after_data = json.loads(after_path.read_text())
 
+        # Incorporate btime data if available
+        btime_before = self._load_btimes(
+            before_path.parent / 'btimes_before.json')
+        btime_after = self._load_btimes(
+            before_path.parent / 'btimes_after.json')
+
         self.before_map = {}
         for f in before_data:
             sf = f.get('SourceFile', '')
             self.before_map[sf] = f
+        if btime_before:
+            for sf, bt in btime_before.items():
+                if sf in self.before_map and bt is not None:
+                    self.before_map[sf]['File:FileBirthDate'] = bt
         self.after_map = {}
         for f in after_data:
             sf = f.get('SourceFile', '')
             self.after_map[sf] = f
+        if btime_after:
+            for sf, bt in btime_after.items():
+                if sf in self.after_map and bt is not None:
+                    self.after_map[sf]['File:FileBirthDate'] = bt
 
         all_files = sorted(set(self.before_map) | set(self.after_map))
         self.file_list = all_files
@@ -209,6 +223,13 @@ class DiffViewer(tk.Toplevel):
             self.file_var.set(self.file_list[0])
             self._render_diff()
 
+    @staticmethod
+    def _load_btimes(path: Path) -> dict[str, str | None]:
+        try:
+            return json.loads(path.read_text()) if path.exists() else {}
+        except Exception:
+            return {}
+
     def _render_diff(self, event=None):
         fname = self.file_var.get()
         if not fname:
@@ -271,8 +292,6 @@ class DiffViewer(tk.Toplevel):
             'SourceFile', 'FileName', 'Directory',
             'File:FileName', 'File:Directory',
             'File:FilePermissions', 'File:FileSize',
-            'File:FileModifyDate', 'File:FileAccessDate',
-            'File:FileInodeChangeDate',
         }
 
     def _render_file(self, widget, data, tag):

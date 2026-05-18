@@ -37,6 +37,23 @@ def _dump_batch(filepaths: list[Path]) -> str | None:
     return None
 
 
+def _capture_btimes(filepaths: list[Path]) -> dict[str, str | None]:
+    """Capture birth (creation) times via ``stat -c %w``."""
+    btimes = {}
+    for fp in filepaths:
+        try:
+            r = subprocess.run(
+                ['stat', '-c', '%w', str(fp)],
+                capture_output=True, text=True, timeout=5)
+            val = r.stdout.strip() if r.returncode == 0 else None
+            if val in (None, '', '-'):
+                val = None
+            btimes[str(fp)] = val
+        except Exception:
+            btimes[str(fp)] = None
+    return btimes
+
+
 def begin_run(target_dir: Path, metadata: dict[str, Any]) -> Path:
     """Create a new history run directory and write run metadata.
 
@@ -68,6 +85,10 @@ def capture_before(run_dir: Path, filepaths: list[Path]):
     raw = _dump_batch(filepaths)
     if raw:
         (run_dir / 'before.json').write_text(raw)
+    btimes = _capture_btimes(filepaths)
+    if any(v is not None for v in btimes.values()):
+        (run_dir / 'btimes_before.json').write_text(
+            json.dumps(btimes, indent=2))
 
 
 def capture_after(run_dir: Path, filepaths: list[Path]):
@@ -75,6 +96,10 @@ def capture_after(run_dir: Path, filepaths: list[Path]):
     raw = _dump_batch(filepaths)
     if raw:
         (run_dir / 'after.json').write_text(raw)
+    btimes = _capture_btimes(filepaths)
+    if any(v is not None for v in btimes.values()):
+        (run_dir / 'btimes_after.json').write_text(
+            json.dumps(btimes, indent=2))
 
 
 def finalize_run(run_dir: Path, written: int, skipped: int = 0,
