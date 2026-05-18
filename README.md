@@ -132,11 +132,14 @@ nix run .#gui
 
 The GUI provides a complete workflow:
 
-### 1. Calibration
+### 1. Select Directory
 
-Two tabs control how the time offset is determined:
+Select a directory containing GoPro files. Click **Analyze** to scan and group
+files by recording set (e.g. `GX010063.MP4` + `GL010063.LRV` + `GX010063.THM`).
 
-**Calendar** tab — set the reference times in the **Actual** and **GoPro**
+### 2. Review & Calibrate
+
+Two calendar editors set the reference times in the **Actual** and **GoPro**
 editors. Both times are in the same IANA timezone; the delta updates live.
 
 | Field | Description |
@@ -145,27 +148,17 @@ editors. Both times are in the same IANA timezone; the delta updates live.
 | Time | HH:MM:SS.mmm spinboxes |
 | TZ | Searchable autocomplete with Tab‑to‑accept (blinks red/`(UTC)` when empty/invalid) |
 
-**Delta** tab — type the offset directly as:
-
-| Format | Example |
-|---|---|
-| hours + minutes + seconds | `+2h30m15s`, `-1h59m59.400s` |
-| days + hours | `-1d5h` |
-| colon format | `2:30` |
-| plain seconds | `90s`, `500ms` |
+The delta offset can also be adjusted directly via dedicated spinboxes for
+days, hours, minutes, seconds, and milliseconds, with a ± toggle for the sign.
 
 Two GPS extraction buttons:
-- **Single GPS…** — fills editors from the first file with GPS data (original behaviour)
+- **Single GPS…** — fills editors from the first file with GPS data
 - **Auto calibrate** — reads all files, filters by `GPSHPositioningError < 25 m`,
-  computes the weighted median delta, sets the Delta tab, and populates the
+  computes the weighted median delta, sets the delta spinboxes, and populates the
   calendar editors from the representative file
 
-### 2. Analysis
-
-Click **Analyze** to scan the directory. Files are grouped by recording set
-(e.g. `GX010063.MP4` + `GL010063.LRV` + `GX010063.THM`).
-
-The table shows every file with its current times and deltas:
+Below the calibration controls, the file table shows every file with its current
+times and deltas:
 
 | Column | Timezone | Source |
 |---|---|---|
@@ -179,8 +172,6 @@ The table shows every file with its current times and deltas:
 A foldable **TzInfoPanel** below the table shows the timezone transition
 history from the IANA database (toggle ▶/▼).
 
-### 3. Strategy selection
-
 Right-click any set row to choose its correction strategy:
 
 - **Use GPS time** — compute the delta from GPS data within that set
@@ -190,7 +181,7 @@ Right-click any set row to choose its correction strategy:
 Three **All *** buttons set the strategy for every set at once (All manual /
 All GPS / All skip). The **Target** and **Δ applied** columns update live.
 
-### 4. Apply
+### 3. Apply (Run)
 
 Four buttons write the corrections:
 
@@ -299,8 +290,8 @@ implementation, and how it was tested.
   `analysis.analyze()`, calls the calculator to build a plan, passes the
   same plan to the writer. No recalculation on apply.
   The GUI uses a **sidebar/stepper hybrid** layout (`gui/sidebar.py` +
-  `gui/steps/`) that guides the user through four sequential steps:
-  directory selection, calibration, file review, and execution. A
+  `gui/steps/`) that guides the user through three sequential steps:
+  directory selection, review & calibration, and execution. A
   history viewer (`gui/history_viewer.py`) provides a side-by-side
   JSON diff of before/after exiftool data for past correction runs.
 
@@ -366,18 +357,17 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 │   ├── gui/
 │   │   ├── __init__.py
 │   │   ├── app.py                # Tkinter orchestrator (sidebar + step panels)
-│   │   ├── sidebar.py            # Step indicator sidebar (①–④ + History)
+│   │   ├── sidebar.py            # Step indicator sidebar (①–③ + History)
 │   │   ├── history_viewer.py     # History browser + side-by-side diff viewer
 │   │   ├── steps/
 │   │   │   ├── __init__.py
 │   │   │   ├── directory.py      # Step 1: directory selection + analyze
-│   │   │   ├── calibration.py    # Step 2: calibration panel + skip
-│   │   │   ├── review.py         # Step 3: file review table
-│   │   │   └── run.py            # Step 4: options, run buttons, output
+│   │   │   ├── review.py         # Step 2: review table + calibration
+│   │   │   └── run.py            # Step 3: options, run buttons, output
 │   │   ├── file_table.py         # FileSetTable widget (10 columns, delta support)
 │   │   ├── editor.py             # Calibration editor widget (HH:MM:SS.mmm)
 │   │   ├── cal_file.py           # Calibration file management bar
-│   │   ├── calibration_panel.py  # Notebook with Calendar/Delta tabs + GPS
+│   │   ├── calibration_panel.py  # Calendar editors + delta spinboxes + GPS
 │   │   ├── tz_info.py            # IANA TZif parser + TzInfoPanel
 │   │   ├── tzcombobox.py         # FilteringCombobox widget
 │   │   └── datepicker.py         # Calendar popup widget
