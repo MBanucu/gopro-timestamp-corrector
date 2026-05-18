@@ -24,8 +24,11 @@ class StepDirectory(ttk.Frame):
             side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         ttk.Button(row, text='Browse...', command=self.browse_dir,
                    width=10).pack(side=tk.RIGHT, padx=(0, 2))
+        self.detect_btn = ttk.Button(row, text='Detect', width=8,
+                                      command=self.detect_gopro)
+        self.detect_btn.pack(side=tk.RIGHT, padx=(0, 2))
         self.analyze_btn = ttk.Button(row, text='Analyze',
-                                      command=self.analyze_files, width=10)
+                                       command=self.analyze_files, width=10)
         self.analyze_btn.pack(side=tk.RIGHT)
 
         self.cal_bar = CalibrationFileBar(self, on_set_data=self.set_cal_data,
@@ -82,6 +85,58 @@ class StepDirectory(ttk.Frame):
             self.dir_var.set(d)
             self._summary_var.set('')
             self.cal_bar.auto(d)
+
+    def detect_gopro(self):
+        import scanner
+        self._set_status('Scanning for GoPro devices...')
+        paths = scanner.find_gopro_paths()
+        if not paths:
+            self._set_status('Ready')
+            messagebox.showinfo('No GoPro Found',
+                                'No GoPro media directories found on any '
+                                'mounted device.')
+            return
+        if len(paths) == 1:
+            self._select_gopro_path(paths[0])
+            return
+        self._show_path_selector(paths)
+
+    def _select_gopro_path(self, path: Path):
+        self.dir_var.set(str(path))
+        self._summary_var.set('')
+        self.cal_bar.auto(str(path))
+        self._set_status('Ready')
+
+    def _show_path_selector(self, paths: list[Path]):
+        win = tk.Toplevel(self)
+        win.title('Select GoPro Directory')
+        win.transient(self)
+        win.grab_set()
+        ttk.Label(win, text='Multiple GoPro directories found:',
+                  padding=(10, 10, 10, 0)).pack(fill=tk.X)
+        lb = tk.Listbox(win, width=80, height=min(len(paths), 10))
+        lb.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        for p in paths:
+            lb.insert(tk.END, str(p))
+        lb.selection_set(0)
+        lb.focus_set()
+
+        def confirm():
+            sel = lb.curselection()
+            if sel:
+                self._select_gopro_path(paths[sel[0]])
+            win.destroy()
+
+        def cancel():
+            win.destroy()
+            self._set_status('Ready')
+
+        btn_frame = ttk.Frame(win)
+        btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        ttk.Button(btn_frame, text='OK', command=confirm).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(btn_frame, text='Cancel', command=cancel).pack(side=tk.LEFT)
+        lb.bind('<Double-Button-1>', lambda e: confirm())
+        win.wait_window()
 
     def clear_summary(self):
         self._summary_var.set('')
