@@ -11,7 +11,7 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 import calibration
 import history
-from options import BTIME_OFF, BTIME_AUTO
+from options import BTIME_OFF
 from writer import Writer, WriteJob
 from gui.sidebar import Sidebar
 from gui.steps.directory import StepDirectory
@@ -227,16 +227,18 @@ class ToolGUI:
 
                     selected = [k for k, v in opts.items()
                                 if k.startswith('fix_') and v
-                                and not (k == 'fix_btime' and v == BTIME_OFF)]
+                                and not (k == 'fix_btime'
+                                         and (v == BTIME_OFF or not v))]
                     summary_parts = [f'{len(jobs)} files']
                     if not opts['fix_embedded']:
                         summary_parts.append('(no exif)')
                     if not opts['fix_mtime']:
                         summary_parts.append('(no mtime)')
-                    if opts['fix_btime'] == BTIME_OFF:
+                    if btime_val in (BTIME_OFF, 'off'):
                         summary_parts.append('(no btime)')
                     else:
-                        summary_parts.append(f'(btime={opts["fix_btime"]})')
+                        chain = ' > '.join(btime_val) if isinstance(btime_val, list) else btime_val
+                        summary_parts.append(f'(btime={chain})')
                     self.root.after(0, self.log, ' '.join(summary_parts))
 
                     if dry_run:
@@ -250,9 +252,10 @@ class ToolGUI:
                         if opts['fix_mtime']:
                             self.root.after(0, self.log,
                                             '  \u2022 Filesystem mtime')
-                        if opts['fix_btime'] != BTIME_OFF:
+                        if btime_val not in (BTIME_OFF, 'off'):
+                            chain = ' > '.join(btime_val) if isinstance(btime_val, list) else btime_val
                             self.root.after(0, self.log,
-                                            f'  \u2022 Filesystem btime ({opts["fix_btime"]})')
+                                            f'  \u2022 Filesystem btime ({chain})')
                     else:
                         delta = plan.manual_delta
                         decisions = plan.get_decisions()
@@ -271,7 +274,7 @@ class ToolGUI:
 
                         with Writer(target_dir, fix_btime=btime_val,
                                     delta=delta, dry_run=False) as w:
-                            if opts['fix_embedded'] and opts['fix_mtime'] and opts['fix_btime'] != BTIME_OFF:
+                            if opts['fix_embedded'] and opts['fix_mtime'] and btime_val not in (BTIME_OFF, 'off'):
                                 # All three: use batch write_all
                                 summary = w.write_all(jobs)
                             else:
@@ -283,7 +286,7 @@ class ToolGUI:
                                             w.write_embedded_only(job)
                                         if opts['fix_mtime']:
                                             w.write_mtime_only(job)
-                                        if opts['fix_btime'] != BTIME_OFF:
+                                        if btime_val not in (BTIME_OFF, 'off'):
                                             w.write_btime_only(job)
                                         written += 1
                                     except Exception as e:
@@ -303,8 +306,9 @@ class ToolGUI:
                            self.step1.dir_var.get()]
                     if dry_run:
                         cmd.append('--dry-run')
-                    if btime_val != BTIME_OFF:
-                        cmd.append(f'--fix-btime={btime_val}')
+                    if btime_val not in (BTIME_OFF, 'off'):
+                        cli_btime = btime_val[0] if isinstance(btime_val, list) else btime_val
+                        cmd.append(f'--fix-btime={cli_btime}')
                     cal_path = self.step1.cal_bar.get_path()
                     if cal_path and Path(cal_path).exists():
                         cmd.extend(['--translation', cal_path])

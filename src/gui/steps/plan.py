@@ -1,7 +1,20 @@
 import tkinter as tk
 from tkinter import ttk
 
-from options import BTIME_GUI_CHOICES
+from options import BTIME_PRIORITY_ORDERED, BTIME_AUTO
+
+
+# Human-readable labels for the btime method listbox.
+_BTIME_LABELS = {
+    BTIME_AUTO: 'Auto (best for filesystem)',
+    'exfat_raw': 'exFAT raw block',
+    'debugfs': 'debugfs (ext4)',
+    'fuse': 'FUSE + faketime (exFAT)',
+    'clock': 'System clock',
+}
+
+# All methods that can appear in the priority list.
+_BTIME_METHODS = tuple(_BTIME_LABELS)
 
 
 class StepPlan(ttk.Frame):
@@ -33,22 +46,50 @@ class StepPlan(ttk.Frame):
         ttk.Checkbutton(opt, text='Filesystem modification time (mtime)',
                         variable=self.fix_mtime_var).pack(anchor=tk.W, pady=1)
 
-        btime_row = ttk.Frame(opt)
-        btime_row.pack(fill=tk.X, pady=1)
+        # ── Birth time (btime) with reorderable priority list ─────────
         self.fix_btime_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(btime_row, text='Filesystem birth time (btime)',
+        ttk.Checkbutton(opt, text='Filesystem birth time (btime)',
                         variable=self.fix_btime_var,
-                        command=self._toggle_btime).pack(side=tk.LEFT)
-        self.btime_method_var = tk.StringVar(value='auto')
-        self.btime_combo = ttk.Combobox(btime_row,
-                                        textvariable=self.btime_method_var,
-                                        state='readonly', width=14)
-        self.btime_combo['values'] = BTIME_GUI_CHOICES
-        self.btime_combo.pack(side=tk.LEFT, padx=(8, 4))
-        ttk.Label(btime_row,
-                  text='ext4\u2192debugfs  exFAT\u2192exfat_raw',
-                  foreground='gray').pack(side=tk.LEFT)
+                        command=self._toggle_btime).pack(anchor=tk.W, pady=1)
 
+        btime_panel = ttk.Frame(opt)
+        btime_panel.pack(fill=tk.X, padx=(24, 0), pady=(2, 0))
+        self._btime_panel = btime_panel
+
+        list_side = ttk.Frame(btime_panel)
+        list_side.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self._btime_list = tk.Listbox(list_side, height=5, exportselection=False,
+                                      selectmode=tk.SINGLE, font=('', 9))
+        self._btime_list.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        scroll = ttk.Scrollbar(list_side, orient=tk.VERTICAL,
+                               command=self._btime_list.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self._btime_list.config(yscrollcommand=scroll.set)
+
+        btn_col = ttk.Frame(btime_panel)
+        btn_col.pack(side=tk.LEFT, padx=(6, 0))
+        self._btn_up = ttk.Button(btn_col, text='\u25b2', width=3,
+                                  command=self._move_up)
+        self._btn_up.pack()
+        self._btn_down = ttk.Button(btn_col, text='\u25bc', width=3,
+                                    command=self._move_down)
+        self._btn_down.pack()
+        self._btn_add = ttk.Button(btn_col, text='+', width=3,
+                                   command=self._add_method)
+        self._btn_add.pack(pady=(4, 0))
+        self._btn_remove = ttk.Button(btn_col, text='\u2715', width=3,
+                                      command=self._remove_method)
+        self._btn_remove.pack()
+
+        ttk.Label(btime_panel,
+                  text='Tries each method in order. The first that succeeds is used.',
+                  foreground='gray', font=('', 8)).pack(side=tk.LEFT,
+                                                        padx=(12, 0))
+
+        # Initialise with the default ordered list.
+        self._btime_methods = list(BTIME_PRIORITY_ORDERED)
+        self._rebuild_listbox()
         self._toggle_btime()
 
         sep = ttk.Separator(opt, orient=tk.HORIZONTAL)
@@ -70,6 +111,8 @@ class StepPlan(ttk.Frame):
                                     command=self._on_next)
         self.next_btn.pack(side=tk.RIGHT)
 
+    # ── Step wiring ──────────────────────────────────────────────────
+
     def set_on_back(self, cb):
         self._on_back = cb
 
@@ -77,15 +120,72 @@ class StepPlan(ttk.Frame):
         self._on_next = cb
         self.next_btn.config(command=cb)
 
+    # ── Btime list management ─────────────────────────────────────────
+
+    def _btime_widgets(self):
+        return (self._btime_list, self._btn_up, self._btn_down,
+                self._btn_add, self._btn_remove)
+
     def _toggle_btime(self):
         state = tk.NORMAL if self.fix_btime_var.get() else tk.DISABLED
-        self.btime_combo.config(state=state)
+        for w in self._btime_widgets():
+            w.config(state=state)
+
+    def _rebuild_listbox(self):
+        self._btime_list.delete(0, tk.END)
+        for method in self._btime_methods:
+            self._btime_list.insert(tk.END, _BTIME_LABELS.get(method, method))
+
+    def _move_up(self):
+        sel = self._btime_list.curselection()
+        if not sel or sel[0] == 0:
+            return
+        i = sel[0]
+        self._btime_methods[i], self._btime_methods[i - 1] = \
+            self._btime_methods[i - 1], self._btime_methods[i]
+        self._rebuild_listbox()
+        self._btime_list.selection_set(i - 1)
+
+    def _move_down(self):
+        sel = self._btime_list.curselection()
+        if not sel or sel[0] >= len(self._btime_methods) - 1:
+            return
+        i = sel[0]
+        self._btime_methods[i], self._btime_methods[i + 1] = \
+            self._btime_methods[i + 1], self._btime_methods[i]
+        self._rebuild_listbox()
+        self._btime_list.selection_set(i + 1)
+
+    def _add_method(self):
+        existing = set(self._btime_methods)
+        avail = [m for m in _BTIME_METHODS if m not in existing]
+        if not avail:
+            return
+        menu = tk.Menu(self._btime_list, tearoff=0)
+        for m in avail:
+            label = _BTIME_LABELS.get(m, m)
+            menu.add_command(label=label, command=lambda m=m: self._do_add(m))
+        menu.post(self._btn_add.winfo_rootx(), self._btn_add.winfo_rooty())
+
+    def _do_add(self, method):
+        self._btime_methods.append(method)
+        self._rebuild_listbox()
+
+    def _remove_method(self):
+        sel = self._btime_list.curselection()
+        if not sel:
+            return
+        i = sel[0]
+        del self._btime_methods[i]
+        self._rebuild_listbox()
+
+    # ── Options accessor ──────────────────────────────────────────────
 
     def get_options(self) -> dict:
         return {
             'fix_embedded': self.fix_embedded_var.get(),
             'fix_mtime': self.fix_mtime_var.get(),
-            'fix_btime': self.btime_method_var.get()
+            'fix_btime': list(self._btime_methods)
                          if self.fix_btime_var.get()
                          else 'off',
             'dry_run': self.dry_run_var.get(),
