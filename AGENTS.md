@@ -51,5 +51,12 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
 - `options.py` is the single source of truth for strategy/btime/format constants.
 - `src/gui/time_selector.py` uses `StringVar` (not `IntVar`) for spinbox variables.
 - `TimeSelector` conditionally defines `sec_var`/`ms_var` attributes only when `show_seconds=True`.
+- Btime uses a **priority‑ordered fallback chain**: `btime.chain_setup()` in `btime.py`
+  tries each method in order and returns the first one whose setup succeeds.
+  The GUI filters methods per filesystem via `btime.compatible_methods(fs_type)`.
+- `_rebuild_listbox()` temporarily switches the listbox to `NORMAL` before calling
+  `delete()`/`insert()` — tkinter silently ignores these calls when the widget is `DISABLED`.
+- `Writer.__init__` accepts `fix_btime: str | list[str] | tuple[str]` — a list
+  produces a fallback chain; a single string is wrapped for backward compatibility.
 - Manifest file: `.timestamp_correction_log` (idempotency guard).
 - History: `.timestamp_correction_history/` with before/after exiftool JSON.

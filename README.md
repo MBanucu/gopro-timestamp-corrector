@@ -98,7 +98,7 @@ nix run . -- /path/to/files --strategy-manifest strategies.json --gps
 | `--gps` | Determine delta using the first file with GPS data |
 | `--timezone` | Target timezone for GPS correction (e.g. `Europe/Berlin`) |
 | `--strategy-manifest` | JSON file with per-set strategies (`gps`, `manual`, `skip`) |
-| `--fix-btime` | Fix filesystem birth time (auto‑detects ext4 vs exFAT) |
+| `--fix-btime` | Fix filesystem birth time (auto‑detects ext4 vs exFAT; tries debugfs, exfat_raw, fuse, clock in order) |
 | `--force` | Ignore the manifest and re‑process all files |
 
 ### Strategy manifest
@@ -193,12 +193,19 @@ Check which corrections to apply:
 |---|---|
 | EXIF / QuickTime metadata | Correct embedded timestamps via `exiftool` |
 | Filesystem mtime | Correct modification time via `os.utime` |
-| Filesystem btime | Correct birth/creation time (method selector) |
+| Filesystem btime | Correct birth/creation time (priority‑ordered fallback list) |
 | Dry run | Preview changes without writing |
 | Force | Ignore the manifest and re‑process all files |
 
-The btime method selector offers the same strategies documented below
-(ext4 debugfs, exFAT raw block, FUSE+faketime, or system clock).
+The btime correction uses a **priority‑ordered fallback list**:
+
+- Each method is tried in order; the first one whose setup succeeds is used for all files.
+- Add/remove/reorder methods with the ▲▼+✕ buttons.
+- When the target directory is known, only **compatible methods** for its
+  filesystem are shown (e.g. `exfat_raw` + `fuse` on exFAT, `debugfs` on ext4).
+  An unknown or undetected filesystem defaults to `auto` + `clock` only.
+- The list starts **disabled** — check the *Filesystem birth time (btime)*
+  checkbox to enable it.
 
 ### 4. Apply (Run)
 
@@ -264,6 +271,12 @@ When `--fix-btime` is used, the tool auto‑detects the filesystem and picks
 the best method. On exFAT the **raw block** method (`exfat_raw`) is the
 default; without `sudo` it falls back to FUSE+faketime, and finally to
 the clock method.
+
+**In the GUI**, btime uses a priority‑ordered fallback chain.  Users
+add/remove/reorder methods (e.g. `exfat_raw` → `debugfs` → `clock`)
+and the system tries each in turn until one succeeds.  When the target
+directory is known, incompatible methods (e.g. `debugfs` on exFAT) are
+hidden automatically.
 
 See [`docs/exfat-raw-implementation.md`](docs/exfat-raw-implementation.md)
 for a detailed report on the exFAT filesystem internals, the raw block
@@ -342,11 +355,11 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 | Auto calibration (mock) | 4 unit | `test_calibration_panel.py` |
 | CLI integration | 1 integration | `test_img.py` |
 | Strategy manifest | 6 integration | `test_strategy.py` |
-| Btime (unit) | 14 unit | `test_btime.py` |
+| Btime (unit) | 22 unit | `test_btime.py` |
 | Btime (FUSE+faketime) | 4 integration | `test_fuse_faketime.py` |
 | Btime (exFAT raw) | 3 integration | `test_exfat_raw_btime.py` |
 | Modification history | 7 unit | `test_history.py` |
-| GUI structure smoke | 12 smoke | `test_gui_structure.py` |
+| GUI structure smoke | 20 smoke | `test_gui_structure.py` |
 | Auto calibration (real) | 3 integration | `test_auto_calibrate_integration.py` |
 | Full pipeline | 1 integration | `test_full_auto_integration.py` |
 
