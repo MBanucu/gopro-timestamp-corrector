@@ -12,8 +12,9 @@ except ImportError:
 import dst as dst_mod
 
 from gui.datepicker import DateTimePicker
+from gui.time_selector import TimeSelector
 from gui.tzcombobox import FilteringCombobox
-from options import CAL_DATE_FORMAT, CAL_TIME_FORMAT, CAL_DATE_LABEL, CAL_TIME_LABEL
+from options import CAL_DATE_FORMAT, CAL_TIME_FORMAT, CAL_DATE_LABEL
 
 
 def get_all_tz_ids():
@@ -49,25 +50,12 @@ class CalibrationEditor(ttk.LabelFrame):
         self.date_fmt_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
 
         # Time row
-        row = ttk.Frame(self)
-        row.pack(fill=tk.X, pady=1)
-        ttk.Label(row, text='Time:', width=8).pack(side=tk.LEFT)
-        self.hour_var = tk.StringVar()
-        self.min_var = tk.StringVar()
-        ttk.Spinbox(row, textvariable=self.hour_var, from_=0, to=23,
-                    width=2, format='%02.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text=':').pack(side=tk.LEFT)
-        ttk.Spinbox(row, textvariable=self.min_var, from_=0, to=59,
-                    width=2, format='%02.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text=':').pack(side=tk.LEFT)
-        self.sec_var = tk.StringVar()
-        ttk.Spinbox(row, textvariable=self.sec_var, from_=0, to=59,
-                    width=2, format='%02.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text='.').pack(side=tk.LEFT)
-        self.ms_var = tk.StringVar()
-        ttk.Spinbox(row, textvariable=self.ms_var, from_=0, to=999,
-                    width=3, format='%03.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text=CAL_TIME_LABEL, foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
+        self.time_selector = TimeSelector(self)
+        self.time_selector.pack(fill=tk.X, pady=1)
+        self.hour_var = self.time_selector.hour_var
+        self.min_var = self.time_selector.min_var
+        self.sec_var = self.time_selector.sec_var
+        self.ms_var = self.time_selector.ms_var
         # Timezone row
         row = ttk.Frame(self)
         row.pack(fill=tk.X, pady=1)
@@ -89,8 +77,8 @@ class CalibrationEditor(ttk.LabelFrame):
         self.date_var.trace_add('write', lambda *a: self._update_date_label())
         self.tz_var.trace_add('write', lambda *a: self.update_abbr())
         self.tz_var.trace_add('write', lambda *a: self._update_tz_utc_label())
-        self.hour_var.trace_add('write', lambda *a: self.update_abbr())
-        self.min_var.trace_add('write', lambda *a: self.update_abbr())
+        self.time_selector.hour_var.trace_add('write', lambda *a: self.update_abbr())
+        self.time_selector.min_var.trace_add('write', lambda *a: self.update_abbr())
 
         # DST warning
         self.dst_warn_var = tk.StringVar()
@@ -164,14 +152,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.update_dst()
 
     def pick_date(self):
-        try:
-            h = int(self.hour_var.get())
-        except ValueError:
-            h = 12
-        try:
-            m = int(self.min_var.get())
-        except ValueError:
-            m = 0
+        h, m = self.time_selector.get_time()[:2]
         tz = self.tz_var.get()
         DateTimePicker(self.master.master, self.on_date_picked,
                        all_zones=self.all_zones,

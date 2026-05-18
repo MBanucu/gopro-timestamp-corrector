@@ -9,6 +9,8 @@ try:
 except ImportError:
     tk = ttk = None
 
+from gui.time_selector import TimeSelector
+
 
 class DatePicker(tk.Toplevel):
     def __init__(self, parent, callback):
@@ -120,16 +122,12 @@ class DateTimePicker(DatePicker):
         body.pack(fill=tk.X, padx=8, pady=(0, 8))
 
         # Time row
-        row = ttk.Frame(body)
-        row.pack(fill=tk.X, pady=2)
-        ttk.Label(row, text='Time:', width=6).pack(side=tk.LEFT)
-        self.hour_var = tk.IntVar(value=self._hour)
-        self.min_var = tk.IntVar(value=self._minute)
-        ttk.Spinbox(row, textvariable=self.hour_var, from_=0, to=23,
-                    width=3, format='%02.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text=':').pack(side=tk.LEFT)
-        ttk.Spinbox(row, textvariable=self.min_var, from_=0, to=59,
-                    width=3, format='%02.0f').pack(side=tk.LEFT)
+        self.time_selector = TimeSelector(body, label='Time:', label_width=6,
+                                          show_seconds=False)
+        self.time_selector.pack(fill=tk.X, pady=2)
+        self.time_selector.set_time(hour=self._hour, minute=self._minute)
+        self.hour_var = self.time_selector.hour_var
+        self.min_var = self.time_selector.min_var
 
         # Timezone row
         row = ttk.Frame(body)
@@ -179,8 +177,7 @@ class DateTimePicker(DatePicker):
         self.year.set(now.year)
         self.month.set(now.month)
         self.draw_days()
-        self.hour_var.set(now.hour)
-        self.min_var.set(now.minute)
+        self.time_selector.set_time(hour=now.hour, minute=now.minute)
         self.tz_var.set(self._system_tz())
         self._pending_day = now.day
 
@@ -192,7 +189,8 @@ class DateTimePicker(DatePicker):
         self._pending_day = day
         y, m = self.year.get(), self.month.get()
         tz = self.tz_var.get().strip()
-        dt = datetime(y, m, day, self.hour_var.get(), self.min_var.get())
+        h, minute = self.time_selector.get_time()[:2]
+        dt = datetime(y, m, day, h, minute)
         self.callback(dt, tz)
         self.destroy()
 

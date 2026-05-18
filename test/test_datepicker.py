@@ -109,19 +109,19 @@ class TestDateTimePicker(unittest.TestCase):
 
     def test_has_hour_spinbox(self):
         self.assertTrue(hasattr(self.picker, 'hour_var'))
-        self.assertIsInstance(self.picker.hour_var.get(), int)
+        self.assertIsInstance(self.picker.hour_var.get(), str)
 
     def test_has_minute_spinbox(self):
         self.assertTrue(hasattr(self.picker, 'min_var'))
-        self.assertIsInstance(self.picker.min_var.get(), int)
+        self.assertIsInstance(self.picker.min_var.get(), str)
 
     def test_has_tz_widget(self):
         self.assertTrue(hasattr(self.picker, 'tz_var'))
         self.assertTrue(hasattr(self.picker, 'tz_combo'))
 
     def test_initial_values(self):
-        self.assertEqual(self.picker.hour_var.get(), 14)
-        self.assertEqual(self.picker.min_var.get(), 30)
+        self.assertEqual(int(self.picker.hour_var.get()), 14)
+        self.assertEqual(int(self.picker.min_var.get()), 30)
         self.assertEqual(self.picker.tz_var.get(), 'Europe/Berlin')
 
     def test_callback_returns_datetime_and_tz(self):
@@ -141,8 +141,8 @@ class TestDateTimePicker(unittest.TestCase):
         self.picker._set_now()
         self.root.update_idletasks()
         now = datetime.now()
-        self.assertEqual(self.picker.hour_var.get(), now.hour)
-        self.assertEqual(self.picker.min_var.get(), now.minute)
+        self.assertEqual(int(self.picker.hour_var.get()), now.hour)
+        self.assertEqual(int(self.picker.min_var.get()), now.minute)
         self.assertEqual(self.picker.year.get(), now.year)
         self.assertEqual(self.picker.month.get(), now.month)
 
