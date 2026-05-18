@@ -115,17 +115,15 @@ class ToolGUI:
         self._step_completed[3] = True
         plan = self.step2.plan
         if plan is not None:
-            summary = plan.summary()
-            # Override btime=auto with the actual chain from the Plan step
-            btime_val = self.step3.get_options().get('fix_btime', 'off')
+            btime_val = self.step3.get_options().get('fix_btime', None)
+            btime_chain: list[str] | str | None
             if isinstance(btime_val, list):
-                btime_str = 'btime=' + ' > '.join(btime_val)
-                parts = summary.split(', ')
-                summary = ', '.join(
-                    btime_str if p.startswith('btime=') else p
-                    for p in parts
-                )
-            self.step4.set_summary(summary)
+                btime_chain = btime_val
+            elif btime_val in ('off', None):
+                btime_chain = 'off'
+            else:
+                btime_chain = None
+            self.step4.set_summary(plan.to_string(btime_chain=btime_chain))
         else:
             self.step4.set_summary('No analysis loaded \u2014 will run CLI fallback.')
         self._show_step(4)

@@ -146,6 +146,29 @@ class CorrectionPlan:
         parts.append(f"btime={self.btime_method}")
         return ", ".join(parts)
 
+    def to_string(self, *, btime_chain: list[str] | str | None = None) -> str:
+        """Like :meth:`summary` but accepts the actual btime chain
+        selected in the Plan step (a list of method names) instead of
+        the internal ``btime_method`` placeholder.
+
+        Pass an empty list or ``'off'`` to indicate btime is disabled.
+        """
+        s = self.summary()
+        chain_str: str | None = None
+        if btime_chain is None:
+            chain_str = None  # keep the default from summary()
+        elif isinstance(btime_chain, list) and btime_chain:
+            chain_str = ' > '.join(btime_chain)
+        else:
+            chain_str = 'off'
+        if chain_str is None:
+            return s
+        parts = s.split(', ')
+        return ', '.join(
+            f'btime={chain_str}' if p.startswith('btime=') else p
+            for p in parts
+        )
+
     def get_decisions(self) -> dict[str, dict]:
         return {
             sid: {'strategy': d.strategy}
