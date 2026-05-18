@@ -92,6 +92,16 @@ class TestStepPanels(unittest.TestCase):
         self.assertTrue(hasattr(s, 'fix_mtime_var'))
         self.assertTrue(hasattr(s, 'fix_btime_var'))
         self.assertTrue(hasattr(s, 'btime_method_var'))
+        self.assertTrue(hasattr(s, 'next_btn'))
+
+    def test_step3_proceed_to_run_button(self):
+        s = StepPlan(self.root)
+        s.pack()
+        self.root.update_idletasks()
+        called = []
+        s.set_on_next(lambda: called.append('next'))
+        s.next_btn.invoke()
+        self.assertIn('next', called)
 
     def test_step4_import_and_create(self):
         s = StepRun(self.root)

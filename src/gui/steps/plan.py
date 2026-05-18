@@ -65,8 +65,9 @@ class StepPlan(ttk.Frame):
 
         nav = ttk.Frame(self)
         nav.pack(fill=tk.X, pady=(8, 0))
-        ttk.Button(nav, text='Proceed to Run \u2192',
-                   command=self._on_next).pack(side=tk.RIGHT)
+        self.next_btn = ttk.Button(nav, text='Proceed to Run \u2192',
+                                    command=self._on_next)
+        self.next_btn.pack(side=tk.RIGHT)
 
     def set_on_back(self, cb):
         self._on_back = cb
