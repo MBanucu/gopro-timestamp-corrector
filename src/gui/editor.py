@@ -13,6 +13,7 @@ import dst as dst_mod
 
 from gui.datepicker import DateTimePicker
 from gui.tzcombobox import FilteringCombobox
+from options import CAL_DATE_FORMAT, CAL_TIME_FORMAT, CAL_DATE_LABEL, CAL_TIME_LABEL
 
 
 def get_all_tz_ids():
@@ -43,7 +44,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.date_entry = ttk.Entry(row, textvariable=self.date_var, width=14)
         self.date_entry.pack(side=tk.LEFT, padx=(0, 2))
         ttk.Button(row, text='📅', width=3, command=self.pick_date).pack(side=tk.LEFT)
-        self.date_fmt_label = ttk.Label(row, text='  ISO: YYYY-MM-DD',
+        self.date_fmt_label = ttk.Label(row, text=CAL_DATE_LABEL,
                                          foreground='gray')
         self.date_fmt_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
 
@@ -66,7 +67,7 @@ class CalibrationEditor(ttk.LabelFrame):
         self.ms_var = tk.StringVar()
         ttk.Spinbox(row, textvariable=self.ms_var, from_=0, to=999,
                     width=3, format='%03.0f').pack(side=tk.LEFT)
-        ttk.Label(row, text='  HH:MM:SS.mmm (24h)', foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
+        ttk.Label(row, text=CAL_TIME_LABEL, foreground='gray').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0))
         # Timezone row
         row = ttk.Frame(self)
         row.pack(fill=tk.X, pady=1)
@@ -292,7 +293,7 @@ class CalibrationEditor(ttk.LabelFrame):
         ms = self.ms_var.get().strip() or '0'
         d['time'] = f"{int(h):02d}:{int(m):02d}:{int(s):02d}.{int(ms):03d}"
         d['timezone'] = self.tz_var.get().strip()
-        d['date_format'] = 'YYYY-MM-DD'
-        d['time_format'] = 'HH:MM:SS.mmm'
+        d['date_format'] = CAL_DATE_FORMAT
+        d['time_format'] = CAL_TIME_FORMAT
         d['fold'] = self.fold_var.get()
         return d

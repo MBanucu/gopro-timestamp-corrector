@@ -11,6 +11,7 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 import calibration
 import history
+from options import BTIME_OFF, BTIME_AUTO
 from writer import Writer, WriteJob
 from gui.sidebar import Sidebar
 from gui.steps.directory import StepDirectory
@@ -271,9 +272,9 @@ class ToolGUI:
                            self.step1.dir_var.get()]
                     if dry_run:
                         cmd.append('--dry-run')
-                    btime = self.step4.btime_var.get()
-                    if btime != 'off':
-                        cmd.append(f'--fix-btime={btime}')
+        btime = self.step4.btime_var.get()
+        if btime != BTIME_OFF:
+            cmd.append(f'--fix-btime={btime}')
                     cal_path = self.step1.cal_bar.get_path()
                     if cal_path and Path(cal_path).exists():
                         cmd.extend(['--translation', cal_path])
@@ -344,17 +345,17 @@ class ToolGUI:
         threading.Thread(target=run, daemon=True).start()
 
     def run_exif(self):
-        self._run_single_writer('Exiftool', 'off',
+        self._run_single_writer('Exiftool', BTIME_OFF,
                                 lambda w, j: w.write_embedded_only(j))
 
     def run_mtime(self):
-        self._run_single_writer('mtime', 'off',
+        self._run_single_writer('mtime', BTIME_OFF,
                                 lambda w, j: w.write_mtime_only(j))
 
     def run_btime(self):
         btime_val = self.step4.btime_var.get()
-        if btime_val == 'off':
-            btime_val = 'auto'
+        if btime_val == BTIME_OFF:
+            btime_val = BTIME_AUTO
         self._run_single_writer('btime', btime_val,
                                 lambda w, j: w.write_btime_only(j))
 

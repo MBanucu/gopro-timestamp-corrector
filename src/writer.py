@@ -11,6 +11,7 @@ from typing import Literal
 
 import media
 import btime
+from options import BTIME_OFF
 
 
 @dataclass
@@ -33,7 +34,7 @@ class Writer:
     def __init__(
         self,
         target_dir: Path,
-        fix_btime: str = 'off',
+        fix_btime: str = BTIME_OFF,
         delta: timedelta | None = None,
         dry_run: bool = False,
     ):
@@ -43,7 +44,7 @@ class Writer:
         self._b_ctx: dict = {}
         self._delta = delta
 
-        if fix_btime != 'off':
+        if fix_btime != BTIME_OFF:
             fs = btime.detect_fs(target_dir)
             self._b_method = btime.resolve_method(fix_btime, fs)
             if self._b_method and btime.needs_processing_before(self._b_method):

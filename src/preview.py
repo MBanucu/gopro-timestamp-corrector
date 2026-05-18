@@ -3,14 +3,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from analysis import AnalysisResult, FileInfo, FileSet
+from options import STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP, VALID_STRATEGIES
 import resolve
-
-
-STRATEGY_GPS = 'gps'
-STRATEGY_MANUAL = 'manual'
-STRATEGY_SKIP = 'skip'
-
-VALID_STRATEGIES = {STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP}
 
 
 @dataclass

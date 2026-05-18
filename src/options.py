@@ -1,0 +1,59 @@
+"""Shared options and constants for CLI, GUI, and computation modules.
+
+Single source of truth for option values used across the entire application.
+All user-facing option lists (CLI argparse choices, GUI combobox values) must
+import from here instead of hardcoding strings, ensuring CLI and GUI stay in sync.
+"""
+
+# ── Btime (birth time) fix methods ─────────────────────────────────
+
+BTIME_OFF = 'off'
+BTIME_AUTO = 'auto'
+BTIME_DEBUGFS = 'debugfs'
+BTIME_FUSE = 'fuse'
+BTIME_EXFAT_RAW = 'exfat_raw'
+BTIME_CLOCK = 'clock'
+
+# All valid btime method identifiers (including internal-only values).
+ALL_BTIME_METHODS = frozenset({
+    BTIME_OFF, BTIME_AUTO, BTIME_DEBUGFS,
+    BTIME_FUSE, BTIME_EXFAT_RAW, BTIME_CLOCK,
+})
+
+# User-facing choices for CLI argparse (excludes sentinel 'off').
+BTIME_CLI_CHOICES = (
+    BTIME_AUTO,
+    BTIME_DEBUGFS,
+    BTIME_FUSE,
+    BTIME_EXFAT_RAW,
+    BTIME_CLOCK,
+)
+
+# Choices shown in the GUI combobox (includes 'off' to disable).
+BTIME_GUI_CHOICES = (BTIME_OFF,) + BTIME_CLI_CHOICES
+
+# Methods that need setup before writes (e.g. FUSE remount).
+BTIME_PROCESSING_BEFORE = frozenset({BTIME_FUSE})
+
+# Methods that need per-file processing after mtime (e.g. raw block write).
+BTIME_PROCESSING_AFTER = frozenset({BTIME_DEBUGFS, BTIME_EXFAT_RAW})
+
+
+# ── Strategy options ───────────────────────────────────────────────
+
+STRATEGY_GPS = 'gps'
+STRATEGY_MANUAL = 'manual'
+STRATEGY_SKIP = 'skip'
+
+VALID_STRATEGIES = frozenset({STRATEGY_GPS, STRATEGY_MANUAL, STRATEGY_SKIP})
+DEFAULT_STRATEGY = STRATEGY_MANUAL
+
+
+# ── Calibration format strings ─────────────────────────────────────
+
+CAL_DATE_FORMAT = 'YYYY-MM-DD'
+CAL_TIME_FORMAT = 'HH:MM:SS.mmm'
+
+# Human-readable labels for the GUI
+CAL_DATE_LABEL = '  ISO: YYYY-MM-DD'
+CAL_TIME_LABEL = '  HH:MM:SS.mmm (24h)'

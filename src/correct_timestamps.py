@@ -14,6 +14,7 @@ import resolve
 import media
 import btime
 import history
+from options import BTIME_CLI_CHOICES, STRATEGY_MANUAL, STRATEGY_GPS
 from writer import Writer, WriteJob
 
 
@@ -46,12 +47,12 @@ def _build_decisions_from_manifest(analysis_result, strategy_manifest, global_de
     decisions = {}
     for fs in analysis_result.sets:
         override = overrides.get(fs.id, {})
-        strategy = override.get('strategy', 'manual')
-        if strategy == 'gps' and not fs.has_any_gps:
-            strategy = 'manual'
+        strategy = override.get('strategy', STRATEGY_MANUAL)
+        if strategy == STRATEGY_GPS and not fs.has_any_gps:
+            strategy = STRATEGY_MANUAL
         decisions[fs.id] = preview.SetDecision(
             strategy=strategy,
-            manual_delta=global_delta if strategy == 'manual' else None)
+            manual_delta=global_delta if strategy == STRATEGY_MANUAL else None)
     return decisions
 
 
@@ -60,8 +61,8 @@ def main():
     parser.add_argument('directory', nargs='?', default='.', help='Target directory')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
     parser.add_argument('--fix-btime', nargs='?', const='auto',
-                        choices=['auto', 'debugfs', 'fuse', 'clock'],
-                        help='Fix creation time: auto (best for FS), debugfs, fuse, clock')
+                        choices=BTIME_CLI_CHOICES,
+                        help='Fix creation time: auto (best for FS), debugfs, exfat_raw, fuse, clock')
     parser.add_argument('--gps', action='store_true', help='Use GPS time from the first file to determine delta')
     parser.add_argument('--timezone', help='Timezone for GPS correction (e.g. Europe/Berlin)')
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')
@@ -94,7 +95,7 @@ def main():
     if args.strategy_manifest:
         sets_m = strategy_manifest_raw.get('sets', {})
         if not needs_global_delta:
-            needs_global_delta = any(s.get('strategy', 'manual') == 'manual' for s in sets_m.values())
+            needs_global_delta = any(s.get('strategy', STRATEGY_MANUAL) == STRATEGY_MANUAL for s in sets_m.values())
 
     if needs_global_delta:
         if args.gps:
@@ -156,7 +157,7 @@ def main():
         decisions = _build_decisions_from_manifest(analysis_result, strategy_manifest_raw, global_delta)
     else:
         # Default: all sets use the global delta
-        decisions = {fs.id: preview.SetDecision(strategy='manual', manual_delta=global_delta)
+        decisions = {fs.id: preview.SetDecision(strategy=STRATEGY_MANUAL, manual_delta=global_delta)
                      for fs in analysis_result.sets}
 
     # The plan is computed ONCE and reused for display + writing
@@ -211,6 +212,7 @@ def main():
         history_meta = {
             'global_delta': str(global_delta) if global_delta else None,
             'fix_btime': args.fix_btime or 'off',
+            # Note: 'off' kept as literal in meta dict (history log format)
             'sets': {
                 pr.set_id: {
                     'strategy': pr.strategy,

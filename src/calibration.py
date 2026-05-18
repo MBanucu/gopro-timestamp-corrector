@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+from options import CAL_DATE_FORMAT, CAL_TIME_FORMAT
+
 
 VERSION = 1
 DEFAULT = {
@@ -8,17 +10,17 @@ DEFAULT = {
     "description": "GoPro time calibration reference",
     "actual": {
         "date": "",
-        "date_format": "YYYY-MM-DD",
+        "date_format": CAL_DATE_FORMAT,
         "time": "",
-        "time_format": "HH:MM",
+        "time_format": CAL_TIME_FORMAT,
         "timezone": "",
         "fold": 0,
     },
     "gopro": {
         "date": "",
-        "date_format": "YYYY-MM-DD",
+        "date_format": CAL_DATE_FORMAT,
         "time": "",
-        "time_format": "HH:MM",
+        "time_format": CAL_TIME_FORMAT,
         "timezone": "",
         "fold": 0,
     },

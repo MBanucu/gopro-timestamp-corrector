@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 
+from options import BTIME_GUI_CHOICES
+
 
 class StepRun(ttk.Frame):
     def __init__(self, parent, **kw):
@@ -26,7 +28,7 @@ class StepRun(ttk.Frame):
         self.btime_var = tk.StringVar(value='off')
         bm = ttk.Combobox(btime_row, textvariable=self.btime_var,
                           state='readonly', width=14)
-        bm['values'] = ('off', 'auto', 'debugfs', 'fuse', 'clock')
+        bm['values'] = BTIME_GUI_CHOICES
         bm.pack(side=tk.LEFT)
         ttk.Label(btime_row,
                   text='  ext4\u2192debugfs  exFAT\u2192fuse  fallback\u2192clock',
