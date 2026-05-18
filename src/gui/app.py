@@ -14,7 +14,6 @@ import history
 import btime
 from options import BTIME_OFF
 from plan import Planner, PlanBuilder, CorrectionPlan
-from writer import Writer, WriteJob
 from gui.sidebar import Sidebar
 from gui.steps.directory import StepDirectory
 from gui.steps.review import StepReview
@@ -213,10 +212,9 @@ class ToolGUI:
         self.running = True
         self.step4.set_buttons_enabled(False)
         self.step4.set_cancel_enabled(True)
-        self.step4.clear_output()
+        self.clear_output()
 
-        instruction_items = list(self.step4._instruction_items)
-        log_fn = lambda msg: self.root.after(0, self.step4.log, msg)
+        log_fn = lambda msg: self.root.after(0, self.log, msg)
         progress_fn = lambda idx, status: self.root.after(
             0, self.step4.update_instruction, idx, status)
 

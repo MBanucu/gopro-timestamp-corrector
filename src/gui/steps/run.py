@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from plan import Instruction, INSTRUCTION_STATUS
+from plan import Instruction
 
 
 _STATUS_ICONS = {
@@ -50,15 +50,6 @@ class StepRun(ttk.Frame):
 
         self._instruction_items: list[str] = []  # iid per instruction
 
-        # ── Output log ─────────────────────────────────────────
-        out_frame = ttk.LabelFrame(self, text='Output', padding=4)
-        out_frame.pack(fill=tk.X, expand=False, pady=(0, 6))
-
-        self.output = tk.Text(out_frame, wrap=tk.WORD, font=('Consolas', 10),
-                              bg='#1e1e1e', fg='#d4d4d4', insertbackground='white',
-                              height=6, state=tk.DISABLED)
-        self.output.pack(fill=tk.BOTH, expand=True)
-
         # ── Buttons ────────────────────────────────────────────
         btn_row = ttk.Frame(self)
         btn_row.pack(fill=tk.X, pady=4)
@@ -99,20 +90,6 @@ class StepRun(ttk.Frame):
         self.tree.set(item, column='status', value=icon)
         self.tree.set(item, column='instruction',
                       value=self.tree.set(item, 'instruction'))
-
-    # ── Output log ──────────────────────────────────────────────
-
-    def log(self, msg: str):
-        self.output.config(state=tk.NORMAL)
-        self.output.insert(tk.END, msg + '\n')
-        self.output.see(tk.END)
-        self.output.config(state=tk.DISABLED)
-        self.update_idletasks()
-
-    def clear_output(self):
-        self.output.config(state=tk.NORMAL)
-        self.output.delete(1.0, tk.END)
-        self.output.config(state=tk.DISABLED)
 
     # ── Button state ────────────────────────────────────────────
 
