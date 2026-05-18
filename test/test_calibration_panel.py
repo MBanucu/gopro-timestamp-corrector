@@ -93,12 +93,12 @@ class TestAutoCalibrateGUI(unittest.TestCase):
         self.assertIn('Auto calibrate', ' '.join(self.logged))
         self.assertIsNotNone(self.delta_result)
 
-        entry_text = self.panel.delta_entry.get()
-        self.assertTrue(entry_text.startswith('-'),
-                        f'Expected negative delta, got: {entry_text}')
-        # At least one unit component should be present
-        self.assertTrue(any(c in entry_text for c in 'dhms'),
-                        f'Delta entry should contain time units, got: {entry_text}')
+        self.assertEqual(self.panel.delta_sign_var.get(), '-')
+        has_value = any(int(v.get() or '0') > 0
+                        for v in (self.panel.day_var, self.panel.hour_var,
+                                  self.panel.min_var, self.panel.sec_var,
+                                  self.panel.ms_var))
+        self.assertTrue(has_value, 'At least one spinbox should be non-zero')
 
     def test_auto_calibrate_sets_calendar_editors(self):
         """The GPS and embedded times of the representative file appear in the Calendar tab."""

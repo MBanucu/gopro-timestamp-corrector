@@ -122,18 +122,35 @@ class CalibrationPanel(ttk.Frame):
         eds.columnconfigure(0, weight=1, uniform='editor')
         eds.columnconfigure(1, weight=1, uniform='editor')
 
-        # ── Delta entry ────────────────────────────────────────
+        # ── Delta spinboxes — days hours minutes seconds ms ────
         delta_row = ttk.Frame(self)
         delta_row.pack(fill=tk.X, pady=(0, 2))
         ttk.Label(delta_row, text='\u0394 Offset:', width=10,
                   font=('', 9, 'bold')).pack(side=tk.LEFT)
-        self.delta_entry = ttk.Entry(delta_row, width=24, font=('', 9))
-        self.delta_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        self.delta_entry.bind('<KeyRelease>', self._on_delta_entry)
-        self.delta_entry.bind('<FocusOut>', self._on_delta_entry)
-        ttk.Label(delta_row,
-                  text='Examples:  +2h30m   -1d5h   2:30   90m   0',
-                  font=('', 7), foreground='#999').pack(side=tk.LEFT)
+        self.delta_sign_var = tk.StringVar(value='+')
+        sign_btn = ttk.Button(delta_row, textvariable=self.delta_sign_var,
+                              width=3, command=self._toggle_sign)
+        sign_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self.day_var = tk.StringVar(value='0')
+        ttk.Spinbox(delta_row, textvariable=self.day_var, from_=0, to=9999,
+                    width=4).pack(side=tk.LEFT)
+        ttk.Label(delta_row, text='d', width=2).pack(side=tk.LEFT)
+        self.hour_var = tk.StringVar(value='0')
+        ttk.Spinbox(delta_row, textvariable=self.hour_var, from_=0, to=23,
+                    width=2).pack(side=tk.LEFT)
+        ttk.Label(delta_row, text='h', width=2).pack(side=tk.LEFT)
+        self.min_var = tk.StringVar(value='0')
+        ttk.Spinbox(delta_row, textvariable=self.min_var, from_=0, to=59,
+                    width=2).pack(side=tk.LEFT)
+        ttk.Label(delta_row, text='m', width=2).pack(side=tk.LEFT)
+        self.sec_var = tk.StringVar(value='0')
+        ttk.Spinbox(delta_row, textvariable=self.sec_var, from_=0, to=59,
+                    width=2).pack(side=tk.LEFT)
+        ttk.Label(delta_row, text='s', width=2).pack(side=tk.LEFT)
+        self.ms_var = tk.StringVar(value='0')
+        ttk.Spinbox(delta_row, textvariable=self.ms_var, from_=0, to=999,
+                    width=3).pack(side=tk.LEFT)
+        ttk.Label(delta_row, text='ms').pack(side=tk.LEFT)
 
         # ── GPS buttons ────────────────────────────────────────
         gps_row = ttk.Frame(self)
@@ -156,6 +173,9 @@ class CalibrationPanel(ttk.Frame):
             for var in (ed.date_var, ed.hour_var, ed.min_var,
                         ed.sec_var, ed.ms_var, ed.tz_var):
                 var.trace_add('write', lambda *a: self._update_preview())
+        for var in (self.day_var, self.hour_var, self.min_var,
+                    self.sec_var, self.ms_var, self.delta_sign_var):
+            var.trace_add('write', lambda *a: self._on_delta_spinbox())
 
     # ── Public API ─────────────────────────────────────────────
 
@@ -169,33 +189,80 @@ class CalibrationPanel(ttk.Frame):
     def manual_delta(self) -> timedelta | None:
         return compute_delta(self.actual_editor, self.gopro_editor)
 
-    # ── Delta entry ────────────────────────────────────────────
+    # ── Delta spinboxes ────────────────────────────────────────
 
-    def _on_delta_entry(self, event=None):
-        text = self.delta_entry.get().strip()
-        delta = parse_delta(text)
+    def _toggle_sign(self):
+        self.delta_sign_var.set('-' if self.delta_sign_var.get() == '+' else '+')
+
+    def _read_delta_from_spinboxes(self) -> timedelta | None:
+        try:
+            d = int(self.day_var.get() or '0')
+            h = int(self.hour_var.get() or '0')
+            m = int(self.min_var.get() or '0')
+            s = int(self.sec_var.get() or '0')
+            ms = int(self.ms_var.get() or '0')
+        except ValueError:
+            return None
+        sign = -1 if self.delta_sign_var.get() == '-' else 1
+        return sign * timedelta(days=d, hours=h, minutes=m,
+                                seconds=s, milliseconds=ms)
+
+    def _set_spinboxes_from_delta(self, delta: timedelta | None):
+        if delta is None:
+            self.day_var.set('0')
+            self.hour_var.set('0')
+            self.min_var.set('0')
+            self.sec_var.set('0')
+            self.ms_var.set('0')
+            self.delta_sign_var.set('+')
+            return
+        negative = delta.total_seconds() < 0
+        if negative:
+            delta = -delta
+        self.delta_sign_var.set('-' if negative else '+')
+        total_seconds = int(delta.total_seconds())
+        days = total_seconds // 86400
+        remainder = total_seconds % 86400
+        hours = remainder // 3600
+        remainder %= 3600
+        minutes = remainder // 60
+        seconds = remainder % 60
+        ms = delta.microseconds // 1000
+        self.day_var.set(str(days))
+        self.hour_var.set(str(hours))
+        self.min_var.set(str(minutes))
+        self.sec_var.set(str(seconds))
+        self.ms_var.set(str(ms))
+
+    def _on_delta_spinbox(self):
+        if getattr(self, '_updating_spinboxes', False):
+            return
+        delta = self._read_delta_from_spinboxes()
         if delta is not None:
             self._delta_cb(delta)
             actual = self.actual_editor.get_data()
             cal_data = {'actual': actual, 'gopro': {}}
             ok, *rest = calibration.try_parse(cal_data)
             if ok:
+                self._updating_spinboxes = True
                 self.gopro_editor.set_datetime(rest[0] - delta)
+                self._updating_spinboxes = False
 
     def _update_preview(self):
         delta = compute_delta(self.actual_editor, self.gopro_editor)
         if delta is not None:
             self._delta_cb(delta)
             self._preview_var.set('')
-            self.delta_entry.delete(0, tk.END)
-            self.delta_entry.insert(0, _fmt_delta(delta))
+            self._updating_spinboxes = True
+            self._set_spinboxes_from_delta(delta)
+            self._updating_spinboxes = False
         else:
             data = {'actual': self.actual_editor.get_data(),
                     'gopro': self.gopro_editor.get_data()}
             ok, *rest = calibration.try_parse(data)
             err = rest[0] if rest else 'Invalid'
             self._preview_var.set(f'\u26a0 {err}')
-            self.delta_entry.delete(0, tk.END)
+            self._set_spinboxes_from_delta(None)
 
     # ── GPS extraction ─────────────────────────────────────────
 

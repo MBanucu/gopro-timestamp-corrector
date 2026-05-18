@@ -243,12 +243,14 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         self.assertAlmostEqual(delta_result[-1].total_seconds(),
                                median.total_seconds(), delta=1.0)
 
-        entry_text = panel.delta_entry.get()
-        self.assertNotEqual(entry_text, '')
-        self.assertTrue(any(c in entry_text for c in 'dhms'),
-                        f'Delta entry should contain time units, got: {entry_text}')
+        has_value = any(int(v.get() or '0') > 0
+                        for v in (panel.day_var, panel.hour_var,
+                                  panel.min_var, panel.sec_var,
+                                  panel.ms_var))
+        self.assertTrue(has_value, 'At least one spinbox should be non-zero')
+        self.assertEqual(panel.delta_sign_var.get(), '-')
 
-        print(f'  Delta entry: {entry_text}')
+        print(f'  Delta sign: {panel.delta_sign_var.get()}')
         print(f'  Computed median: {median}')
         print(f'  Delta callback value: {delta_result[-1].total_seconds():.2f} s')
 
