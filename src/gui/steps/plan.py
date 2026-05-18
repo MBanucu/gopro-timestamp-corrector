@@ -2,12 +2,10 @@ import tkinter as tk
 from tkinter import ttk
 
 import btime
-from options import BTIME_PRIORITY_ORDERED, BTIME_AUTO
 
 
 # Human-readable labels for the btime method listbox.
 _BTIME_LABELS = {
-    BTIME_AUTO: 'Auto (best for filesystem)',
     'exfat_raw': 'exFAT raw block',
     'debugfs': 'debugfs (ext4)',
     'fuse': 'FUSE + faketime (exFAT)',
@@ -88,9 +86,9 @@ class StepPlan(ttk.Frame):
                   foreground='gray', font=('', 8)).pack(side=tk.LEFT,
                                                         padx=(12, 0))
 
-        # Initialise with a conservative default (auto + clock only).
+        # Initialise with a conservative default (clock only).
         # set_filesystem() expands to compatible methods once the fs is known.
-        self._btime_methods = ['auto', 'clock']
+        self._btime_methods = ['clock']
         self._compatible_methods = list(_BTIME_METHODS)
         self._rebuild_listbox()
         self._toggle_btime()
@@ -143,16 +141,11 @@ class StepPlan(ttk.Frame):
         """
         if fs_type is None:
             self._compatible_methods = list(_BTIME_METHODS)
-            self._btime_methods = [m for m in ('auto', 'clock')
-                                   if m in self._btime_methods] or ['auto', 'clock']
+            self._btime_methods = [m for m in ('clock',)
+                                   if m in self._btime_methods] or ['clock']
         else:
             self._compatible_methods = list(btime.compatible_methods(fs_type))
-            kept = [m for m in self._btime_methods
-                    if m in self._compatible_methods]
-            for m in self._compatible_methods:
-                if m not in kept:
-                    kept.append(m)
-            self._btime_methods = kept
+            self._btime_methods = list(self._compatible_methods)
         self._rebuild_listbox()
 
     def _rebuild_listbox(self):

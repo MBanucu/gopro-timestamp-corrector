@@ -111,9 +111,7 @@ class TestStepPanels(unittest.TestCase):
         s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
-        self.assertEqual(s._btime_methods, ['auto', 'clock'])
-        self.assertIn('auto', s._btime_methods)
-        self.assertIn('clock', s._btime_methods)
+        self.assertEqual(s._btime_methods, ['clock'])
 
     def test_step3_btime_toggle_disables_widgets(self):
         s = StepPlan(self.root)
@@ -147,7 +145,7 @@ class TestStepPanels(unittest.TestCase):
         opts = s.get_options()
         btime_val = opts['fix_btime']
         self.assertIsInstance(btime_val, list)
-        self.assertEqual(btime_val, ['auto', 'clock'])
+        self.assertEqual(btime_val, ['clock'])
 
     def test_step3_btime_move_up(self):
         s = StepPlan(self.root)
@@ -155,6 +153,7 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         s.fix_btime_var.set(True)
         s._toggle_btime()
+        s.set_filesystem('exfat')  # populate with 3 items
         original = list(s._btime_methods)
         # Select last item and move it up
         s._btime_list.selection_clear(0)
@@ -168,6 +167,7 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         s.fix_btime_var.set(True)
         s._toggle_btime()
+        s.set_filesystem('exfat')  # populate with 3 items
         original = list(s._btime_methods)
         s._btime_list.selection_set(0)
         s._move_down()
@@ -189,24 +189,21 @@ class TestStepPanels(unittest.TestCase):
         s.pack()
         self.root.update_idletasks()
         s.set_filesystem('ext4')
-        for m in ('debugfs', 'clock', 'auto'):
+        for m in ('debugfs', 'clock'):
             self.assertIn(m, s._btime_methods,
                           f'{m} should be available on ext4')
         self.assertNotIn('exfat_raw', s._btime_methods)
         self.assertNotIn('fuse', s._btime_methods)
 
-    def test_step3_set_filesystem_none_keeps_auto_clock_only(self):
+    def test_step3_set_filesystem_none_keeps_clock_only(self):
         s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
         s.set_filesystem('ext4')
-        # ext4 adds debugfs
-        self.assertNotIn('exfat_raw', s._btime_methods)
         self.assertIn('debugfs', s._btime_methods)
         s.set_filesystem(None)
-        # None (unknown fs) must only keep auto + clock
-        self.assertEqual(s._btime_methods, ['auto', 'clock'],
-                         'Unknown fs must only show auto and clock')
+        self.assertEqual(s._btime_methods, ['clock'],
+                         'Unknown fs must only show clock')
 
     def test_step3_set_filesystem_exfat_excludes_debugfs(self):
         """Reproduces user report: debugfs must not appear on exFAT."""
@@ -218,41 +215,37 @@ class TestStepPanels(unittest.TestCase):
                          'debugfs must not appear on exFAT filesystems')
         self.assertIn('exfat_raw', s._btime_methods)
         self.assertIn('fuse', s._btime_methods)
+        self.assertIn('clock', s._btime_methods)
 
-    def test_step3_unknown_fs_does_not_include_ext_specific(self):
-        """When detect_fs fails (returns None), only auto+clock are safe."""
+    def test_step3_unknown_fs_does_not_include_fs_specific(self):
+        """When detect_fs fails (returns None), only clock is safe."""
         s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
         s.set_filesystem(None)
-        self.assertNotIn('debugfs', s._btime_methods,
-                         'debugfs must not show when filesystem is unknown')
-        self.assertNotIn('exfat_raw', s._btime_methods,
-                         'exfat_raw must not show when filesystem is unknown')
-        self.assertNotIn('fuse', s._btime_methods,
-                         'fuse must not show when filesystem is unknown')
+        self.assertEqual(s._btime_methods, ['clock'],
+                         'Only clock must show when filesystem is unknown')
 
     def test_step3_set_filesystem_exfat_includes_exfat_fuse(self):
         s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
         s.set_filesystem('exfat')
-        self.assertEqual(set(s._btime_methods),
-                         {'auto', 'exfat_raw', 'fuse', 'clock'},
-                         'exFAT must include auto, exfat_raw, fuse, clock')
+        self.assertEqual(s._btime_methods,
+                         ['exfat_raw', 'fuse', 'clock'],
+                         'exFAT must show exfat_raw, fuse, clock')
 
-    def test_step3_set_filesystem_preserves_user_order(self):
+    def test_step3_set_filesystem_replaces_prior_default(self):
+        """Previous pre‑fs default is replaced by compatible order."""
         s = StepPlan(self.root)
         s.pack()
         self.root.update_idletasks()
-        # User reorders before fs is known
-        s._btime_methods = ['clock', 'auto']
+        s._btime_methods = ['clock']
         s._rebuild_listbox()
-        # Now fs becomes known as ext4
         s.set_filesystem('ext4')
         self.assertEqual(s._btime_methods,
-                         ['clock', 'auto', 'debugfs'],
-                         'User order preserved, debugfs appended')
+                         ['debugfs', 'clock'],
+                         'Compatible order replaces prior default')
 
     def test_step3_exfat_entries_present_when_btime_disabled(self):
         """Reproduces user observation: after set_filesystem('exfat')
@@ -281,8 +274,8 @@ class TestStepPanels(unittest.TestCase):
         # Listbox items must reflect _btime_methods (even when disabled)
         items_before = [s._btime_list.get(i)
                         for i in range(s._btime_list.size())]
-        self.assertEqual(len(items_before), 4,
-                         f'Listbox must have 4 items after set_filesystem, '
+        self.assertEqual(len(items_before), 3,
+                         f'Listbox must have 3 items after set_filesystem, '
                          f'got {len(items_before)}: {items_before}')
 
         # After enabling btime the items must still be there
@@ -291,8 +284,8 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         items_after = [s._btime_list.get(i)
                        for i in range(s._btime_list.size())]
-        self.assertEqual(len(items_after), 4,
-                         f'Listbox must still have 4 items after enabling '
+        self.assertEqual(len(items_after), 3,
+                         f'Listbox must still have 3 items after enabling '
                          f'btime, got {len(items_after)}: {items_after}')
         self.assertTrue(
             any('exFAT' in label for label in items_after),

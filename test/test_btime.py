@@ -141,43 +141,43 @@ class TestBtimePureFunctions(unittest.TestCase):
         for fs in ('ext4', 'ext3', 'ext2'):
             with self.subTest(fs=fs):
                 methods = btime.compatible_methods(fs)
-                self.assertIn('auto', methods)
                 self.assertIn('debugfs', methods)
                 self.assertIn('clock', methods)
+                self.assertEqual(len(methods), 2)
                 self.assertNotIn('exfat_raw', methods)
                 self.assertNotIn('fuse', methods)
 
     def test_compatible_methods_exfat(self):
         methods = btime.compatible_methods('exfat')
-        self.assertIn('auto', methods)
+        self.assertIn('exfat_raw', methods)
+        self.assertIn('fuse', methods)
+        self.assertIn('clock', methods)
+        self.assertEqual(len(methods), 3)
+        self.assertNotIn('debugfs', methods)
+
+    def test_compatible_methods_vfat(self):
+        methods = btime.compatible_methods('vfat')
         self.assertIn('exfat_raw', methods)
         self.assertIn('fuse', methods)
         self.assertIn('clock', methods)
         self.assertNotIn('debugfs', methods)
 
-    def test_compatible_methods_vfat(self):
-        methods = btime.compatible_methods('vfat')
-        self.assertIn('auto', methods)
-        self.assertIn('exfat_raw', methods)
-        self.assertIn('fuse', methods)
-        self.assertNotIn('debugfs', methods)
-
     def test_compatible_methods_fuseblk(self):
         methods = btime.compatible_methods('fuseblk')
-        self.assertIn('auto', methods)
         self.assertIn('exfat_raw', methods)
         self.assertIn('fuse', methods)
+        self.assertIn('clock', methods)
         self.assertNotIn('debugfs', methods)
 
     def test_compatible_methods_unknown(self):
         for fs in ('btrfs', 'xfs', 'ntfs'):
             with self.subTest(fs=fs):
                 methods = btime.compatible_methods(fs)
-                self.assertEqual(set(methods), {'auto', 'clock'})
+                self.assertEqual(methods, ('clock',))
 
     def test_compatible_methods_none(self):
         methods = btime.compatible_methods(None)
-        self.assertEqual(set(methods), {'auto', 'clock'})
+        self.assertEqual(methods, ('clock',))
 
     # ── chain_setup ───────────────────────────────────────────────
 
@@ -208,6 +208,30 @@ class TestBtimePureFunctions(unittest.TestCase):
             ['auto', 'clock'], '/some/path', 'ext4',
             timedelta(), dry_run=True)
         self.assertEqual(method, 'debugfs')
+
+    def test_chain_setup_auto_expands_to_full_chain_on_exfat(self):
+        """``auto`` on exFAT must expand to exfat_raw → fuse → clock."""
+        # exfat_raw needs no setup → should succeed immediately
+        method, ctx = btime.chain_setup(
+            ['auto'], '/some/path', 'exfat',
+            timedelta(), dry_run=True)
+        self.assertEqual(method, 'exfat_raw')
+
+    def test_chain_setup_auto_expands_on_ext4(self):
+        """``auto`` on ext4 must expand to debugfs → clock."""
+        method, ctx = btime.chain_setup(
+            ['auto'], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        self.assertEqual(method, 'debugfs')
+
+    def test_chain_setup_auto_respects_explicit_methods(self):
+        """A mixed list: explicit methods used as-is, auto still expands."""
+        # 'clock' before 'auto' should still work
+        method, ctx = btime.chain_setup(
+            ['clock', 'auto'], '/some/path', 'ext4',
+            timedelta(), dry_run=True)
+        self.assertEqual(method, 'clock')
+        # clock was first and needs setup → succeeds → no fallback needed
 
     def test_chain_setup_empty_returns_none(self):
         method, ctx = btime.chain_setup(

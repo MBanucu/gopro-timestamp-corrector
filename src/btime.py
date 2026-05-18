@@ -83,9 +83,12 @@ def resolve_method(requested, fs_type):
 def chain_setup(methods, target_path, fs_type, delta, dry_run):
     """Try *methods* in order, returning the first one whose setup succeeds.
 
+    ``'auto'`` is expanded to the full optimal method order for *fs_type*
+    (e.g. on exFAT: ``['exfat_raw', 'fuse', 'clock']``).
+
     Args:
-        methods: iterable of method names (str).  ``'auto'`` is resolved
-                 via ``resolve_method``; explicit names are used as-is.
+        methods: iterable of method names (str).  ``'auto'`` is expanded
+                 to the full compatible chain; explicit names are used as-is.
         target_path: Path for filesystem detection.
         fs_type: pre‑detected filesystem type.
         delta: timedelta offset for setup.
@@ -96,7 +99,16 @@ def chain_setup(methods, target_path, fs_type, delta, dry_run):
         (e.g. ``'exfat_raw'``) and *ctx* the setup context dict (may be {}).
         Returns (None, {}) when every method fails.
     """
-    for method in methods:
+    expanded = []
+    for m in methods:
+        if m == BTIME_AUTO:
+            expanded.extend(
+                cm for cm in compatible_methods(fs_type) if cm != BTIME_AUTO
+            )
+        else:
+            expanded.append(m)
+
+    for method in expanded:
         resolved = resolve_method(method, fs_type)
         if needs_processing_before(resolved):
             ctx = setup(resolved, target_path, delta, dry_run) or {}
@@ -113,9 +125,14 @@ def chain_setup(methods, target_path, fs_type, delta, dry_run):
 def compatible_methods(fs_type):
     """Return the btime method names applicable to *fs_type*.
 
-    ``'auto'`` and ``'clock'`` are always included (clock is the universal
-    last‑resort).  Methods that cannot possibly work on the given
-    filesystem are excluded so the UI can filter them out.
+    ``'clock'`` is always included as the universal last‑resort.
+    Methods that cannot possibly work on the given filesystem are
+    excluded so the UI can filter them out.
+
+    Note: ``'auto'`` is **not** returned — it is a purely backend
+    concept handled by :func:`chain_setup`.  Callers that want the
+    expanded concrete list for a known filesystem should use this
+    function directly.
 
     Args:
         fs_type: filesystem type as returned by ``detect_fs()``
@@ -124,12 +141,13 @@ def compatible_methods(fs_type):
     Returns:
         tuple of method name strings in a sensible default order.
     """
-    methods = [BTIME_AUTO, BTIME_CLOCK]
+    methods = []
     if fs_type and fs_type.startswith('ext'):
-        methods.insert(1, BTIME_DEBUGFS)
+        methods.append(BTIME_DEBUGFS)
     elif fs_type in ('exfat', 'vfat', 'msdos', 'fuseblk'):
-        methods.insert(1, BTIME_EXFAT_RAW)
-        methods.insert(2, BTIME_FUSE)
+        methods.append(BTIME_EXFAT_RAW)
+        methods.append(BTIME_FUSE)
+    methods.append(BTIME_CLOCK)
     return tuple(methods)
 
 

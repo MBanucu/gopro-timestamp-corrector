@@ -202,8 +202,9 @@ The btime correction uses a **priority‑ordered fallback list**:
 - Each method is tried in order; the first one whose setup succeeds is used for all files.
 - Add/remove/reorder methods with the ▲▼+✕ buttons.
 - When the target directory is known, only **compatible methods** for its
-  filesystem are shown (e.g. `exfat_raw` + `fuse` on exFAT, `debugfs` on ext4).
-  An unknown or undetected filesystem defaults to `auto` + `clock` only.
+  filesystem are shown (e.g. `exfat_raw` + `fuse` + `clock` on exFAT,
+  `debugfs` + `clock` on ext4).
+  An unknown or undetected filesystem defaults to `clock` only.
 - The list starts **disabled** — check the *Filesystem birth time (btime)*
   checkbox to enable it.
 
