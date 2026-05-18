@@ -20,7 +20,8 @@ Files recorded in these states get wrong timestamps — both in embedded metadat
 and on the filesystem. This tool corrects them in one pass.
 
 All observations above were made on a **GoPro HERO10 Black** running
-firmware **v1.62** (last updated around 2025).
+firmware **v1.62** (released May 23, 2024 — the only listed change is
+support for the Waterproof Shutter Remote).
 
 ## Features
 
