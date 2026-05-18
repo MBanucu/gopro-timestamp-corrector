@@ -68,6 +68,12 @@ class StepPlan(ttk.Frame):
         ttk.Button(nav, text='Proceed to Run \u2192',
                    command=self._on_next).pack(side=tk.RIGHT)
 
+    def set_on_back(self, cb):
+        self._on_back = cb
+
+    def set_on_next(self, cb):
+        self._on_next = cb
+
     def _toggle_btime(self):
         state = tk.NORMAL if self.fix_btime_var.get() else tk.DISABLED
         self.btime_combo.config(state=state)
