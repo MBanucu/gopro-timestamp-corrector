@@ -20,13 +20,12 @@ class StepDirectory(ttk.Frame):
         row.pack(fill=tk.X, pady=(0, 4))
         ttk.Label(row, text='Directory:', width=14).pack(side=tk.LEFT)
         self.dir_var = tk.StringVar(value=str(Path.cwd()))
-        ttk.Entry(row, textvariable=self.dir_var).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.dir_combo = ttk.Combobox(row, textvariable=self.dir_var,
+                                      postcommand=self._refresh_detected)
+        self.dir_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.dir_combo.bind('<<ComboboxSelected>>', self._on_combo_select)
         ttk.Button(row, text='Browse...', command=self.browse_dir,
                    width=10).pack(side=tk.RIGHT, padx=(0, 2))
-        self.detect_btn = ttk.Button(row, text='Detect', width=8,
-                                      command=self.detect_gopro)
-        self.detect_btn.pack(side=tk.RIGHT, padx=(0, 2))
         self.analyze_btn = ttk.Button(row, text='Analyze',
                                        command=self.analyze_files, width=10)
         self.analyze_btn.pack(side=tk.RIGHT)
@@ -40,10 +39,23 @@ class StepDirectory(ttk.Frame):
                                         foreground='#555', font=('', 9))
         self._summary_label.pack(anchor=tk.W, pady=(4, 0))
 
+        self._refresh_detected()
+
     set_cal_data = lambda self, data: None
 
     def set_on_set_cal_data(self, cb):
         self.set_cal_data = cb
+
+    def _refresh_detected(self):
+        import scanner
+        paths = scanner.find_gopro_paths()
+        self.dir_combo['values'] = [str(p) for p in paths]
+
+    def _on_combo_select(self, event=None):
+        d = self.dir_var.get()
+        if d:
+            self._summary_var.set('')
+            self.cal_bar.auto(d)
 
     def analyze_files(self):
         target_dir = self.dir_var.get()
@@ -85,58 +97,6 @@ class StepDirectory(ttk.Frame):
             self.dir_var.set(d)
             self._summary_var.set('')
             self.cal_bar.auto(d)
-
-    def detect_gopro(self):
-        import scanner
-        self._set_status('Scanning for GoPro devices...')
-        paths = scanner.find_gopro_paths()
-        if not paths:
-            self._set_status('Ready')
-            messagebox.showinfo('No GoPro Found',
-                                'No GoPro media directories found on any '
-                                'mounted device.')
-            return
-        if len(paths) == 1:
-            self._select_gopro_path(paths[0])
-            return
-        self._show_path_selector(paths)
-
-    def _select_gopro_path(self, path: Path):
-        self.dir_var.set(str(path))
-        self._summary_var.set('')
-        self.cal_bar.auto(str(path))
-        self._set_status('Ready')
-
-    def _show_path_selector(self, paths: list[Path]):
-        win = tk.Toplevel(self)
-        win.title('Select GoPro Directory')
-        win.transient(self)
-        win.grab_set()
-        ttk.Label(win, text='Multiple GoPro directories found:',
-                  padding=(10, 10, 10, 0)).pack(fill=tk.X)
-        lb = tk.Listbox(win, width=80, height=min(len(paths), 10))
-        lb.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        for p in paths:
-            lb.insert(tk.END, str(p))
-        lb.selection_set(0)
-        lb.focus_set()
-
-        def confirm():
-            sel = lb.curselection()
-            if sel:
-                self._select_gopro_path(paths[sel[0]])
-            win.destroy()
-
-        def cancel():
-            win.destroy()
-            self._set_status('Ready')
-
-        btn_frame = ttk.Frame(win)
-        btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        ttk.Button(btn_frame, text='OK', command=confirm).pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Button(btn_frame, text='Cancel', command=cancel).pack(side=tk.LEFT)
-        lb.bind('<Double-Button-1>', lambda e: confirm())
-        win.wait_window()
 
     def clear_summary(self):
         self._summary_var.set('')
