@@ -39,17 +39,16 @@ def discover_all():
     return sorted(modules)
 
 
-def run_one(name: str, verbose: bool, coverage_source: str | None) -> tuple[str, bool, float, str, str]:
+def run_one(name: str, coverage_source: str | None) -> tuple[str, bool, float, str, str]:
     t0 = time.perf_counter()
     env = os.environ.copy()
     env['PYTHONPATH'] = f'{SRC}{os.pathsep}{env.get("PYTHONPATH", "")}'
     if coverage_source:
         cmd = [sys.executable, '-m', 'coverage', 'run',
                '--parallel-mode', '--source', coverage_source,
-               '-m', 'unittest', f'test.{name}']
+               '-m', 'unittest', 'test.' + name, '-v']
     else:
-        cmd = [sys.executable, '-m', 'unittest',
-               '-v' if verbose else '-q', f'test.{name}']
+        cmd = [sys.executable, '-m', 'unittest', 'test.' + name, '-v']
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.perf_counter() - t0
     return name, r.returncode == 0, elapsed, r.stdout, r.stderr
@@ -58,7 +57,8 @@ def run_one(name: str, verbose: bool, coverage_source: str | None) -> tuple[str,
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count() or 4)
-    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-v', '--verbose', action='store_true',  # kept for compat, always verbose now
+                       help=argparse.SUPPRESS)
     parser.add_argument('--coverage', action='store_true',
                         help='Collect coverage data from subprocesses')
     parser.add_argument('modules', nargs='*')
@@ -73,7 +73,7 @@ def main():
     coverage_source = str(SRC) if args.coverage else None
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(run_one, name, args.verbose, coverage_source): name
+        futs = {pool.submit(run_one, name, coverage_source): name
                 for name in modules}
         for fut in as_completed(futs):
             name, ok, elapsed, out, err = fut.result()
@@ -83,19 +83,20 @@ def main():
             else:
                 failed += 1
                 print(f'  FAIL {name}  ({elapsed:.1f}s)')
+                # Print full failure output
                 for line in err.splitlines():
-                    if 'FAIL' in line or 'Error' in line or 'AssertionError' in line:
+                    print(f'    {line}')
+                for line in out.splitlines():
+                    if line.startswith('FAIL:') or line.startswith('ERROR:'):
                         print(f'    {line}')
-                        break
 
     total = time.perf_counter() - t_start
     print(f'\n{passed} passed, {failed} failed ({total:.1f}s)')
 
-    if args.coverage:
+    if args.coverage and (passed > 0 or failed > 0):
         subprocess.run([sys.executable, '-m', 'coverage', 'combine', '--quiet'])
-        if passed > 0:
-            subprocess.run([sys.executable, '-m', 'coverage', 'report', '-m',
-                           f'--include={coverage_source}/*'])
+        subprocess.run([sys.executable, '-m', 'coverage', 'report', '-m',
+                       f'--include={coverage_source}/*'])
 
     return 1 if failed else 0
 
