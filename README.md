@@ -313,10 +313,11 @@ nix run .#test
 COV=$(nix eval .#packages.x86_64-linux.test.outPath --raw)
 $COV/bin/coverage-report
 
-# Directly (parallel):
+# Directly (parallel) — requires the Python env from flake.nix:
+#   nix develop  # or: nix shell .#pythonEnv
 PYTHONPATH=src:test python3 test/run_parallel.py -j 4
 
-# Serial:
+# Serial — same prerequisite:
 PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ```
 
