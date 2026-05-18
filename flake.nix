@@ -10,7 +10,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime ];
+        deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime xorg.xvfb ];
         python = pkgs.python3.withPackages (ps: [ ps.tkinter ]);
         src = pkgs.lib.cleanSource ./.;
       in {
@@ -73,7 +73,12 @@ WRAPPER
             cat > $out/bin/run-tests << WRAPPER
 #!${pkgs.bash}/bin/bash
 export PYTHONPATH="\$PYTHONPATH:$src:$src/src:${pkgs.lib.makeBinPath deps}:$out/lib"
-exec $python_test -m test.run_parallel -j 4 --coverage "\$@"
+Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
+XVFB_PID=\$!
+DISPLAY=:99 $python_test -m test.run_parallel -j 4 --coverage "\$@"
+EXIT_CODE=\$?
+kill \$XVFB_PID 2>/dev/null
+exit \$EXIT_CODE
 WRAPPER
             cat > $out/bin/coverage-report << WRAPPER
 #!${pkgs.bash}/bin/bash
