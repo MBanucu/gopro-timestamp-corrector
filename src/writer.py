@@ -71,10 +71,13 @@ class Writer:
             return True
 
         ok = bool(job.target_embedded and media.write_embedded(job.path, job.target_embedded))
-        if job.target_mtime is not None:
-            media.write_mtime(job.path, job.target_mtime)
+        # Write btime BEFORE mtime: _fix_exfat_raw syncs+drop_caches.  If we
+        # write mtime first the kernel's pending utime cache overwrites the
+        # raw block btime change when sync flushes.
         if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
             btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
+        if job.target_mtime is not None:
+            media.write_mtime(job.path, job.target_mtime)
         return ok
 
     def write_embedded_only(self, job: WriteJob) -> bool:
@@ -113,7 +116,10 @@ class Writer:
         else:
             batch_ok = True
 
-        # ── Per-file: mtime + btime ────────────────────────────
+        # ── Per-file: btime then mtime ──────────────────────────
+        # btime first: _fix_exfat_raw syncs+drop_caches.  If we write
+        # mtime first the kernel's pending utime cache overwrites the
+        # raw block btime change when sync flushes.
         for job in jobs:
             if not self.dry_run and job.target_embedded is not None and not batch_ok:
                 (summary.errors or []).append(str(job.path))
@@ -121,11 +127,10 @@ class Writer:
 
             summary.written += 1
 
-            if job.target_mtime is not None:
-                media.write_mtime(job.path, job.target_mtime)
-
             if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
                 btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
+            if job.target_mtime is not None:
+                media.write_mtime(job.path, job.target_mtime)
 
         return summary
 

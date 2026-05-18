@@ -300,6 +300,5 @@ class TestFullAutoIntegration(unittest.TestCase):
         print(f'  │ {"─" * 30}')
         print(f'  │ total:               {t_total:.2f}s')
 
-
 if __name__ == '__main__':
     unittest.main()
