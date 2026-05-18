@@ -10,6 +10,11 @@ misconfiguration).
 
 - **Battery Drain:** A GoPro with a drained battery resets its clock to **January 1, 2016**.
 - **Quik App Sync:** Synchronizing the camera with the GoPro Quik app (e.g. on Android) often sets the GoPro's internal clock to the phone's **local time**, but the GoPro interprets it as **UTC**. Since the GoPro lacks timezone settings, all recorded metadata ends up with a fixed offset equal to your local timezone's UTC offset.
+- **QuickTime:CreationDate timezone ambiguity:** GoPro firmware stores
+  `CreationDate` as a string (unlike the integer-based `CreateDate`/
+  `TrackCreateDate` etc.). Omitting the timezone causes exiftool to
+  interpret it as local time on readback, shifting the value by the UTC
+  offset even when the actual time is correct.
 
 Files recorded in these states get wrong timestamps — both in embedded metadata
 and on the filesystem. This tool corrects them in one pass.
