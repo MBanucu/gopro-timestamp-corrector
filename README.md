@@ -47,6 +47,12 @@ and on the filesystem. This tool corrects them in one pass.
 - **Idempotent** — a manifest file prevents double‑correction on re‑runs
 - **Modification history** — every correction run records full exiftool JSON
   (before/after) in `.timestamp_correction_history/` for audit and rollback
+- **QuickTime:CreationDate timezone fix** — the tool writes
+  `QuickTime:CreationDate` with an explicit `+00:00` UTC offset.
+  GoPro firmware stores this tag as a string (unlike the integer-based
+  `CreateDate`/`TrackCreateDate` etc.), and omitting the timezone causes
+  exiftool to interpret it as local time on readback, shifting the displayed
+  value by the UTC offset.
 - **ISO 8601** date format throughout the GUI with millisecond precision
 - **Common‑prefix autocomplete** for timezone entry with **Tab‑to‑accept**
 - **All internal times are UTC-aware** (`tzinfo=timezone.utc`) — timezone
