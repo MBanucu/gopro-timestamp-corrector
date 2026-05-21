@@ -118,6 +118,9 @@ def chain_setup(methods, target_path, fs_type, delta, dry_run):
         if resolved == 'clock':
             ctx = setup(resolved, target_path, delta, dry_run) or {}
             return resolved, ctx
+        if resolved == 'exfat_raw':
+            if os.path.exists(target_path) and _resolve_device(target_path) is None:
+                continue
         return resolved, {}
     return None, {}
 
@@ -229,6 +232,10 @@ def _setup_fuse(target_path, delta, dry_run):
         return None
     if not shutil.which('mount.exfat-fuse'):
         print("  ! mount.exfat-fuse not found. Install exfat or use --fix-btime clock.")
+        return None
+
+    if not os.path.exists(target_path):
+        print("  ! Path does not exist. Falling back to clock method.")
         return None
 
     device = _resolve_device(target_path)
