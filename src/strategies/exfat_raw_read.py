@@ -41,7 +41,10 @@ class ExfatRawReadStrategy(ExfatRawStrategy):
         from datetime import timezone
         from btime import _resolve_device
 
-        device = _resolve_device(filepath)
+        try:
+            device = _resolve_device(filepath)
+        except OSError:
+            return None
         if not device:
             return None
 

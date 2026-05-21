@@ -179,6 +179,50 @@ class TestExfatRawBtime(unittest.TestCase):
         self.assertEqual(resolve_method('exfat_raw', 'exfat'), 'exfat_raw')
         self.assertTrue(needs_processing_after('exfat_raw'))
 
+    def test_read_exfat_btime_raw_after_write(self):
+        """Set btime via _fix_exfat_raw, verify read_exfat_btime_raw reads it back."""
+        from strategies.exfat_raw import read_exfat_btime_raw
+        from btime import _fix_exfat_raw
+
+        files = sorted(self.target.iterdir())
+        self.assertGreater(len(files), 0)
+        f = str(files[0])
+
+        # Set to a known timestamp with 10ms-aligned millisecond
+        target_dt = datetime(2025, 12, 25, 10, 30, 45, 120000, tzinfo=timezone.utc)
+        expected_ts = int(target_dt.timestamp())
+
+        _fix_exfat_raw(f, target_dt, dry_run=False)
+
+        raw_bt = read_exfat_btime_raw(f)
+        self.assertIsNotNone(raw_bt, 'read_exfat_btime_raw should return a value')
+        self.assertEqual(
+            raw_bt, expected_ts,
+            f'read_exfat_btime_raw should return {expected_ts} ({target_dt}), '
+            f'got {raw_bt}')
+
+    def test_read_exfat_btime_raw_returns_none_on_bad_path(self):
+        """read_exfat_btime_raw returns None for non-existent files."""
+        from strategies.exfat_raw import read_exfat_btime_raw
+        result = read_exfat_btime_raw('/nonexistent/file.mp4')
+        self.assertIsNone(result)
+
+    def test_exfat_raw_read_strategy_read_btime_raw(self):
+        """ExfatRawReadStrategy.read_btime_raw works like read_exfat_btime_raw."""
+        from strategies.exfat_raw_read import ExfatRawReadStrategy
+        from strategies.exfat_raw import read_exfat_btime_raw
+
+        files = sorted(self.target.iterdir())
+        self.assertGreater(len(files), 0)
+        f = str(files[0])
+
+        strategy_val = ExfatRawReadStrategy.read_btime_raw(f)
+        direct_val = read_exfat_btime_raw(f)
+
+        self.assertEqual(
+            strategy_val, direct_val,
+            'ExfatRawReadStrategy.read_btime_raw should match read_exfat_btime_raw')
+
 
 if __name__ == '__main__':
     unittest.main()

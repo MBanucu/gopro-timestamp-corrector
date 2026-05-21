@@ -247,7 +247,10 @@ def read_exfat_btime_raw(filepath: str) -> int | None:
     """
     from btime import _resolve_device
 
-    device = _resolve_device(filepath)
+    try:
+        device = _resolve_device(filepath)
+    except OSError:
+        return None
     if not device:
         return None
 

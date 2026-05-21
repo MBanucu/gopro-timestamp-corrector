@@ -117,9 +117,13 @@ def _loop_via_sudo(img_path):
         subprocess.run(['sudo', 'chmod', '666', loop_dev],
                        capture_output=True)
 
+        uid = os.getuid()
+        gid = os.getgid()
         for fs_type in ('exfat', 'fuse.exfat', 'auto'):
             r = subprocess.run(
-                ['sudo', 'mount', '-t', fs_type, loop_dev, mount_point],
+                ['sudo', 'mount', '-t', fs_type,
+                 '-o', f'uid={uid},gid={gid}',
+                 loop_dev, mount_point],
                 capture_output=True, text=True)
             if r.returncode == 0:
                 break
