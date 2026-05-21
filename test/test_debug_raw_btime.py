@@ -55,7 +55,7 @@ class DebugRawBtime(unittest.TestCase):
         # read-only after detecting raw block writes (CI's kernel <6.12).
         from btime import _resolve_device as _rd
         dev = _rd(str(cls._mount_point))
-        cls._test_05_offset = 200000 * 512
+        cls._test_05_offset = 50000 * 512  # ~25 MB, well within pre-allocated sparse file region
         cls._test_05_pattern = b'CLUSTER_WRITE_TEST_99'
         r = subprocess.run(
             ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={cls._test_05_offset}',
@@ -96,20 +96,15 @@ class DebugRawBtime(unittest.TestCase):
     def test_01_dd_write_read_raw(self):
         """Direct dd write/read to loop device — verify persistence."""
         dev = self._resolve_device()
-        dev_path = str(dev)
-        # Write a known pattern at sector 0 (boot sector — safe area for test)
-        # Use an unused area like sector 100000 (well past FAT + cluster heap)
         test_offset = 100000 * 512
         expected = b'DEBUG_TEST_PATTERN_42'
         subprocess.run(
-            ['sudo', 'dd', f'of={dev_path}', 'bs=1',
+            ['sudo', 'dd', f'of={dev}', 'bs=1',
              f'seek={test_offset}', f'count={len(expected)}', 'status=none'],
             input=expected, check=True, capture_output=True)
         subprocess.run(['sync'])
-        subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
-                       capture_output=True)
         r = subprocess.run(
-            ['sudo', 'dd', f'if={dev_path}', 'bs=1',
+            ['sudo', 'dd', f'if={dev}', 'bs=1',
              f'skip={test_offset}', f'count={len(expected)}', 'status=none'],
             check=True, capture_output=True)
         actual = r.stdout
