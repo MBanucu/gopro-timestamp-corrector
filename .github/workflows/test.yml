@@ -1,0 +1,84 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pip-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq exiftool xvfb
+
+      - name: Install project (and Python deps)
+        run: pip install -e .
+
+      - name: Verify install
+        run: |
+          correct-gopro-timestamps --help
+          python -c 'import exiftool_session; print("exiftool_session OK")'
+          python -c 'import gui.app; print("gui.app OK")'
+
+      - name: Run tests
+        env:
+          PYTHONPATH: test
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1024x768x24 &
+          python -m unittest discover -s test -p 'test_analysis.py' -v
+          python -m unittest discover -s test -p 'test_gps.py' -v
+          python -m unittest discover -s test -p 'test_history.py' -v
+          python -m unittest discover -s test -p 'test_preview.py' -v
+          python -m unittest discover -s test -p 'test_dst_fold.py' -v
+          python -m unittest discover -s test -p 'test_common_prefix.py' -v
+          python -m unittest discover -s test -p 'test_proposals.py' -v
+          python -m unittest discover -s test -p 'test_autocomplete.py' -v
+          python -m unittest discover -s test -p 'test_datepicker.py' -v
+          python -m unittest discover -s test -p 'test_editor.py' -v
+          python -m unittest discover -s test -p 'test_file_table.py' -v
+          python -m unittest discover -s test -p 'test_calibration_panel.py' -v
+          python -m unittest discover -s test -p 'test_gui_structure.py' -v
+
+  pip-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps
+        run: brew install exiftool
+
+      - name: Install project
+        run: pip install -e .
+
+      - name: Verify install
+        run: |
+          correct-gopro-timestamps --help
+          python -c 'import exiftool_session; print("exiftool_session OK")'
+          python -c 'import gui.app; print("gui.app OK")'
+
+      - name: Run tests (non-GUI only)
+        env:
+          PYTHONPATH: test
+        run: |
+          python -m unittest discover -s test -p 'test_analysis.py' -v
+          python -m unittest discover -s test -p 'test_gps.py' -v
+          python -m unittest discover -s test -p 'test_history.py' -v
+          python -m unittest discover -s test -p 'test_preview.py' -v
+          python -m unittest discover -s test -p 'test_dst_fold.py' -v
+          python -m unittest discover -s test -p 'test_common_prefix.py' -v
+          python -m unittest discover -s test -p 'test_proposals.py' -v
