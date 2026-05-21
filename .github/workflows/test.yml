@@ -19,9 +19,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq exiftool xvfb
-          sudo modprobe exfat || true
-          sudo modprobe loop || true
+          sudo apt-get install -y -qq exiftool xvfb exfat-fuse
 
       - name: Install project (and Python deps)
         run: pip install -e .
