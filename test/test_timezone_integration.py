@@ -9,6 +9,7 @@ Invoke under nix develop so the subprocess python has pyexiftool:
 """
 
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -49,13 +50,26 @@ class TestTimezoneIntegration(unittest.TestCase):
                     text=True,
                     timeout=_TIMEOUT,
                 )
+                output = r.stdout + r.stderr
+                if 'Ran ' not in output:
+                    self.fail(
+                        f'No tests were discovered in subprocess under TZ={tz}\n'
+                        f'--- stdout ---\n{r.stdout}\n'
+                        f'--- stderr ---\n{r.stderr}\n'
+                    )
+                m = re.search(r'Ran (\d+) test', output)
+                test_count = int(m.group(1)) if m else 0
                 if r.returncode != 0:
-                    msg = f'Integration test FAILED under TZ={tz}\n'
-                    if r.stdout:
-                        msg += f'--- stdout ---\n{r.stdout}\n'
-                    if r.stderr:
-                        msg += f'--- stderr ---\n{r.stderr}\n'
-                    self.fail(msg)
+                    self.fail(
+                        f'Integration test FAILED under TZ={tz} '
+                        f'({test_count} tests)\n'
+                        f'--- stdout ---\n{r.stdout}\n'
+                        f'--- stderr ---\n{r.stderr}\n'
+                    )
+                if test_count == 0 or 'skipped' in output:
+                    print(f'  [{tz}] {test_count} tests ran (integration was skipped)')
+                else:
+                    print(f'  [{tz}] {test_count} tests passed')
 
 
 if __name__ == '__main__':
