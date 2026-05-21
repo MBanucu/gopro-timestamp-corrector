@@ -70,6 +70,18 @@ class BtimeProbeResult:
 
 
 @dataclass
+class ExfatBtimeSupport:
+    """Result of probing the kernel's ability to read back btime on exFAT.
+
+    Creates a temporary exFAT filesystem, writes a file, and checks
+    whether ``stat -c '%W'`` returns a non-zero birth time.
+    """
+
+    supported: bool | None
+    reason: str = ''
+
+
+@dataclass
 class EnvReport:
     platform: str
     python_version: str
@@ -80,6 +92,7 @@ class EnvReport:
     btime_methods: list[BtimeMethodCapability]
     available_strategies: list[str]
     btime_probe: BtimeProbeResult | None
+    exfat_btime_support: ExfatBtimeSupport | None
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -250,6 +263,78 @@ def _probe_utime(path: str) -> bool | None:
             os.unlink(fname)
 
 
+def _probe_exfat_btime() -> ExfatBtimeSupport:
+    """Probe kernel support for reading btime on exFAT via a temp filesystem."""
+    if not shutil.which('mkfs.exfat'):
+        return ExfatBtimeSupport(supported=None, reason='mkfs.exfat not found')
+    if not shutil.which('losetup'):
+        return ExfatBtimeSupport(supported=None, reason='losetup not found')
+
+    tmp_img = None
+    loop_dev = None
+    mount_point = None
+    try:
+        fd, tmp_img = tempfile.mkstemp(suffix='.img', prefix='exfat_btime_probe_')
+        os.close(fd)
+        os.truncate(tmp_img, 64 * 1024 * 1024)  # 64 MB sparse
+
+        r = subprocess.run(['mkfs.exfat', tmp_img], capture_output=True, timeout=30)
+        if r.returncode != 0:
+            return ExfatBtimeSupport(supported=None,
+                                     reason=f'mkfs.exfat failed: {r.stderr.strip()}')
+
+        r = subprocess.run(
+            ['sudo', 'losetup', '-f', '--show', tmp_img],
+            capture_output=True, text=True, timeout=15)
+        if r.returncode != 0 or not r.stdout.strip():
+            return ExfatBtimeSupport(supported=None, reason='losetup failed')
+        loop_dev = r.stdout.strip()
+
+        mount_point = tempfile.mkdtemp(prefix='exfat_btime_probe_')
+        r = subprocess.run(
+            ['sudo', 'mount', '-t', 'exfat', loop_dev, mount_point],
+            capture_output=True, timeout=15)
+        if r.returncode != 0:
+            r = subprocess.run(
+                ['sudo', 'mount', '-t', 'fuse.exfat', loop_dev, mount_point],
+                capture_output=True, timeout=15)
+            if r.returncode != 0:
+                return ExfatBtimeSupport(
+                    supported=None,
+                    reason=f'mount failed: kernel exfat not available')
+
+        test_file = os.path.join(mount_point, 'probe.bin')
+        with open(test_file, 'wb') as f:
+            f.write(b'x')
+
+        subprocess.run(['sync'])
+        r = subprocess.run(['stat', '-c', '%W', test_file],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0 or not r.stdout.strip():
+            return ExfatBtimeSupport(supported=None, reason='stat failed')
+
+        btime_val = int(r.stdout.strip())
+        if btime_val > 0:
+            return ExfatBtimeSupport(supported=True)
+        return ExfatBtimeSupport(supported=False, reason='stat -c %W returned 0')
+
+    except FileNotFoundError as e:
+        return ExfatBtimeSupport(supported=None, reason=f'missing tool: {e.name}')
+    except Exception as e:
+        return ExfatBtimeSupport(supported=None, reason=str(e))
+    finally:
+        if mount_point and loop_dev:
+            subprocess.run(['sudo', 'umount', mount_point],
+                           capture_output=True, timeout=15)
+        if loop_dev:
+            subprocess.run(['sudo', 'losetup', '-d', loop_dev],
+                           capture_output=True, timeout=15)
+        if tmp_img and os.path.exists(tmp_img):
+            os.unlink(tmp_img)
+        if mount_point and os.path.exists(mount_point):
+            os.rmdir(mount_point)
+
+
 def probe_btime(path: str | Path) -> BtimeProbeResult:
     """Probe birth-time readability on the filesystem containing *path*."""
     path = str(path)
@@ -323,6 +408,10 @@ def check_env(target_path: str | Path | None = None) -> EnvReport:
 
     probe = probe_btime(target_path or '.') if target_path else None
 
+    exfat_probe = None
+    if sudo_ok:
+        exfat_probe = _probe_exfat_btime()
+
     return EnvReport(
         platform=sys.platform,
         python_version=f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}',
@@ -333,6 +422,7 @@ def check_env(target_path: str | Path | None = None) -> EnvReport:
         btime_methods=btime_methods,
         available_strategies=[options.STRATEGY_GPS, options.STRATEGY_MANUAL, options.STRATEGY_SKIP],
         btime_probe=probe,
+        exfat_btime_support=exfat_probe,
     )
 
 
@@ -394,6 +484,15 @@ def format_summary(report: EnvReport) -> str:
             lines.append(f'  os.utime():      ✗  (EPERM or other error)')
         else:
             lines.append(f'  os.utime():      ?  (unexpected error)')
+
+    if report.exfat_btime_support is not None:
+        e = report.exfat_btime_support
+        icon = '✓' if e.supported else ('✗' if e.supported is False else '?')
+        lines.append('')
+        lines.append(f'exFAT btime probe (temp filesystem):')
+        lines.append(f'  Kernel exFAT btime readback: {icon}')
+        if e.reason:
+            lines.append(f'  ({e.reason})')
 
     return '\n'.join(lines)
 
