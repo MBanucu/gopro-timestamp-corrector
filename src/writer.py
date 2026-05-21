@@ -152,14 +152,19 @@ class Writer:
         """Tear down btime if needed."""
         if self._b_method and (btime.needs_processing_before(self._b_method) or self._b_method == 'clock'):
             btime.teardown(self._b_method, self._b_ctx, self.dry_run)
-        # Remount to flush the exFAT driver's private metadata cache.
-        # _fix_exfat_raw writes via dd (bypasses the driver), so the
-        # driver's cache becomes stale.  mount -o remount clears it.
+        # Full umount + mount cycle to flush the exFAT driver's private
+        # metadata cache.  _fix_exfat_raw writes via dd (bypasses the
+        # driver), so the driver's cached directory entries become stale.
+        # mount -o remount is insufficient — recent kernel exFAT drivers
+        # keep per-inode cached entries that survive remount.
         if self._b_method == BTIME_EXFAT_RAW and not self.dry_run:
             try:
                 mp = btime._resolve_mount_point(self.target_dir)
-                if mp:
-                    subprocess.run(['sudo', 'mount', '-o', 'remount', mp],
+                dev = btime._resolve_device(self.target_dir)
+                if mp and dev:
+                    subprocess.run(['sudo', 'umount', mp],
+                                   capture_output=True, timeout=15)
+                    subprocess.run(['sudo', 'mount', dev, mp],
                                    capture_output=True, timeout=15)
             except Exception:
                 pass

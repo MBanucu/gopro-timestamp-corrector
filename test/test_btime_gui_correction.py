@@ -92,11 +92,18 @@ class TestBtimeGuiCorrection(unittest.TestCase):
 
         # ── Record original metadata for every file ─────────────────
         orig_mtimes = {}
+        orig_btimes: dict = {}
         media_files = media.collect(self.target)
         for fp in media_files:
             ts = media.read_mtime(fp)
             if ts is not None:
                 orig_mtimes[fp] = int(ts.timestamp())
+            bt = self._read_btime(fp)
+            if bt is not None:
+                orig_btimes[fp] = bt
+
+        # Check if the kernel supports btime readback on this filesystem
+        btime_readable = any(bt != 0 for bt in orig_btimes.values())
 
         # ── Set a known calibration delta ──────────────────────────
         delta = timedelta(hours=-2)
@@ -156,14 +163,23 @@ class TestBtimeGuiCorrection(unittest.TestCase):
             expected_ts = orig_mtimes[fp] + int(delta.total_seconds())
 
             diff = abs(after_bt - expected_ts)
-            # Some files on exFAT may retain the driver-cached original
-            # btime (25200s = 7h offset) due to the kernel driver's
-            # private metadata cache that persists through drop_caches.
-            # This is a known kernel driver limitation.
-            if diff > 2 and diff != 25200:
+            if diff > 2:
+                # Some files on exFAT may retain the driver-cached original
+                # btime (25200s = 7h offset) due to the kernel driver's
+                # private metadata cache that persists through drop_caches.
+                # This is a known kernel driver limitation.
+                if diff == 25200:
+                    continue
+                # If the kernel doesn't support btime readback on this
+                # filesystem (e.g. kernel <6.12 on exFAT), stat -c '%W'
+                # returns 0 — skip verification but don't fail.
+                if not btime_readable and after_bt == 0:
+                    continue
                 errors.append(
                     f'{fp.name}: btime {after_bt}, '
                     f'expected ~{expected_ts} (diff={diff}s)')
 
         root.destroy()
+        if not btime_readable and not errors:
+            self.skipTest('Kernel does not support btime readback on exFAT')
         self.assertEqual(errors, [], '\n'.join(errors))
