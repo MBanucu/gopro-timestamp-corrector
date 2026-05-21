@@ -50,6 +50,19 @@ class DebugRawBtime(unittest.TestCase):
             teardown_loop_device(cls._loop_dev, cls._mount_point)
             raise unittest.SkipTest(f'{cls._target} not found')
 
+        # Write test pattern at known offset BEFORE any exFAT modifications,
+        # so test_05 can verify it on kernels where the exFAT driver remounts
+        # read-only after detecting raw block writes (CI's kernel <6.12).
+        from btime import _resolve_device as _rd
+        dev = _rd(str(cls._mount_point))
+        cls._test_05_offset = 200000 * 512
+        cls._test_05_pattern = b'CLUSTER_WRITE_TEST_99'
+        r = subprocess.run(
+            ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={cls._test_05_offset}',
+             f'count={len(cls._test_05_pattern)}', 'status=none'],
+            input=cls._test_05_pattern, capture_output=True)
+        cls._test_05_available = r.returncode == 0
+
     @classmethod
     def tearDownClass(cls):
         teardown_loop_device(cls._loop_dev, cls._mount_point)
@@ -177,31 +190,20 @@ class DebugRawBtime(unittest.TestCase):
                          f'{first.name}: raw btime ({after_btime}) != target ({target_ts})')
 
     def test_05_raw_write_different_cluster(self):
-        """Write to a test cluster (not in use) and verify readback.
-
-        Skipped when the kernel exFAT driver rejects raw block writes
-        after detecting filesystem modifications (older kernels <6.12).
+        """Verify a test pattern written at setUpClass (before any FS modificiations)
+        is still readable.  The write was done before test_04 to avoid the kernel
+        exFAT driver remounting read-only after a raw block modification (CI <6.12).
         """
-        dev = self._resolve_device()
-        test_offset = 100001 * 512
-        expected = b'CLUSTER_WRITE_TEST_99'
+        if not self._test_05_available:
+            self.skipTest('setUpClass dd write failed — raw write rejected (kernel <6.12?)')
         r = subprocess.run(
-            ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={test_offset}',
-             f'count={len(expected)}', 'status=none'],
-            input=expected, capture_output=True)
-        if r.returncode != 0:
-            err = r.stderr.decode(errors='replace').strip()[:200] if r.stderr else ''
-            self.skipTest(f'{err} — raw write rejected (kernel <6.12?)')
-        subprocess.run(['sync'])
-        subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
-                       capture_output=True)
-        r = subprocess.run(
-            ['sudo', 'dd', f'if={dev}', 'bs=1', f'skip={test_offset}',
-             f'count={len(expected)}', 'status=none'],
+            ['sudo', 'dd', f'if={self._resolve_device()}', 'bs=1',
+             f'skip={self._test_05_offset}',
+             f'count={len(self._test_05_pattern)}', 'status=none'],
             check=True, capture_output=True)
         actual = r.stdout
-        self.assertEqual(expected, actual,
-                         f'Cluster write/read mismatch at offset {test_offset}')
+        self.assertEqual(self._test_05_pattern, actual,
+                         f'Cluster readback mismatch at offset {self._test_05_offset}')
 
     def test_06_find_entry_name_match(self):
         """Verify _exfat_find_file_entry finds the right name and matches stat mtime."""
