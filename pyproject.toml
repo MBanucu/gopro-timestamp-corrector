@@ -11,8 +11,9 @@ py-modules = [
 
 [tool.setuptools.package-dir]
 "" = "src"
-gui = "src/gui"
-"gui.steps" = "src/gui/steps"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project]
 name = "gopro-timestamp-corrector"
