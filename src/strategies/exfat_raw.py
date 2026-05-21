@@ -351,8 +351,12 @@ def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
             subprocess.run(['sync'])
             subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
                            capture_output=True)
+            import time as _time
+            _time.sleep(0.2)
         if not found:
-            raise RuntimeError(f"exFAT: directory component '{component}' not found")
+            raise RuntimeError(
+                f"exFAT: directory component '{component}' not found "
+                f"(cluster={current_cluster}, device={device})")
         dchain, dci, doff, dsc, dentries = found
         stream = dentries[1]
         first_cl = struct.unpack_from('<I', stream, 0x14)[0]
