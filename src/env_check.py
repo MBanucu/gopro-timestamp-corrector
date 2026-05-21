@@ -292,14 +292,12 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
     if not shutil.which('mkfs.exfat'):
         return ExfatBtimeSupport(supported=None, reason='mkfs.exfat not found',
                                  stat_method=None, statx_method=None, raw_read_method=None)
-    if not shutil.which('losetup'):
-        return ExfatBtimeSupport(supported=None, reason='losetup not found',
-                                 stat_method=None, statx_method=None, raw_read_method=None)
+
+    from loop_device import setup_loop_device, teardown_loop_device, LoopDeviceError
 
     tmp_img = None
     loop_dev = None
     mount_point = None
-    test_file = None
     try:
         fd, tmp_img = tempfile.mkstemp(suffix='.img', prefix='exfat_btime_probe_')
         os.close(fd)
@@ -311,38 +309,11 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
                                      reason=f'mkfs.exfat failed: {r.stderr.strip()}',
                                      stat_method=None, statx_method=None, raw_read_method=None)
 
-        r = subprocess.run(
-            ['sudo', 'losetup', '-f', '--show', tmp_img],
-            capture_output=True, text=True, timeout=15)
-        if r.returncode != 0 or not r.stdout.strip():
-            return ExfatBtimeSupport(supported=None, reason='losetup failed',
+        try:
+            loop_dev, mount_point = setup_loop_device(tmp_img)
+        except LoopDeviceError as e:
+            return ExfatBtimeSupport(supported=None, reason=str(e),
                                      stat_method=None, statx_method=None, raw_read_method=None)
-        loop_dev = r.stdout.strip()
-
-        mount_point = tempfile.mkdtemp(prefix='exfat_btime_probe_')
-
-        # Try kernel exfat driver first
-        r = subprocess.run(
-            ['sudo', 'mount', '-t', 'exfat', loop_dev, mount_point],
-            capture_output=True, timeout=15)
-
-        # Fall back to FUSE (mount.exfat-fuse) when kernel driver is
-        # unavailable or sudo PATH doesn't include the Nix store.
-        if r.returncode != 0:
-            mount_exfat = shutil.which('mount.exfat-fuse')
-            if mount_exfat:
-                r = subprocess.run(
-                    ['sudo', 'env', f'PATH={os.environ["PATH"]}',
-                     mount_exfat, loop_dev, mount_point,
-                     '-o', f'uid={os.getuid()}', '-o', f'gid={os.getgid()}',
-                     '-o', 'allow_other'],
-                    capture_output=True, timeout=15)
-            if r.returncode != 0:
-                msg = r.stderr.decode() if isinstance(r.stderr, bytes) else str(r.stderr)
-                return ExfatBtimeSupport(
-                    supported=None,
-                    reason=f'mount failed: {msg[:120]}',
-                    stat_method=None, statx_method=None, raw_read_method=None)
 
         test_file = os.path.join(mount_point, 'probe.bin')
         subprocess.run(['sudo', 'touch', test_file], capture_output=True, timeout=15)
@@ -352,7 +323,6 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
                        capture_output=True, timeout=15)
 
-        # Probe all three methods
         stat_ok = _probe_stat_btime_on_exfat(test_file)
         statx_ok = _probe_statx_btime_on_exfat(test_file)
         raw_ok = _probe_raw_read_btime_on_exfat(test_file)
@@ -373,12 +343,8 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         return ExfatBtimeSupport(supported=None, reason=str(e),
                                  stat_method=None, statx_method=None, raw_read_method=None)
     finally:
-        if mount_point and loop_dev:
-            subprocess.run(['sudo', 'umount', mount_point],
-                           capture_output=True, timeout=15)
         if loop_dev:
-            subprocess.run(['sudo', 'losetup', '-d', loop_dev],
-                           capture_output=True, timeout=15)
+            teardown_loop_device(loop_dev, mount_point)
         if tmp_img and os.path.exists(tmp_img):
             os.unlink(tmp_img)
         if mount_point and os.path.exists(mount_point):
