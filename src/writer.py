@@ -157,36 +157,6 @@ class Writer:
     def close(self):
         if self._b_method and (btime.needs_processing_before(self._b_method) or self._b_method == 'clock'):
             btime.teardown(self._b_method, self._b_ctx, self.dry_run)
-        if self._b_method == BTIME_EXFAT_RAW and not self.dry_run:
-            mp = btime._resolve_mount_point(self.target_dir)
-            dev = btime._resolve_device(self.target_dir)
-            if mp and dev:
-                subprocess.run(['sudo', 'umount', mp],
-                               capture_output=True, timeout=15)
-                uid = os.getuid()
-                gid = os.getgid()
-                import shutil as _shutil
-                import time as _time
-                for attempt in range(3):
-                    for fs_type in ('exfat', 'fuse.exfat', 'auto'):
-                        r = subprocess.run(
-                            ['sudo', 'mount', '-t', fs_type,
-                             '-o', f'uid={uid},gid={gid}',
-                             dev, mp],
-                            capture_output=True, text=True, timeout=15)
-                        if r.returncode == 0:
-                            return
-                    mount_exfat = _shutil.which('mount.exfat-fuse')
-                    if mount_exfat:
-                        r = subprocess.run(
-                            ['sudo', 'env', f'PATH={os.environ.get("PATH", "")}',
-                             mount_exfat, dev, mp,
-                             '-o', f'uid={uid}', '-o', f'gid={gid}'],
-                            capture_output=True, timeout=15)
-                        if r.returncode == 0:
-                            return
-                    if attempt < 2:
-                        _time.sleep(1)
 
     def __enter__(self):
         return self

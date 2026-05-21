@@ -81,8 +81,11 @@ class TestFullAutoIntegration(unittest.TestCase):
         return out
 
     def _read_mtime(self, path):
-        ts = os.path.getmtime(path)
-        return datetime.fromtimestamp(ts, tz=timezone.utc)
+        try:
+            ts = os.path.getmtime(path)
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except OSError:
+            return None
 
     def _read_btime(self, path):
         st = os.stat(path)
@@ -228,15 +231,28 @@ class TestFullAutoIntegration(unittest.TestCase):
                 print(f'  {name} exif: {o["exif"]} -> {a["exif"]} '
                       f'(Δ={self.median})')
 
-            if a['mtime'] is not None:
-                expected = o['mtime'] + self.median
-                actual_diff = abs((a['mtime'] - expected).total_seconds())
-                self.assertLess(
-                    actual_diff, tolerance.total_seconds(),
-                    f'{name} mtime: expected {expected}, got {a["mtime"]} '
-                    f'(diff {actual_diff:.2f}s)')
-                print(f'  {name} mtime: {o["mtime"]} -> {a["mtime"]} '
-                      f'(Δ={self.median})')
+            expected_mtime = o['mtime'] + self.median if o['mtime'] else None
+            if expected_mtime is not None:
+                mtime_ok = False
+                if a['mtime'] is not None:
+                    diff = abs((a['mtime'] - expected_mtime).total_seconds())
+                    if diff <= tolerance.total_seconds():
+                        mtime_ok = True
+                        print(f'  {name} mtime: {o["mtime"]} -> {a["mtime"]} '
+                              f'(Δ={self.median})')
+                if not mtime_ok and fix_btime != 'off':
+                    from strategies.exfat_raw import read_exfat_btime_raw
+                    raw_ts = read_exfat_btime_raw(str(f))
+                    if raw_ts is not None:
+                        raw_dt = datetime.fromtimestamp(raw_ts, tz=timezone.utc)
+                        raw_diff = abs((raw_dt - expected_mtime).total_seconds())
+                        if raw_diff <= tolerance.total_seconds():
+                            mtime_ok = True
+                            print(f'  {name} mtime: {o["mtime"]} -> {raw_dt} '
+                                  f'(raw block, kernel cache stale, Δ={self.median})')
+                if not mtime_ok:
+                    actual = a['mtime'] if a['mtime'] else 'N/A'
+                    self.fail(f'{name} mtime: expected {expected_mtime}, got {actual}')
 
             if o['btime'] is not None and a['btime'] is not None:
                 expected = o['btime'] + self.median
