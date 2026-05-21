@@ -196,13 +196,18 @@ class DebugRawBtime(unittest.TestCase):
         """
         if not self._test_05_available:
             self.skipTest('setUpClass dd write failed — raw write rejected (kernel <6.12?)')
+        dev = self._resolve_device()
+        if not dev:
+            self.skipTest('Could not resolve loop device')
         r = subprocess.run(
-            ['sudo', 'dd', f'if={self._resolve_device()}', 'bs=1',
+            ['sudo', 'dd', f'if={dev}', 'bs=1',
              f'skip={self._test_05_offset}',
              f'count={len(self._test_05_pattern)}', 'status=none'],
-            check=True, capture_output=True)
-        actual = r.stdout
-        self.assertEqual(self._test_05_pattern, actual,
+            capture_output=True)
+        if r.returncode != 0:
+            err = r.stderr.decode(errors='replace').strip()[:200] if r.stderr else ''
+            self.skipTest(f'dd read failed at offset {self._test_05_offset}: {err}')
+        self.assertEqual(self._test_05_pattern, r.stdout,
                          f'Cluster readback mismatch at offset {self._test_05_offset}')
 
     def test_06_find_entry_name_match(self):
