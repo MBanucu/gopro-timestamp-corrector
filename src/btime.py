@@ -40,7 +40,7 @@ def detect_fs(path):
             if len(lines) >= 2:
                 fs = lines[1].strip()
                 if fs:
-                    return fs
+                    return 'exfat' if fs == 'fuseblk' else fs
     except (FileNotFoundError, OSError):
         pass
     return _detect_fs_from_mounts(path)
@@ -58,7 +58,7 @@ def _detect_fs_from_mounts(path):
     best = (None, 0)
     for dev, mp, fs in mounts:
         if path_str.startswith(mp) and len(mp) > best[1]:
-            best = (fs, len(mp))
+            best = ('exfat' if fs == 'fuseblk' else fs, len(mp))
     return best[0]
 
 

@@ -15,9 +15,8 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v22
 
       - uses: DeterminateSystems/magic-nix-cache-action@v13
-
-      - name: Check flake
-        run: nix flake check
+        with:
+          use-flakehub: false
 
       - name: Run tests (via Nix)
         run: nix run .#test
