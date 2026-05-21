@@ -49,6 +49,8 @@ jobs:
           python -m unittest discover -s test -p 'test_file_table.py' -v
           python -m unittest discover -s test -p 'test_calibration_panel.py' -v
           python -m unittest discover -s test -p 'test_gui_structure.py' -v
+          python -m unittest discover -s test -p 'test_btime.py' -v
+          python -m unittest discover -s test -p 'test_btime_gui_correction.py' -v
 
   pip-macos:
     runs-on: macos-latest
