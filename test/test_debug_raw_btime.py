@@ -55,7 +55,7 @@ class DebugRawBtime(unittest.TestCase):
         # read-only after detecting raw block writes (CI's kernel <6.12).
         from btime import _resolve_device as _rd
         dev = _rd(str(cls._mount_point))
-        cls._test_05_offset = 200000 * 512
+        cls._test_05_offset = 50000 * 512  # ~25 MB, well within pre-allocated sparse file region
         cls._test_05_pattern = b'CLUSTER_WRITE_TEST_99'
         r = subprocess.run(
             ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={cls._test_05_offset}',
