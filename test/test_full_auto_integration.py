@@ -105,7 +105,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         if r.returncode != 0 or not r.stdout.strip():
             return {}
         import json as _json
-        from media import _strip_tz
+        from exiftool_session import _strip_tz
         out = {}
         for rec in _json.loads(r.stdout):
             src = rec.get('SourceFile')
@@ -149,6 +149,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
+        from exiftool_session import ExifToolSession
         import media
         import analysis as an_mod
         import preview
@@ -159,82 +160,83 @@ class TestFullAutoIntegration(unittest.TestCase):
         all_files = media.collect(self.target)
         t_total = time.perf_counter()
 
-        # ── 1. Record original metadata ────────────────────────
-        t0 = time.perf_counter()
-        orig = self._record_metadata(all_files)
-        t_meta = time.perf_counter() - t0
+        with ExifToolSession() as session:
+            # ── 1. Record original metadata ────────────────────────
+            t0 = time.perf_counter()
+            orig = self._record_metadata(all_files)
+            t_meta = time.perf_counter() - t0
 
-        # ── 2. Compute weighted median delta (auto calibration) ─
-        t0 = time.perf_counter()
-        batch = media.read_tags_batch(all_files)
-        accuracy = media.read_gps_accuracy_batch(all_files)
-        t_batch = time.perf_counter() - t0
+            # ── 2. Compute weighted median delta (auto calibration) ─
+            t0 = time.perf_counter()
+            batch = session.read_tags_batch(all_files)
+            accuracy = session.read_gps_accuracy_batch(all_files)
+            t_batch = time.perf_counter() - t0
 
-        t0 = time.perf_counter()
-        pairs = []
-        for f in all_files:
-            embedded, gps = batch.get(f, (None, None))
-            if embedded is None or gps is None:
-                continue
-            acc = accuracy.get(f, 99.99)
-            if acc is None:
-                acc = 99.99
-            if acc >= 25.0 or acc == 99.99:
-                continue
-            delta = gps - embedded
-            weight = 1.0 / (acc + 1.0)
-            pairs.append((delta, weight))
+            t0 = time.perf_counter()
+            pairs = []
+            for f in all_files:
+                embedded, gps = batch.get(f, (None, None))
+                if embedded is None or gps is None:
+                    continue
+                acc = accuracy.get(f, 99.99)
+                if acc is None:
+                    acc = 99.99
+                if acc >= 25.0 or acc == 99.99:
+                    continue
+                delta = gps - embedded
+                weight = 1.0 / (acc + 1.0)
+                pairs.append((delta, weight))
 
-        self.assertGreaterEqual(len(pairs), 1,
-                                'Need at least one file with valid GPS fix')
+            self.assertGreaterEqual(len(pairs), 1,
+                                    'Need at least one file with valid GPS fix')
 
-        deltas = [p[0] for p in pairs]
-        weights = [p[1] for p in pairs]
-        self.median = weighted_median_delta(deltas, weights)
-        self.assertIsNotNone(self.median, 'Weighted median delta should be computable')
-        t_auto = time.perf_counter() - t0
+            deltas = [p[0] for p in pairs]
+            weights = [p[1] for p in pairs]
+            self.median = weighted_median_delta(deltas, weights)
+            self.assertIsNotNone(self.median, 'Weighted median delta should be computable')
+            t_auto = time.perf_counter() - t0
 
-        print(f'  Weighted median delta: {self.median}')
-        print(f'  Based on {len(pairs)} files with valid GPS fix')
+            print(f'  Weighted median delta: {self.median}')
+            print(f'  Based on {len(pairs)} files with valid GPS fix')
 
-        # ── 3. Analyse and build decisions ─────────────────────
-        t0 = time.perf_counter()
-        result = an_mod.analyze(self.target)
-        self.assertGreater(result.total_files, 0, 'Analysis should find files')
+            # ── 3. Analyse and build decisions ─────────────────────
+            t0 = time.perf_counter()
+            result = an_mod.analyze(session, self.target)
+            self.assertGreater(result.total_files, 0, 'Analysis should find files')
 
-        decisions = {}
-        for fs in result.sets:
-            decisions[fs.id] = SetDecision(
-                strategy=STRATEGY_MANUAL,
-                manual_delta=self.median)
+            decisions = {}
+            for fs in result.sets:
+                decisions[fs.id] = SetDecision(
+                    strategy=STRATEGY_MANUAL,
+                    manual_delta=self.median)
 
-        plan = preview.compute_preview(result, decisions, self.median)
+            plan = preview.compute_preview(result, decisions, self.median)
 
-        jobs = []
-        for pr in plan:
-            for fp in pr.file_results:
-                jobs.append(WriteJob(
-                    path=fp.path,
-                    target_embedded=fp.target_embedded,
-                    target_mtime=fp.target_mtime,
-                ))
+            jobs = []
+            for pr in plan:
+                for fp in pr.file_results:
+                    jobs.append(WriteJob(
+                        path=fp.path,
+                        target_embedded=fp.target_embedded,
+                        target_mtime=fp.target_mtime,
+                    ))
 
-        self.assertGreater(len(jobs), 0, 'Should have write jobs')
-        t_plan = time.perf_counter() - t0
+            self.assertGreater(len(jobs), 0, 'Should have write jobs')
+            t_plan = time.perf_counter() - t0
 
-        # ── 4. Apply corrections via Writer ────────────────────
-        t0 = time.perf_counter()
-        fix_btime = 'off'
-        if (subprocess.run(['which', 'faketime'], capture_output=True).returncode == 0 and
-                subprocess.run(['which', 'mount.exfat-fuse'], capture_output=True).returncode == 0):
-            fix_btime = 'auto'
-            print('  btime correction enabled (faketime + mount.exfat-fuse available)')
-        else:
-            print('  btime correction skipped (faketime or mount.exfat-fuse not available)')
+            # ── 4. Apply corrections via Writer ────────────────────
+            t0 = time.perf_counter()
+            fix_btime = 'off'
+            if (subprocess.run(['which', 'faketime'], capture_output=True).returncode == 0 and
+                    subprocess.run(['which', 'mount.exfat-fuse'], capture_output=True).returncode == 0):
+                fix_btime = 'auto'
+                print('  btime correction enabled (faketime + mount.exfat-fuse available)')
+            else:
+                print('  btime correction skipped (faketime or mount.exfat-fuse not available)')
 
-        with Writer(self.target, fix_btime=fix_btime,
-                    delta=self.median, dry_run=False) as w:
-            summary = w.write_all(jobs)
+            with Writer(self.target, fix_btime=fix_btime,
+                        delta=self.median, dry_run=False, session=session) as w:
+                summary = w.write_all(jobs)
 
         self.assertEqual(summary.written, len(jobs),
                          f'{summary.written} of {len(jobs)} files should be written')

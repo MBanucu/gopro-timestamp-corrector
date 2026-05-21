@@ -88,13 +88,20 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
 
     # ── Helpers ───────────────────────────────────────────────
 
-    def _collect_gps_pairs(self):
+    def _collect_gps_pairs(self, session=None):
         """Return (pairs, median) from the real files on the mounted image."""
         import media
-        batch = media.read_tags_batch(media.collect(self.target))
-        accuracy = media.read_gps_accuracy_batch(media.collect(self.target))
+        files = media.collect(self.target)
+        if session:
+            batch = session.read_tags_batch(files)
+            accuracy = session.read_gps_accuracy_batch(files)
+        else:
+            from exiftool_session import ExifToolSession
+            with ExifToolSession() as s:
+                batch = s.read_tags_batch(files)
+                accuracy = s.read_gps_accuracy_batch(files)
         pairs = []
-        for f in media.collect(self.target):
+        for f in files:
             embedded, gps = batch.get(f, (None, None))
             if embedded is None or gps is None:
                 continue
@@ -116,7 +123,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         self.assertIsNotNone(median, 'Weighted median delta should be computable')
         return pairs, median
 
-    def _make_panel(self):
+    def _make_panel(self, session=None):
         """Create a CalibrationPanel with spy callbacks."""
         from gui.calibration_panel import CalibrationPanel
         logged = []
@@ -128,6 +135,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
             log_fn=logged.append,
             set_status_fn=status.append,
             delta_changed_cb=delta_result.append,
+            session=session,
         )
         panel.pack()
         self.root.update_idletasks()
@@ -169,61 +177,61 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
 
     def test_auto_calibrate_editors_populated(self):
         """The calendar editors show the representative file's GPS and embedded times."""
-        panel, logged, delta_result = self._make_panel()
-        pairs, median = self._collect_gps_pairs()
+        from exiftool_session import ExifToolSession
+        with ExifToolSession() as session:
+            panel, logged, delta_result = self._make_panel(session=session)
+            pairs, median = self._collect_gps_pairs(session)
 
-        panel.auto_calibrate()
-        self.root.update_idletasks()
+            panel.auto_calibrate()
+            self.root.update_idletasks()
 
-        best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
+            best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
 
-        for msg in logged:
-            print(f'  [log] {msg}')
-        print(f'  Representative: {best_file.name}')
-        print(f'  Actual: {actual_dt}')
-        print(f'  GoPro:  {emb_dt}')
+            for msg in logged:
+                print(f'  [log] {msg}')
+            print(f'  Representative: {best_file.name}')
+            print(f'  Actual: {actual_dt}')
+            print(f'  GoPro:  {emb_dt}')
 
     def test_auto_calibrate_respects_timezone(self):
         """With a timezone configured, the actual editor shows GPS time in that zone."""
-        panel, logged, delta_result = self._make_panel()
+        from exiftool_session import ExifToolSession
+        with ExifToolSession() as session:
+            panel, logged, delta_result = self._make_panel(session=session)
 
-        # Set a timezone before running auto calibration
-        panel.actual_editor.tz_var.set('Europe/Berlin')
-        self.root.update_idletasks()
+            panel.actual_editor.tz_var.set('Europe/Berlin')
+            self.root.update_idletasks()
 
-        pairs, median = self._collect_gps_pairs()
+            pairs, median = self._collect_gps_pairs(session)
 
-        panel.auto_calibrate()
-        self.root.update_idletasks()
+            panel.auto_calibrate()
+            self.root.update_idletasks()
 
-        best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
+            best_file, actual_dt, emb_dt = self._assert_editors_match(panel, pairs, median)
 
-        # With Europe/Berlin in May (CEST = UTC+2), the local time should be
-        # 2 hours ahead of the GPS UTC time.
-        import zoneinfo
-        berlin = zoneinfo.ZoneInfo('Europe/Berlin')
-        best_pair = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
-        _, _, best_file, best_gps, best_emb = best_pair
-        expected_local = best_gps.replace(tzinfo=timezone.utc).astimezone(berlin)
+            import zoneinfo
+            berlin = zoneinfo.ZoneInfo('Europe/Berlin')
+            best_pair = min(pairs, key=lambda c: abs((c[0] - median).total_seconds()))
+            _, _, best_file, best_gps, best_emb = best_pair
+            expected_local = best_gps.replace(tzinfo=timezone.utc).astimezone(berlin)
 
-        self.assertEqual(panel.actual_editor.tz_var.get(), 'Europe/Berlin')
-        self.assertEqual(panel.gopro_editor.tz_var.get(), 'Europe/Berlin')
+            self.assertEqual(panel.actual_editor.tz_var.get(), 'Europe/Berlin')
+            self.assertEqual(panel.gopro_editor.tz_var.get(), 'Europe/Berlin')
 
-        self.assertEqual(actual_dt.year, expected_local.year)
-        self.assertEqual(actual_dt.month, expected_local.month)
-        self.assertEqual(actual_dt.day, expected_local.day)
-        self.assertEqual(actual_dt.hour, expected_local.hour)
-        self.assertEqual(actual_dt.minute, expected_local.minute)
-        # Verify the offset is CEST (+2h)
-        self.assertEqual(expected_local.utcoffset().total_seconds() / 3600, 2.0)
+            self.assertEqual(actual_dt.year, expected_local.year)
+            self.assertEqual(actual_dt.month, expected_local.month)
+            self.assertEqual(actual_dt.day, expected_local.day)
+            self.assertEqual(actual_dt.hour, expected_local.hour)
+            self.assertEqual(actual_dt.minute, expected_local.minute)
+            self.assertEqual(expected_local.utcoffset().total_seconds() / 3600, 2.0)
 
-        for msg in logged:
-            print(f'  [log] {msg}')
-        print(f'  TZ: Europe/Berlin (CEST, UTC+2)')
-        print(f'  Representative: {best_file.name}')
-        print(f'  GPS (UTC): {best_gps}')
-        print(f'  Actual (CEST): {actual_dt}')
-        print(f'  GoPro:  {emb_dt}')
+            for msg in logged:
+                print(f'  [log] {msg}')
+            print(f'  TZ: Europe/Berlin (CEST, UTC+2)')
+            print(f'  Representative: {best_file.name}')
+            print(f'  GPS (UTC): {best_gps}')
+            print(f'  Actual (CEST): {actual_dt}')
+            print(f'  GoPro:  {emb_dt}')
 
     def test_auto_calibrate_delta_is_median(self):
         """The delta callback receives the weighted median, not a per-file delta.
@@ -233,26 +241,28 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         near zero (sub-second precision), not dominated by the -2 h
         timezone offset.
         """
-        panel, logged, delta_result = self._make_panel()
-        pairs, median = self._collect_gps_pairs()
+        from exiftool_session import ExifToolSession
+        with ExifToolSession() as session:
+            panel, logged, delta_result = self._make_panel(session=session)
+            pairs, median = self._collect_gps_pairs(session)
 
-        panel.auto_calibrate()
-        self.root.update_idletasks()
+            panel.auto_calibrate()
+            self.root.update_idletasks()
 
-        self.assertGreater(len(delta_result), 0, 'Delta callback should fire')
-        self.assertAlmostEqual(delta_result[-1].total_seconds(),
-                               median.total_seconds(), delta=1.0)
+            self.assertGreater(len(delta_result), 0, 'Delta callback should fire')
+            self.assertAlmostEqual(delta_result[-1].total_seconds(),
+                                   median.total_seconds(), delta=1.0)
 
-        has_value = any(int(v.get() or '0') > 0
-                        for v in (panel.day_var, panel.hour_var,
-                                  panel.min_var, panel.sec_var,
-                                  panel.ms_var))
-        self.assertTrue(has_value, 'At least one spinbox should be non-zero')
-        self.assertEqual(panel.delta_sign_var.get(), '-')
+            has_value = any(int(v.get() or '0') > 0
+                            for v in (panel.day_var, panel.hour_var,
+                                      panel.min_var, panel.sec_var,
+                                      panel.ms_var))
+            self.assertTrue(has_value, 'At least one spinbox should be non-zero')
+            self.assertEqual(panel.delta_sign_var.get(), '-')
 
-        print(f'  Delta sign: {panel.delta_sign_var.get()}')
-        print(f'  Computed median: {median}')
-        print(f'  Delta callback value: {delta_result[-1].total_seconds():.2f} s')
+            print(f'  Delta sign: {panel.delta_sign_var.get()}')
+            print(f'  Computed median: {median}')
+            print(f'  Delta callback value: {delta_result[-1].total_seconds():.2f} s')
 
 
 if __name__ == '__main__':

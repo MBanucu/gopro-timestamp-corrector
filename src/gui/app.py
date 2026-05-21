@@ -12,6 +12,7 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 import calibration
 import history
 import btime
+from exiftool_session import ExifToolSession
 from options import BTIME_OFF
 from plan import Planner, PlanBuilder, CorrectionPlan
 from gui.sidebar import Sidebar
@@ -33,6 +34,8 @@ class ToolGUI:
 
         self.process = None
         self.running = False
+        self.session = ExifToolSession()
+        self.session.__enter__()
 
         style = ttk.Style()
         style.theme_use('clam')
@@ -61,6 +64,7 @@ class ToolGUI:
             on_analyzed=self._on_analyzed,
             log_fn=self.log,
             set_status_fn=self.set_status,
+            session=self.session,
         )
         self.step2 = StepReview(
             self.content,
@@ -68,6 +72,7 @@ class ToolGUI:
             log_fn=self.log,
             set_status_fn=self.set_status,
             delta_changed_cb=self._on_delta_changed,
+            session=self.session,
         )
         self.step3 = StepPlan(self.content)
         self.step4 = StepRun(self.content)
@@ -233,7 +238,8 @@ class ToolGUI:
                     self.root.after(0, self.step4.set_instructions, instructions)
 
                 result = PlanBuilder().execute(
-                    instructions, log_fn=log_fn, progress_fn=progress_fn)
+                    instructions, log_fn=log_fn, progress_fn=progress_fn,
+                    session=self.session)
                 code = result.get('exit_code', 0)
                 self.root.after(0, self.on_finish, code)
             except Exception as e:
@@ -251,6 +257,10 @@ class ToolGUI:
         messagebox.showerror('Calibration error',
                              f'Invalid calibration values:\n{err}')
         return False
+
+    def on_close(self):
+        self.session.__exit__(None, None, None)
+        self.root.destroy()
 
     def on_finish(self, code):
         self.running = False
@@ -282,7 +292,8 @@ class ToolGUI:
 
 def main():
     root = tk.Tk()
-    ToolGUI(root)
+    gui = ToolGUI(root)
+    root.protocol('WM_DELETE_WINDOW', gui.on_close)
     root.mainloop()
 
 

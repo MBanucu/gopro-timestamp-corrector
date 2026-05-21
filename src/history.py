@@ -16,25 +16,23 @@ Run directory structure::
         ├── before.json
         └── after.json
 """
+from __future__ import annotations
+
 import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from exiftool_session import ExifToolSession
+
 
 HISTORY_DIR_NAME = '.timestamp_correction_history'
 
 
-def _dump_batch(filepaths: list[Path]) -> str | None:
+def _dump_batch(session: ExifToolSession, filepaths: list[Path]) -> str | None:
     """Full exiftool JSON array for a list of files."""
-    if not filepaths:
-        return None
-    cmd = ['exiftool', '-json', '-G', '-a', '--short'] + [str(p) for p in filepaths]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode == 0 and r.stdout.strip():
-        return r.stdout
-    return None
+    return session.dump_full_json(filepaths)
 
 
 def _capture_btimes(filepaths: list[Path]) -> dict[str, str | None]:
@@ -80,9 +78,10 @@ def begin_run(target_dir: Path, metadata: dict[str, Any]) -> Path:
     return run_dir
 
 
-def capture_before(run_dir: Path, filepaths: list[Path]):
+def capture_before(session: ExifToolSession, run_dir: Path,
+                   filepaths: list[Path]):
     """Save full exiftool JSON *before* modification as ``before.json``."""
-    raw = _dump_batch(filepaths)
+    raw = _dump_batch(session, filepaths)
     if raw:
         (run_dir / 'before.json').write_text(raw)
     btimes = _capture_btimes(filepaths)
@@ -91,9 +90,10 @@ def capture_before(run_dir: Path, filepaths: list[Path]):
             json.dumps(btimes, indent=2))
 
 
-def capture_after(run_dir: Path, filepaths: list[Path]):
+def capture_after(session: ExifToolSession, run_dir: Path,
+                  filepaths: list[Path]):
     """Save full exiftool JSON *after* modification as ``after.json``."""
-    raw = _dump_batch(filepaths)
+    raw = _dump_batch(session, filepaths)
     if raw:
         (run_dir / 'after.json').write_text(raw)
     btimes = _capture_btimes(filepaths)

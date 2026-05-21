@@ -3,14 +3,19 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import history
+from exiftool_session import ExifToolSession
 
 
 class TestHistory(unittest.TestCase):
 
     def setUp(self):
         self._tmp = Path(tempfile.mkdtemp(prefix='history_test_'))
+        self.session = MagicMock(spec=ExifToolSession)
+        self.session.dump_full_json.side_effect = (
+            lambda fps: None if not fps else '[{"SourceFile": "test.txt", "FileSize": "0 bytes"}]')
 
     def tearDown(self):
         import shutil
@@ -44,7 +49,7 @@ class TestHistory(unittest.TestCase):
         run_dir = history.begin_run(self._tmp, meta)
         file1 = self._tmp / 'test.txt'
         file1.write_text('hello')
-        history.capture_before(run_dir, [file1])
+        history.capture_before(self.session, run_dir, [file1])
         before = run_dir / 'before.json'
         self.assertTrue(before.exists())
         data = json.loads(before.read_text())
@@ -55,7 +60,7 @@ class TestHistory(unittest.TestCase):
         run_dir = history.begin_run(self._tmp, meta)
         file1 = self._tmp / 'test.txt'
         file1.write_text('hello')
-        history.capture_after(run_dir, [file1])
+        history.capture_after(self.session, run_dir, [file1])
         after = run_dir / 'after.json'
         self.assertTrue(after.exists())
 
@@ -71,9 +76,9 @@ class TestHistory(unittest.TestCase):
     def test_capture_empty_list_does_nothing(self):
         meta = {}
         run_dir = history.begin_run(self._tmp, meta)
-        history.capture_before(run_dir, [])
+        history.capture_before(self.session, run_dir, [])
         self.assertFalse((run_dir / 'before.json').exists())
-        history.capture_after(run_dir, [])
+        history.capture_after(self.session, run_dir, [])
         self.assertFalse((run_dir / 'after.json').exists())
 
 

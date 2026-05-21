@@ -390,7 +390,8 @@ class PlanBuilder:
 
     def execute(self, instructions: list[Instruction],
                 log_fn=lambda msg: None,
-                progress_fn=lambda idx, status: None) -> dict:
+                progress_fn=lambda idx, status: None,
+                session=None) -> dict:
         """Execute *instructions* in order, calling *progress_fn* after
         each step with ``(index, new_status)``.
 
@@ -415,7 +416,7 @@ class PlanBuilder:
             if writer is None:
                 delta = timedelta(seconds=delta_str) if isinstance(delta_str, (int, float)) else None
                 writer = Writer(target, fix_btime=btime_val,
-                                delta=delta, dry_run=False)
+                                delta=delta, dry_run=False, session=session)
             return writer
 
         for i, inst in enumerate(instructions):
@@ -447,11 +448,11 @@ class PlanBuilder:
                                         datetime.now(timezone.utc).strftime(
                                             '%Y%m%dT%H%M%S%fZ'))
                         run_dir = begin_run(target, meta)
-                        capture_before(run_dir, [j.path for j in jobs])
+                        capture_before(session, run_dir, [j.path for j in jobs])
                         log_fn(f'  Captured before-state ({len(jobs)} files)')
                     else:
                         if run_dir:
-                            capture_after(run_dir, [j.path for j in jobs])
+                            capture_after(session, run_dir, [j.path for j in jobs])
                             log_fn(f'  Captured after-state ({len(jobs)} files)')
 
                 elif inst.type == 'write':

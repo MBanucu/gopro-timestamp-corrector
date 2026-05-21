@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import analysis
 
@@ -24,6 +24,13 @@ class TestGroupKey(unittest.TestCase):
         self.assertIsNone(analysis._group_key(Path('.hidden')))
 
 
+def _make_session(batch_result):
+    """Create a mock ExifToolSession that returns *batch_result* from read_tags_batch."""
+    session = MagicMock()
+    session.read_tags_batch.return_value = batch_result
+    return session
+
+
 class TestAnalyze(unittest.TestCase):
     def setUp(self):
         self.fake_files = [
@@ -41,16 +48,15 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_tags_batch')
-    def test_analyze_groups_by_stem(self, mock_batch, mock_mtime, mock_collect):
+    def test_analyze_groups_by_stem(self, mock_mtime, mock_collect):
         mock_collect.return_value = self.fake_files
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 0, 0)
-        mock_batch.return_value = self._make_batch(
+        session = _make_session(self._make_batch(
             datetime(2026, 5, 14, 16, 0, 0),
             datetime(2021, 3, 11, 12, 51, 0),
-        )
+        ))
 
-        result = analysis.analyze('/d')
+        result = analysis.analyze(session, '/d')
         self.assertEqual(result.total_files, 6)
         self.assertEqual(len(result.sets), 3)
 
@@ -59,17 +65,16 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_tags_batch')
-    def test_set_has_gps(self, mock_batch, mock_mtime, mock_collect):
+    def test_set_has_gps(self, mock_mtime, mock_collect):
         mock_collect.return_value = self.fake_files
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 0, 0)
-        mock_batch.return_value = {
+        session = _make_session({
             p: (datetime(2026, 5, 14, 16, 0, 0),
                 datetime(2021, 3, 11, 12, 51, 0) if '063' in str(p) else None)
             for p in self.fake_files
-        }
+        })
 
-        result = analysis.analyze('/d')
+        result = analysis.analyze(session, '/d')
         set_063 = next(s for s in result.sets if s.id == '010063')
         set_064 = next(s for s in result.sets if s.id == '010064')
 
@@ -78,14 +83,13 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_tags_batch')
-    def test_set_kind(self, mock_batch, mock_mtime, mock_collect):
+    def test_set_kind(self, mock_mtime, mock_collect):
         mock_collect.return_value = self.fake_files
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 0, 0)
-        mock_batch.return_value = self._make_batch(
-            datetime(2026, 5, 14, 16, 0, 0), None)
+        session = _make_session(self._make_batch(
+            datetime(2026, 5, 14, 16, 0, 0), None))
 
-        result = analysis.analyze('/d')
+        result = analysis.analyze(session, '/d')
         set_063 = next(s for s in result.sets if s.id == '010063')
         set_065 = next(s for s in result.sets if s.id == '010065')
 
@@ -94,24 +98,23 @@ class TestAnalyze(unittest.TestCase):
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_tags_batch')
-    def test_empty_directory(self, mock_batch, mock_mtime, mock_collect):
+    def test_empty_directory(self, mock_mtime, mock_collect):
         mock_collect.return_value = []
-        result = analysis.analyze('/empty')
+        session = _make_session({})
+        result = analysis.analyze(session, '/empty')
         self.assertEqual(result.total_files, 0)
         self.assertEqual(len(result.sets), 0)
 
     @patch('media.collect')
     @patch('media.read_mtime')
-    @patch('media.read_tags_batch')
-    def test_file_info_values(self, mock_batch, mock_mtime, mock_collect):
+    def test_file_info_values(self, mock_mtime, mock_collect):
         mock_collect.return_value = [Path('/d/GX010001.MP4')]
         mock_mtime.return_value = datetime(2026, 5, 14, 18, 30, 0)
-        mock_batch.return_value = {
+        session = _make_session({
             Path('/d/GX010001.MP4'): (datetime(2026, 5, 14, 16, 0, 0), None),
-        }
+        })
 
-        result = analysis.analyze('/d')
+        result = analysis.analyze(session, '/d')
         fi = result.sets[0].files[0]
         self.assertEqual(fi.stem, 'GX010001')
         self.assertEqual(fi.ext, '.mp4')

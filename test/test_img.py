@@ -1,3 +1,4 @@
+import sys
 import unittest
 import subprocess
 import re
@@ -74,7 +75,7 @@ class TestImgIntegration(unittest.TestCase):
         if not target.exists():
             self.skipTest(f"Expected directory {target} not found on image")
 
-        cmd = ['python3', 'src/correct_timestamps.py', str(target), '--gps', '--dry-run']
+        cmd = [sys.executable, 'src/correct_timestamps.py', str(target), '--gps', '--dry-run']
         res = subprocess.run(cmd, capture_output=True, text=True)
 
         self.assertEqual(res.returncode, 0, f"Script failed: {res.stderr}")

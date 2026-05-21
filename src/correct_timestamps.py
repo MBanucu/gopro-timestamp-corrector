@@ -11,9 +11,9 @@ from pathlib import Path
 import analysis as an_mod
 import preview
 import resolve
-import media
 import btime
 import history
+from exiftool_session import ExifToolSession
 from options import BTIME_CLI_CHOICES, STRATEGY_MANUAL, STRATEGY_GPS
 from writer import Writer, WriteJob
 
@@ -74,164 +74,162 @@ def main():
         print(f"Error: {args.directory} is not a directory")
         sys.exit(1)
 
-    if not media.exiftool_available():
-        print("Error: exiftool not found")
-        sys.exit(1)
-
     clean_exiftool_temp(target)
 
-    # ── 1. Read all files via shared analysis (single exiftool batch) ──
-    strategy_manifest_raw = None
-    if args.strategy_manifest:
-        strategy_manifest_raw = json.loads(Path(args.strategy_manifest).read_text())
-
-    analysis_result = an_mod.analyze(target)
-    if not analysis_result.total_files:
-        print("No media files found.")
-        return
-
-    # ── 2. Compute global delta ─────────────────────────────────
-    needs_global_delta = args.gps or not args.strategy_manifest
-    if args.strategy_manifest:
-        sets_m = strategy_manifest_raw.get('sets', {})
-        if not needs_global_delta:
-            needs_global_delta = any(s.get('strategy', STRATEGY_MANUAL) == STRATEGY_MANUAL for s in sets_m.values())
-
-    if needs_global_delta:
-        if args.gps:
-            gps_file = None
-            gps_utc = None
-            gopro_dt = None
-            for fs in analysis_result.sets:
-                for fi in fs.files:
-                    if fi.gps_time:
-                        gps_file = fi.path
-                        gps_utc = fi.gps_time
-                        gopro_dt = fi.embedded_time
-                        break
-                if gps_file:
-                    break
-            if not gps_file:
-                print("Error: No file with GPS data found.")
-                sys.exit(1)
-
-            print(f"Using GPS from {gps_file.name}")
-
-            if not gps_utc:
-                print(f"Error: Could not read GPS from {gps_file.name}")
-                sys.exit(1)
-
-            if args.timezone:
-                import zoneinfo
-                try:
-                    tz = zoneinfo.ZoneInfo(args.timezone)
-                except Exception as e:
-                    print(f"Error: Invalid timezone: {args.timezone} ({e})")
-                    sys.exit(1)
-                gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
-                actual_dt = gps_utc_tz.astimezone(tz).replace(tzinfo=None)
-            else:
-                actual_dt = gps_utc
-
-            if not gopro_dt:
-                print(f"Error: Could not read embedded time from {gps_file.name}")
-                sys.exit(1)
-
-            global_delta = resolve.gps_delta(actual_dt, gopro_dt)
-        else:
-            print("Error: No GPS data available and no translation file provided.")
+    with ExifToolSession() as session:
+        if not session.available():
+            print("Error: exiftool not found")
             sys.exit(1)
 
-        print(f"Actual: {actual_dt}")
-        print(f"GoPro:  {gopro_dt}")
-        print(f"Delta:  {global_delta.days}d {(global_delta.seconds // 3600)}h {(global_delta.seconds % 3600) // 60}m")
-    else:
-        global_delta = timedelta()
-        actual_dt = datetime.now()
-        gopro_dt = actual_dt
+        # ── 1. Read all files via shared analysis (single exiftool batch) ──
+        strategy_manifest_raw = None
+        if args.strategy_manifest:
+            strategy_manifest_raw = json.loads(Path(args.strategy_manifest).read_text())
 
-    print()
+        analysis_result = an_mod.analyze(session, target)
+        if not analysis_result.total_files:
+            print("No media files found.")
+            return
 
-    # ── 3. Build decisions + compute plan (calculator) ─────────
-    if args.strategy_manifest:
-        decisions = _build_decisions_from_manifest(analysis_result, strategy_manifest_raw, global_delta)
-    else:
-        # Default: all sets use the global delta
-        decisions = {fs.id: preview.SetDecision(strategy=STRATEGY_MANUAL, manual_delta=global_delta)
-                     for fs in analysis_result.sets}
+        # ── 2. Compute global delta ─────────────────────────────────
+        needs_global_delta = args.gps or not args.strategy_manifest
+        if args.strategy_manifest:
+            sets_m = strategy_manifest_raw.get('sets', {})
+            if not needs_global_delta:
+                needs_global_delta = any(s.get('strategy', STRATEGY_MANUAL) == STRATEGY_MANUAL for s in sets_m.values())
 
-    # The plan is computed ONCE and reused for display + writing
-    plan = preview.compute_preview(analysis_result, decisions, global_delta)
+        if needs_global_delta:
+            if args.gps:
+                gps_file = None
+                gps_utc = None
+                gopro_dt = None
+                for fs in analysis_result.sets:
+                    for fi in fs.files:
+                        if fi.gps_time:
+                            gps_file = fi.path
+                            gps_utc = fi.gps_time
+                            gopro_dt = fi.embedded_time
+                            break
+                    if gps_file:
+                        break
+                if not gps_file:
+                    print("Error: No file with GPS data found.")
+                    sys.exit(1)
 
-    # ── 4. Display plan (same for dry-run and normal) ──────────
-    manifest = set() if args.force else load_manifest(target)
-    if manifest:
-        print(f"Manifest: {len(manifest)} files previously processed")
-    print()
+                print(f"Using GPS from {gps_file.name}")
 
-    if args.dry_run:
-        print("DRY RUN\n")
+                if not gps_utc:
+                    print(f"Error: Could not read GPS from {gps_file.name}")
+                    sys.exit(1)
 
-    processed = 0
-    would_process = 0
-    skipped_manifest = 0
-    skipped_correct = 0
+                if args.timezone:
+                    import zoneinfo
+                    try:
+                        tz = zoneinfo.ZoneInfo(args.timezone)
+                    except Exception as e:
+                        print(f"Error: Invalid timezone: {args.timezone} ({e})")
+                        sys.exit(1)
+                    gps_utc_tz = gps_utc.replace(tzinfo=timezone.utc)
+                    actual_dt = gps_utc_tz.astimezone(tz).replace(tzinfo=None)
+                else:
+                    actual_dt = gps_utc
 
-    # Collect plan items that need writing
-    pending_jobs: list[WriteJob] = []
+                if not gopro_dt:
+                    print(f"Error: Could not read embedded time from {gps_file.name}")
+                    sys.exit(1)
 
-    for pr in plan:
-        for fp in pr.file_results:
-            in_manifest = fp.path.name in manifest
+                global_delta = resolve.gps_delta(actual_dt, gopro_dt)
+            else:
+                print("Error: No GPS data available and no translation file provided.")
+                sys.exit(1)
 
-            current_dt = fp.current_embedded or fp.current_mtime
-            target_dt = fp.target_embedded or fp.target_mtime
+            print(f"Actual: {actual_dt}")
+            print(f"GoPro:  {gopro_dt}")
+            print(f"Delta:  {global_delta.days}d {(global_delta.seconds // 3600)}h {(global_delta.seconds % 3600) // 60}m")
+        else:
+            global_delta = timedelta()
+            actual_dt = datetime.now()
+            gopro_dt = actual_dt
 
-            if in_manifest:
-                skipped_manifest += 1
-                continue
+        print()
 
-            if target_dt is not None and current_dt is not None and target_dt == current_dt:
-                skipped_correct += 1
-                continue
+        # ── 3. Build decisions + compute plan (calculator) ─────────
+        if args.strategy_manifest:
+            decisions = _build_decisions_from_manifest(analysis_result, strategy_manifest_raw, global_delta)
+        else:
+            decisions = {fs.id: preview.SetDecision(strategy=STRATEGY_MANUAL, manual_delta=global_delta)
+                         for fs in analysis_result.sets}
 
-            print(f"  {fp.path.name}")
-            source_str = f'{pr.strategy} ({fp.source})' if pr.strategy != fp.source else fp.source
-            print(f"    {current_dt}  ({source_str})  \u2192  {target_dt}")
-            would_process += 1
+        plan = preview.compute_preview(analysis_result, decisions, global_delta)
 
-            if not args.dry_run:
-                pending_jobs.append(WriteJob(
-                    path=fp.path,
-                    target_embedded=fp.target_embedded,
-                    target_mtime=fp.target_mtime,
-                ))
+        # ── 4. Display plan ────────────────────────────────────────
+        manifest = set() if args.force else load_manifest(target)
+        if manifest:
+            print(f"Manifest: {len(manifest)} files previously processed")
+        print()
 
-    # ── 5. Write plan via writer (shared module, no recalculation) ──
-    if pending_jobs and not args.dry_run:
-        history_meta = {
-            'global_delta': str(global_delta) if global_delta else None,
-            'fix_btime': args.fix_btime or 'off',
-            # Note: 'off' kept as literal in meta dict (history log format)
-            'sets': {
-                pr.set_id: {
-                    'strategy': pr.strategy,
-                    'delta': str(pr.applied_delta) if pr.applied_delta else None,
-                }
-                for pr in plan
-            },
-        }
-        run_dir = history.begin_run(target, history_meta)
-        history.capture_before(run_dir, [j.path for j in pending_jobs])
+        if args.dry_run:
+            print("DRY RUN\n")
 
-        with Writer(target, fix_btime=args.fix_btime, delta=global_delta, dry_run=False) as w:
-            summary = w.write_all(pending_jobs)
+        processed = 0
+        would_process = 0
+        skipped_manifest = 0
+        skipped_correct = 0
 
-        history.capture_after(run_dir, [j.path for j in pending_jobs])
-        history.finalize_run(run_dir, summary.written, summary.skipped, summary.errors)
-        for job in pending_jobs:
-            save_manifest(target, job.path.name)
-        processed = len(pending_jobs)
+        pending_jobs: list[WriteJob] = []
+
+        for pr in plan:
+            for fp in pr.file_results:
+                in_manifest = fp.path.name in manifest
+
+                current_dt = fp.current_embedded or fp.current_mtime
+                target_dt = fp.target_embedded or fp.target_mtime
+
+                if in_manifest:
+                    skipped_manifest += 1
+                    continue
+
+                if target_dt is not None and current_dt is not None and target_dt == current_dt:
+                    skipped_correct += 1
+                    continue
+
+                print(f"  {fp.path.name}")
+                source_str = f'{pr.strategy} ({fp.source})' if pr.strategy != fp.source else fp.source
+                print(f"    {current_dt}  ({source_str})  \u2192  {target_dt}")
+                would_process += 1
+
+                if not args.dry_run:
+                    pending_jobs.append(WriteJob(
+                        path=fp.path,
+                        target_embedded=fp.target_embedded,
+                        target_mtime=fp.target_mtime,
+                    ))
+
+        # ── 5. Write plan via writer ────────────────────────────────
+        if pending_jobs and not args.dry_run:
+            history_meta = {
+                'global_delta': str(global_delta) if global_delta else None,
+                'fix_btime': args.fix_btime or 'off',
+                'sets': {
+                    pr.set_id: {
+                        'strategy': pr.strategy,
+                        'delta': str(pr.applied_delta) if pr.applied_delta else None,
+                    }
+                    for pr in plan
+                },
+            }
+            run_dir = history.begin_run(target, history_meta)
+            history.capture_before(session, run_dir, [j.path for j in pending_jobs])
+
+            with Writer(target, fix_btime=args.fix_btime, delta=global_delta,
+                        dry_run=False, session=session) as w:
+                summary = w.write_all(pending_jobs)
+
+            history.capture_after(session, run_dir, [j.path for j in pending_jobs])
+            history.finalize_run(run_dir, summary.written, summary.skipped, summary.errors)
+            for job in pending_jobs:
+                save_manifest(target, job.path.name)
+            processed = len(pending_jobs)
 
     print()
     summary_parts = []

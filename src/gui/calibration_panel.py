@@ -101,16 +101,18 @@ class CalibrationPanel(ttk.Frame):
         Called with a status string.
     delta_changed_cb : callable
         Called when the manual delta changes.
+    session : ExifToolSession | None
     """
 
     def __init__(self, parent, get_dir_fn, log_fn, set_status_fn,
-                 delta_changed_cb, **kw):
+                 delta_changed_cb, session=None, **kw):
         super().__init__(parent, **kw)
 
         self._get_dir = get_dir_fn
         self._log = log_fn
         self._set_status = set_status_fn
         self._delta_cb = delta_changed_cb
+        self._session = session
 
         # ── Calendar editors (side by side) ────────────────────
         eds = ttk.Frame(self)
@@ -271,7 +273,7 @@ class CalibrationPanel(ttk.Frame):
         if not target_dir:
             return
         target = Path(target_dir)
-        if not target.is_dir():
+        if not target.is_dir() or not self._session:
             return
 
         import media
@@ -285,7 +287,7 @@ class CalibrationPanel(ttk.Frame):
         gps_file = None
         gps_utc = None
         for f in files:
-            gps_utc = media.read_gps_time(f)
+            gps_utc = self._session.read_gps_time(f)
             if gps_utc:
                 gps_file = f
                 break
@@ -306,7 +308,7 @@ class CalibrationPanel(ttk.Frame):
             tz = None
 
         actual_dt = gps_utc.astimezone(tz) if tz else gps_utc.astimezone()
-        gopro_utc = media.read_embedded(gps_file, use_qt_utc=False)
+        gopro_utc = self._session.read_embedded(gps_file)
 
         if not gopro_utc:
             messagebox.showerror('GPS', f'Could not read GoPro time from {gps_file.name}')
@@ -321,7 +323,7 @@ class CalibrationPanel(ttk.Frame):
 
     def auto_calibrate(self):
         target_dir = self._get_dir()
-        if not target_dir:
+        if not target_dir or not self._session:
             return
         target = Path(target_dir)
         if not target.is_dir():
@@ -335,8 +337,8 @@ class CalibrationPanel(ttk.Frame):
 
         self._set_status('Reading GPS data from all files...')
 
-        batch = media.read_tags_batch(files)
-        accuracy = media.read_gps_accuracy_batch(files)
+        batch = self._session.read_tags_batch(files)
+        accuracy = self._session.read_gps_accuracy_batch(files)
 
         pairs = []
         for f in files:

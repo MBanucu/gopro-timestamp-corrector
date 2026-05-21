@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 
 import media
+from exiftool_session import ExifToolSession
 
 
 @dataclass
@@ -57,11 +58,11 @@ def _group_key(path: Path) -> str | None:
     return m.group(1) if m else None
 
 
-def analyze(directory: str | Path) -> AnalysisResult:
+def analyze(session: ExifToolSession, directory: str | Path) -> AnalysisResult:
     target = Path(directory)
     raw_files = media.collect(target)
 
-    batch = media.read_tags_batch(raw_files)
+    batch = session.read_tags_batch(raw_files)
 
     groups: dict[str, list[FileInfo]] = {}
     for f in raw_files:

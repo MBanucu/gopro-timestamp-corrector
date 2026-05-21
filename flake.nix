@@ -11,13 +11,13 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime xvfb ];
-        python = pkgs.python3.withPackages (ps: [ ps.tkinter ]);
+        python = pkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
         src = pkgs.lib.cleanSource ./.;
       in {
         devShells.default = pkgs.mkShell {
           packages = deps ++ [ python pkgs.bashInteractive ];
           shellHook = ''
-            export PYTHONPATH="${src}/src:$PYTHONPATH"
+            export PYTHONPATH="${src}/src:$PYTHONPATH:${src}/test"
           '';
         };
 
@@ -68,7 +68,7 @@ WRAPPER
           inherit src;
           dontBuild = true;
           installPhase = ''
-            python_test="${pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ])}/bin/python3"
+            python_test="${pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ])}/bin/python3"
             mkdir -p $out/bin
             cat > $out/bin/run-tests << WRAPPER
 #!${pkgs.bash}/bin/bash

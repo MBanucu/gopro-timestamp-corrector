@@ -123,7 +123,7 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         root.update_idletasks()
 
         # ── Run analysis directly (not via GUI thread) ─────────────
-        result = an_mod.analyze(self.target)
+        result = an_mod.analyze(gui.session, self.target)
         self.assertIsNotNone(result)
         gui.step2.load_analysis(result)
         gui._step_completed[1] = True

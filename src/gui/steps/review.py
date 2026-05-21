@@ -7,7 +7,8 @@ from gui.calibration_panel import CalibrationPanel
 
 class StepReview(ttk.Frame):
     def __init__(self, parent, *, get_dir_fn=None, log_fn=None,
-                 set_status_fn=None, delta_changed_cb=None, **kw):
+                 set_status_fn=None, delta_changed_cb=None,
+                 session=None, **kw):
         super().__init__(parent, **kw)
 
         ttk.Label(self, text='2. Review & Calibration',
@@ -22,6 +23,7 @@ class StepReview(ttk.Frame):
             log_fn=log_fn or (lambda m: None),
             set_status_fn=set_status_fn or (lambda m: None),
             delta_changed_cb=delta_changed_cb,
+            session=session,
         )
         self.cal_panel.pack(fill=tk.X)
 

@@ -33,11 +33,12 @@ def _save_recent_dir(path: str):
 
 class StepDirectory(ttk.Frame):
     def __init__(self, parent, *, on_analyzed=None, log_fn=None,
-                 set_status_fn=None, **kw):
+                 set_status_fn=None, session=None, **kw):
         super().__init__(parent, **kw)
         self._on_analyzed = on_analyzed
         self._log = log_fn or (lambda m: None)
         self._set_status = set_status_fn or (lambda m: None)
+        self._session = session
 
         ttk.Label(self, text='1. Select Directory',
                   font=('', 13, 'bold')).pack(anchor=tk.W, pady=(0, 8))
@@ -105,8 +106,7 @@ class StepDirectory(ttk.Frame):
             messagebox.showerror('Error', 'Directory does not exist.')
             return
 
-        import media
-        if not media.exiftool_available():
+        if not self._session or not self._session.available():
             messagebox.showerror('Error', 'exiftool not found.')
             return
 
@@ -114,7 +114,7 @@ class StepDirectory(ttk.Frame):
 
         import analysis as an_mod
         try:
-            result = an_mod.analyze(target)
+            result = an_mod.analyze(self._session, target)
             if result.total_files == 0:
                 messagebox.showinfo('Analysis', 'No media files found.')
                 self._set_status('Ready')

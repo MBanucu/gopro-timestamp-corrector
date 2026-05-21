@@ -4,6 +4,8 @@ This module has no computation logic. It receives a list of WriteJob
 objects (file + target times) and writes them to disk via media.py and btime.py.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,6 +13,7 @@ from typing import Literal
 
 import media
 import btime
+from exiftool_session import ExifToolSession
 from options import BTIME_OFF, BTIME_EXFAT_RAW
 
 
@@ -52,12 +55,14 @@ class Writer:
         fix_btime: str | list[str] | tuple[str] = BTIME_OFF,
         delta: timedelta | None = None,
         dry_run: bool = False,
+        session: 'ExifToolSession | None' = None,
     ):
         self.target_dir = target_dir
         self.dry_run = dry_run
         self._b_method: str | None = None
         self._b_ctx: dict = {}
         self._delta = delta
+        self._session = session
 
         methods = _normalize_btime(fix_btime)
         if methods:
@@ -73,7 +78,9 @@ class Writer:
         if self.dry_run:
             return True
 
-        ok = bool(job.target_embedded and media.write_embedded(job.path, job.target_embedded))
+        ok = bool(job.target_embedded
+                  and self._session
+                  and self._session.write_embedded(job.path, job.target_embedded))
         if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
             btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
         if job.target_mtime is not None and not self._btime_handles_mtime():
@@ -82,9 +89,9 @@ class Writer:
 
     def write_embedded_only(self, job: WriteJob) -> bool:
         """Write only embedded EXIF/QuickTime metadata."""
-        if self.dry_run or not job.target_embedded:
+        if self.dry_run or not job.target_embedded or not self._session:
             return False
-        return media.write_embedded(job.path, job.target_embedded)
+        return self._session.write_embedded(job.path, job.target_embedded)
 
     def write_mtime_only(self, job: WriteJob) -> bool:
         """Write only filesystem modification time."""
@@ -108,11 +115,11 @@ class Writer:
         if not jobs:
             return summary
 
-        # ── Batch-write embedded times (exiftool JSON import) ──
-        if not self.dry_run:
+        # ── Batch-write embedded times (via persistent exiftool) ──
+        if not self.dry_run and self._session:
             emb_pairs = [(j.path, j.target_embedded) for j in jobs
                          if j.target_embedded is not None]
-            batch_ok = media.write_embedded_batch(emb_pairs)
+            batch_ok = self._session.write_embedded_batch(emb_pairs)
         else:
             batch_ok = True
 
