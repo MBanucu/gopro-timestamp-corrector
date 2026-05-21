@@ -70,7 +70,7 @@ support for the Waterproof Shutter Remote).
 ## Requirements
 
 - [Nix](https://nixos.org) with flakes enabled (recommended), **or**
-- Python 3.10+, `exiftool`, and optionally `e2fsprogs`, `exfat`, `libfaketime`
+- Python 3.10+, `exiftool`, `pyexiftool` (PyExifTool on PyPI), and optionally `e2fsprogs`, `exfat`, `libfaketime`
 
 ## Quick start
 
@@ -326,10 +326,10 @@ implementation, and how it was tested.
    │  resolve  │  target_time(), gps_delta(), weighted_median_delta()
    └────┬──────┘
         │ plan (list of FilePreview / WriteJob)
-   ┌────▼──────┐
-   │  writer   │  Pure I/O — dispatches WriteJobs to media + btime
-   │           │  (batch exiftool JSON import for writes)
-   └───────────┘
+    ┌────▼──────┐
+    │  writer   │  Pure I/O — dispatches WriteJobs to session + btime
+    │           │  (per-file exiftool writes via persistent process)
+    └───────────┘
 ```
 
 - **Planner** (`plan.py`): holds plan-step options (which corrections to
@@ -341,7 +341,7 @@ implementation, and how it was tested.
   no `media` import. `resolve` has `target_time()`, `gps_delta()` and
   `weighted_median_delta()`.
 - **Writer** (`writer.py`): receives a pre-computed list of `WriteJob` objects,
-  dispatches to `media.write_*` and `btime.fix_file`. No calculator import.
+  dispatches to `ExifToolSession.write_embedded` and `btime.fix_file`. No calculator import.
 - **Orchestrator** (`correct_timestamps.py` / `gui/app.py`): reads files via
   `analysis.analyze()`, calls the calculator to build a plan, passes the
   same plan to the writer. No recalculation on apply.
@@ -376,7 +376,7 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 |---|---|---|
 | Analysis | 8 unit | `test_analysis.py` |
 | Preview / resolve | 11 unit | `test_preview.py` |
-| GPS parsing | 2 unit | `test_gps.py` |
+| GPS parsing | 3 unit | `test_gps.py` |
 | DST fold | 6 unit | `test_dst_fold.py` |
 | Autocomplete | 13 unit | `test_autocomplete.py` |
 | Common prefix | 4 unit | `test_common_prefix.py` |
@@ -407,8 +407,9 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 │   ├── calibration.py      # JSON calibration load/save/parse
 │   ├── correct_timestamps.py  # CLI orchestrator
 │   ├── dst.py              # DST ambiguity detection
+│   ├── exiftool_session.py # Persistent exiftool wrapper via PyExifTool (stay_open)
 │   ├── history.py          # Modification history logger (before/after exiftool JSON)
-│   ├── media.py            # EXIF/QuickTime read/write via exiftool (batch JSON)
+│   ├── media.py            # Filesystem helpers (collect, read_mtime, write_mtime)
 │   ├── options.py          # Single source of truth for strategy/btime/format constants
 │   ├── plan.py             # Correction plan (Planner, CorrectionPlan, PlanBuilder, Instruction)
 │   ├── preview.py          # Calculator — computes the correction plan

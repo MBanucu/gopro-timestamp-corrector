@@ -34,20 +34,21 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ## Architecture
 
 | Layer | Directory | Entrypoint |
-|---|---|---|---|
+|---|---|---|
 | CLI orchestrator | `src/` | `correct_timestamps.py` |
+| ExifTool session | `src/` | `exiftool_session.py` — persistent `-stay_open` wrapper via PyExifTool |
 | Plan / Planner | `src/` | `plan.py` — `Planner`, `CorrectionPlan`, `PlanBuilder`, `Instruction` |
 | GUI app | `src/gui/` | `app.py` |
 | GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
 | Tests | `test/` | one file per area |
 
-Key flow: `analysis.analyze()` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer` I/O.
+Key flow: `ExifToolSession()` → `analysis.analyze(session)` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer(session=session)` I/O.
 
 All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`.
 
 ## Code conventions
 
-- No `pyproject.toml` — pure stdlib except `exiftool` external dep.
+- No `pyproject.toml` — pure stdlib except `pyexiftool` external dep (PyExifTool on PyPI).
 - Module granularity is fine (one class per file common for widgets).
 - `options.py` is the single source of truth for strategy/btime/format constants.
 - `src/gui/time_selector.py` uses `StringVar` (not `IntVar`) for spinbox variables.
