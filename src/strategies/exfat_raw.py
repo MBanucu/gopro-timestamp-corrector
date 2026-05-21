@@ -218,14 +218,6 @@ def _exfat_find_in_dir(boot: dict, device: str, dir_cluster: int, target_name: s
                 offset_in_cluster = pos % cs
                 return chain, cluster_in_chain, offset_in_cluster, sc, entries
         pos += 32
-    import sys as _sys
-    cs = boot['cluster_size']
-    heap_off = boot['cluster_heap_offset']
-    cl_off = heap_off + (dir_cluster - 2) * cs
-    raw = _exfat_read_device(device, cl_off, min(256, cs))
-    _sys.stderr.write(f'[dbg] _exfat_find_in_dir FAIL: target={target_name} '
-                     f'cluster={dir_cluster} offset={cl_off} '
-                     f'raw[:256]={raw.hex()}\n')
     return None
 
 
