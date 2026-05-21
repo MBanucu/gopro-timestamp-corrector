@@ -111,6 +111,7 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         gui.step3._toggle_btime()
         gui.step3.dry_run_var.set(False)
         gui.step3._btime_methods = ['exfat_raw']
+        gui.step3._sync_btime_methods()
         gui.step3._rebuild_listbox()
         root.update_idletasks()
 

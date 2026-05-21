@@ -7,6 +7,8 @@ on the current system.  Called by CLI (``--check``) and GUI
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import shutil
 import subprocess
 import sys
@@ -54,14 +56,27 @@ class BtimeMethodCapability:
 
 
 @dataclass
+class BtimeProbeResult:
+    """Result of probing birth-time readability on a filesystem."""
+
+    path: str
+    fs_type: str | None
+    stat_btime: int | None
+    statx_btime: int | None
+    statx_supported: bool | None
+
+
+@dataclass
 class EnvReport:
     platform: str
     python_version: str
     sudo_available: bool
-    tkinter_available: bool
+    tkinter_importable: bool
+    tkinter_display: bool
     exiftool: ToolAvailability
     btime_methods: list[BtimeMethodCapability]
     available_strategies: list[str]
+    btime_probe: BtimeProbeResult | None
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -94,7 +109,15 @@ def _check_sudo() -> bool:
         return False
 
 
-def _check_tk() -> bool:
+def _check_tk_importable() -> bool:
+    try:
+        import tkinter  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _check_tk_display() -> bool:
     try:
         import tkinter
         r = tkinter.Tk()
@@ -122,6 +145,106 @@ _BTIME_LABELS: dict[str, str] = {
     'fuse': 'FUSE + faketime (exFAT)',
     'clock': 'System clock',
 }
+
+
+# ── Btime probing (stat / statx) ────────────────────────────────────
+
+
+def _has_statx() -> bool:
+    """Return True if the ``statx()`` syscall is available."""
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+        libc.statx.restype = ctypes.c_int
+        return True
+    except Exception:
+        return False
+
+
+def _probe_stat_btime(path: str) -> int | None:
+    """Return birth time (epoch seconds) via ``stat -c '%W'``, or None."""
+    r = subprocess.run(
+        ['stat', '-c', '%W', path],
+        capture_output=True, text=True, timeout=10,
+    )
+    if r.returncode != 0:
+        return None
+    val = r.stdout.strip()
+    try:
+        return int(val)
+    except ValueError:
+        return None
+
+
+def _probe_statx_btime(path: str) -> tuple[int | None, bool | None]:
+    """Return ``(btime_epoch, stx_mask_has_btime)`` via ``statx()``, or ``(None, None)``.
+
+    ``stx_mask_has_btime`` is ``True`` when the kernel explicitly reports
+    birth time, ``False`` when it doesn't (even if ``btime`` happens to be 0).
+    Returns ``(None, None)`` when the syscall itself fails.
+    """
+    try:
+        class statx_timestamp(ctypes.Structure):
+            _fields_ = [
+                ('tv_sec', ctypes.c_int64),
+                ('tv_nsec', ctypes.c_uint32),
+                ('__reserved', ctypes.c_int32),
+            ]
+
+        class statx_buf(ctypes.Structure):
+            _fields_ = [
+                ('stx_mask', ctypes.c_uint32),
+                ('stx_blksize', ctypes.c_uint32),
+                ('stx_attributes', ctypes.c_uint64),
+                ('stx_nlink', ctypes.c_uint32),
+                ('stx_uid', ctypes.c_uint32),
+                ('stx_gid', ctypes.c_uint32),
+                ('stx_mode', ctypes.c_uint16),
+                ('__spare0', ctypes.c_uint16 * 1),
+                ('stx_ino', ctypes.c_uint64),
+                ('stx_size', ctypes.c_uint64),
+                ('stx_blocks', ctypes.c_uint64),
+                ('stx_attributes_mask', ctypes.c_uint64),
+                ('stx_atime', statx_timestamp),
+                ('stx_btime', statx_timestamp),
+                ('stx_ctime', statx_timestamp),
+                ('stx_mtime', statx_timestamp),
+                ('stx_rdev_major', ctypes.c_uint32),
+                ('stx_rdev_minor', ctypes.c_uint32),
+                ('stx_dev_major', ctypes.c_uint32),
+                ('stx_dev_minor', ctypes.c_uint32),
+                ('__spare2', ctypes.c_uint64 * 14),
+            ]
+
+        STATX_BTIME = 0x00000200
+        libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+        buf = statx_buf()
+        ret = libc.statx(-100, path.encode(), 0, STATX_BTIME, ctypes.byref(buf))
+        if ret != 0:
+            return None, None
+        mask_ok = bool(buf.stx_mask & STATX_BTIME)
+        return buf.stx_btime.tv_sec, mask_ok
+    except Exception:
+        return None, None
+
+
+def probe_btime(path: str | Path) -> BtimeProbeResult:
+    """Probe birth-time readability on the filesystem containing *path*."""
+    path = str(path)
+    try:
+        fs_type = btime.detect_fs(path)
+    except Exception:
+        fs_type = None
+
+    stat_btime = _probe_stat_btime(path)
+    statx_btime, statx_supported = _probe_statx_btime(path)
+    # statx_supported is None when syscall fails, else bool
+    return BtimeProbeResult(
+        path=path,
+        fs_type=fs_type,
+        stat_btime=stat_btime,
+        statx_btime=statx_btime,
+        statx_supported=statx_supported,
+    )
 
 
 # ── Main check ──────────────────────────────────────────────────────
@@ -173,14 +296,18 @@ def check_env(target_path: str | Path | None = None) -> EnvReport:
             requires_sudo=True,
         ))
 
+    probe = probe_btime(target_path or '.') if target_path else None
+
     return EnvReport(
         platform=sys.platform,
         python_version=f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}',
         sudo_available=sudo_ok,
-        tkinter_available=_check_tk(),
+        tkinter_importable=_check_tk_importable(),
+        tkinter_display=_check_tk_display(),
         exiftool=exif,
         btime_methods=btime_methods,
         available_strategies=[options.STRATEGY_GPS, options.STRATEGY_MANUAL, options.STRATEGY_SKIP],
+        btime_probe=probe,
     )
 
 
@@ -200,7 +327,9 @@ def format_summary(report: EnvReport) -> str:
     lines: list[str] = []
     lines.append(f'Platform:         {report.platform}')
     lines.append(f'Python:           {report.python_version}')
-    lines.append(f'Tkinter:          {"✓" if report.tkinter_available else "✗"}')
+    tk_icon = '✓' if report.tkinter_importable else '✗'
+    disp_icon = '✓' if report.tkinter_display else '✗'
+    lines.append(f'Tkinter module:   {tk_icon}  display: {disp_icon}')
     lines.append(f'exiftool:         {report.exiftool.path or "✗ not found"}')
     lines.append(f'Sudo (no-pass):   {"✓" if report.sudo_available else "✗"}')
 
@@ -220,6 +349,20 @@ def format_summary(report: EnvReport) -> str:
             lines.append(f'      {dep_icon} {dep.label}')
         if m.requires_sudo and not report.sudo_available:
             lines.append(f'      (needs passwordless sudo)')
+
+    if report.btime_probe:
+        p = report.btime_probe
+        lines.append('')
+        lines.append(f'Birth time probe ({p.path}):')
+        lines.append(f'  Filesystem:      {p.fs_type or "unknown"}')
+        lines.append(f'  stat -c %W:      {p.stat_btime if p.stat_btime is not None else "N/A"}')
+        lines.append(f'  statx STATX_BTIME: {p.statx_btime if p.statx_btime is not None else "N/A"}')
+        if p.statx_supported is True:
+            lines.append(f'  statx btime:     ✓  (kernel reports birth time)')
+        elif p.statx_supported is False:
+            lines.append(f'  statx btime:     ✗  (kernel does NOT report birth time)')
+        else:
+            lines.append(f'  statx btime:     ?  (syscall failed)')
 
     return '\n'.join(lines)
 

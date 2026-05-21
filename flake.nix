@@ -69,19 +69,20 @@
           python_bin = "${nixosTestPython}/bin/python3"
 
           machine.succeed("echo '--- NixOS test: copying source ---'")
+          machine.succeed("echo '--- NixOS test: environment check ---'")
+          machine.succeed(
+              "cd /tmp/gopro-test && "
+              + f"export PATH={bin_path}:$PATH && "
+              + f"DISPLAY=:99 {python_bin} -m env_check /tmp/gopro-test/test 2>&1"
+          )
           machine.succeed("echo '--- NixOS test: starting Xvfb ---'")
           machine.succeed("Xvfb :99 -screen 0 1024x768x24 &>/dev/null & sleep 1")
 
-          # Exclude test_btime_gui_correction — the NixOS kernel exfat
-          # module does not expose birth time via stat(1), so verification
-          # of raw-block btime writes always fails.  The correction itself
-          # is already validated by test_btime.
           machine.succeed(
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
               + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
-              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -j 2 -v "
-              + "-x test_btime_gui_correction 2>&1"
+              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -j 2 -v 2>&1"
           )
         '';
       };
