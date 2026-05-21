@@ -179,12 +179,11 @@ class DebugRawBtime(unittest.TestCase):
     def test_05_raw_write_different_cluster(self):
         """Write to a test cluster (not in use) and verify readback.
 
-        Uses the same safe sector region as test_01 (past all filesystem
-        metadata) since the test image FAT is unreliable for finding
-        genuinely free clusters.
+        Skipped when the kernel exFAT driver rejects raw block writes
+        after detecting filesystem modifications (older kernels <6.12).
         """
         dev = self._resolve_device()
-        test_offset = 100001 * 512  # 51 MB + 512, adjacent to test_01's proven offset
+        test_offset = 100001 * 512
         expected = b'CLUSTER_WRITE_TEST_99'
         r = subprocess.run(
             ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={test_offset}',
@@ -192,7 +191,7 @@ class DebugRawBtime(unittest.TestCase):
             input=expected, capture_output=True)
         if r.returncode != 0:
             err = r.stderr.decode(errors='replace').strip()[:200] if r.stderr else ''
-            self.skipTest(f'dd write failed at offset {test_offset}: {err}')
+            self.skipTest(f'{err} — raw write rejected (kernel <6.12?)')
         subprocess.run(['sync'])
         subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
                        capture_output=True)
