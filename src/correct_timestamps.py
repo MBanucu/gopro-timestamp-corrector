@@ -59,6 +59,7 @@ def _build_decisions_from_manifest(analysis_result, strategy_manifest, global_de
 def main():
     parser = argparse.ArgumentParser(description='Correct GoPro media timestamps')
     parser.add_argument('directory', nargs='?', default='.', help='Target directory')
+    parser.add_argument('--check', action='store_true', help='Check system environment and exit')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
     parser.add_argument('--fix-btime', nargs='?', const='auto',
                         choices=BTIME_CLI_CHOICES,
@@ -68,6 +69,12 @@ def main():
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')
     parser.add_argument('--strategy-manifest', help='JSON file with per-set strategy decisions')
     args = parser.parse_args()
+
+    if args.check:
+        import env_check
+        report = env_check.check_env(args.directory)
+        print(env_check.format_summary(report))
+        sys.exit(0 if report.exiftool.available else 1)
 
     target = Path(args.directory).resolve()
     if not target.is_dir():

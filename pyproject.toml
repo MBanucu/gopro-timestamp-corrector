@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 py-modules = [
     "analysis", "btime", "calibration", "correct_timestamps",
-    "dst", "exiftool_session", "history", "media", "options",
+    "dst", "env_check", "exiftool_session", "history", "media", "options",
     "plan", "preview", "resolve", "scanner", "writer",
 ]
 
@@ -27,3 +27,4 @@ dependencies = [
 [project.scripts]
 correct-gopro-timestamps = "correct_timestamps:main"
 gopro-timestamp-gui = "gui.app:main"
+gopro-check-env = "env_check:main"
