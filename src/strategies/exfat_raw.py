@@ -77,8 +77,6 @@ def _exfat_backing_file(device: str) -> str | None:
                     path = r.stdout.strip()
             except Exception:
                 pass
-        import sys as _sys
-        _sys.stderr.write(f'[dbg] _exfat_backing_file({device}) = {path!r}\n')
         _BACKING_CACHE[device] = path or None
     return _BACKING_CACHE[device]
 
