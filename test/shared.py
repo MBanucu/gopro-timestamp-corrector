@@ -105,32 +105,41 @@ def _loop_via_udisksctl(img_path):
 def _loop_via_sudo(img_path):
     """Fallback: sudo losetup + sudo mount. Returns (loop_dev, mount_point) or None."""
     try:
+        import sys as _sys
         r = subprocess.run(
             ['sudo', 'losetup', '-f', '--show', str(img_path)],
             capture_output=True, text=True)
         if r.returncode != 0:
+            print(f"_loop_via_sudo: losetup failed: {r.stderr}", file=_sys.stderr)
             return None
         loop_dev = r.stdout.strip()
+        print(f"_loop_via_sudo: loop dev = {loop_dev}", file=_sys.stderr)
 
         mount_point = tempfile.mkdtemp(prefix='gopro_mnt_')
 
-        subprocess.run(['sudo', 'chmod', '666', loop_dev],
-                       capture_output=True)
+        r2 = subprocess.run(['sudo', 'chmod', '666', loop_dev],
+                            capture_output=True, text=True)
+        if r2.returncode != 0:
+            print(f"_loop_via_sudo: chmod failed: {r2.stderr}", file=_sys.stderr)
 
         r = subprocess.run(
             ['sudo', 'mount', '-t', 'exfat', loop_dev, mount_point],
             capture_output=True, text=True)
         if r.returncode != 0:
+            print(f"_loop_via_sudo: exfat mount failed: {r.stderr}", file=_sys.stderr)
             r = subprocess.run(
                 ['sudo', 'mount', loop_dev, mount_point],
                 capture_output=True, text=True)
         if r.returncode != 0:
+            print(f"_loop_via_sudo: auto mount failed: {r.stderr}", file=_sys.stderr)
             subprocess.run(['sudo', 'losetup', '-d', loop_dev],
                            capture_output=True)
             os.rmdir(mount_point)
             return None
+        print(f"_loop_via_sudo: mounted at {mount_point}", file=_sys.stderr)
         return (loop_dev, mount_point)
-    except FileNotFoundError:
+    except FileNotFoundError as e:
+        print(f"_loop_via_sudo: binary not found: {e}", file=_sys.stderr)
         return None
 
 
