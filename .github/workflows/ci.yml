@@ -26,25 +26,20 @@ jobs:
       - name: Start Xvfb (full scope only)
         if: matrix.scope == 'full'
         run: |
+          export DISPLAY=:99
           Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
           sleep 1
           python -c 'import tkinter as tk; r=tk.Tk(); r.withdraw(); r.destroy(); print("Tkinter OK")'
       - name: Run ${{ matrix.scope }} tests
         env:
           PYTHONPATH: test
+          DISPLAY: :99
         run: |
           case ${{ matrix.scope }} in
-            debug)
-              python -m unittest test_debug_raw_btime -v 2>&1
-              ;;
-            unit)
-              python -m unittest test.test_unit -v 2>&1
-              ;;
-            cluster)
-              python -m unittest test_cluster_coherence -v 2>&1
-              ;;
+            debug) python -m unittest test_debug_raw_btime -v 2>&1 ;;
+            unit) python -m unittest test.test_unit -v 2>&1 ;;
+            cluster) python -m unittest test_cluster_coherence -v 2>&1 ;;
             full)
-              export DISPLAY=:99
               python -m unittest test_btime_gui_correction -v 2>&1 || \
                 (echo "=== Re-run ===" && \
                  python -m unittest test_btime_gui_correction -v 2>&1; \
