@@ -29,7 +29,6 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 - Integration tests (`test_exfat_raw_btime.py`, `test_fuse_faketime.py`, `test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`.
 - `test/test_strategy.py` writes temp files, must be run from repo root (`PYTHONPATH=src:test`).
 - Large fixture: `test/sdcard.img.gz` (~14 MB, decompressed on first test run).
-- No `pyproject.toml` or pre-commit config.
 
 ## Architecture
 
@@ -40,6 +39,10 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 | Plan / Planner | `src/` | `plan.py` — `Planner`, `CorrectionPlan`, `PlanBuilder`, `Instruction` |
 | GUI app | `src/gui/` | `app.py` |
 | GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
+| Mount strategies | `src/strategies/` | `mount.py` — `ImageMountStrategy`, `AlreadyMountedStrategy` |
+| Mtime strategies | `src/strategies/` | `mtime.py` — `OsUtimeMtimeStrategy`, `ExfatRawMtimeStrategy`, `SkipMtimeStrategy` |
+| Capability probes | `src/` | `probe.py` — `probe_stat_btime`, `probe_statx_btime`, `probe_exfat_btime`, etc. |
+| Env check | `src/` | `env_check.py` — `check_env()`, `format_summary()`, CLI `--check` |
 | Tests | `test/` | one file per area |
 
 Key flow: `ExifToolSession()` → `analysis.analyze(session)` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer(session=session)` I/O.
@@ -58,14 +61,6 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
   The GUI filters methods per filesystem via `btime.compatible_methods(fs_type)`.
 - `_rebuild_listbox()` temporarily switches the listbox to `NORMAL` before calling
   `delete()`/`insert()` — tkinter silently ignores these calls when the widget is `DISABLED`.
-- `Writer.__init__` accepts `fix_btime: str | list[str] | tuple[str]` — a list
-  produces a fallback chain; a single string is wrapped for backward compatibility.
-- `_fix_exfat_raw` in `btime.py` writes **both** creation time AND modification time
-  fields in one raw-block access.  Before any raw device read it calls `sync` to
-  flush pending kernel writes (e.g. from the embedded exiftool batch).  After the
-  write it calls `sync` + `drop_caches`.
-- `Writer.close()` remounts the partition after `exfat_raw` corrections to clear the
-  exFAT driver's private metadata cache (not invalidated by `drop_caches`).
 - When writing embedded metadata, `QuickTime:CreationDate` receives an explicit
   `+00:00` suffix — this tag is stored as a string (unlike the integer-based
   `CreateDate`/`TrackCreateDate`), and omitting the timezone causes exiftool to
@@ -77,3 +72,119 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
   `PlanBuilder.build()` produces a list of `Instruction` objects from the
   `Planner` + `CorrectionPlan`.  `PlanBuilder.execute()` runs them
   sequentially with progress callbacks (`log_fn`, `progress_fn`).
+
+## exFAT raw block write & cache coherence
+
+### `_fix_exfat_raw` (exfat_raw.py)
+
+- Writes **both** creation time AND modification time in one raw-block access.
+- Calls `sync()` after write to flush pending kernel writes.
+- **Does NOT call `drop_caches`** — on older kernels (<6.12), `drop_caches` with
+  loop devices over sparse backing files causes `EIO` on subsequent reads.
+  `sync` alone is sufficient for the raw block write to persist.
+
+### `Writer.close()` (writer.py)
+
+- **No longer does `umount` + `mount`** — the full remount cycle caused
+  `EIO` errors on CI's kernel because the kernel exFAT driver re-validates
+  directory entries after remount, and the CRC validation can fail for
+  raw-block-modified entries.
+- The stale kernel cache is a cosmetic issue: `stat` shows the old mtime,
+  but the raw block data is correct. The corrected mtime becomes visible
+  after the user unmounts/mounts the SD card normally.
+
+### test image FAT inconsistency
+
+The `sdcard.img` test fixture has an **inconsistent FAT**: the FAT entries
+for used clusters (DCIM at cluster 5, 100GOPRO at cluster 9, etc.) are
+marked as free (value 0).  This means:
+
+- **Do NOT use `_find_free_cluster()`** on the test image — it will return
+  an in-use cluster and corrupt the filesystem.
+- Use a known-safe sector offset for dd write tests (e.g., `100000 * 512`).
+
+## Kernel version differences
+
+| Feature | NixOS (kernel 6.12+) | CI Ubuntu (kernel <6.12) |
+|---|---|---|
+| `os.utime()` on exFAT | ✓ works | ✗ EPERM |
+| `stat -c '%W'` on exFAT | ✓ returns btime | ✗ returns 0 |
+| `statx STATX_BTIME` on exFAT | ✓ | ✗ returns 0 in value (mask says supported but value is 0) |
+| Raw block write + `sync` | ✓ works | ✓ works |
+| `drop_caches` after raw write | ✓ safe | ✗ causes EIO on loop reads |
+| `dd` write to loop after FS modification | ✓ works | ✗ kernel remounts read-only |
+| exFAT kernel UTC offset | ✓ none | ✗ 7200s (UTC+2) applied to `stat` mtime |
+
+### `_parse_dt` timezone handling
+
+`exiftool_session._parse_dt()` now **parses the timezone offset** from exiftool
+output strings (e.g., `2026:05:14 14:52:00+09:00`) and converts to UTC, instead
+of stripping the offset and stamping the local time as UTC.  The old `_strip_tz()`
+function has been removed.
+
+This is critical for the timezone integration test (`test_timezone_integration.py`)
+which runs the full correction pipeline under 7 different system timezones.
+
+## Test notes
+
+### `test_debug_raw_btime.py` (debug tests)
+
+- **test_01**: dd write/read at `100000 * 512` (51 MB). Uses `sync` only (no `drop_caches`).
+- **test_05**: writes test pattern in `setUpClass` (before any FS modifications) to
+  avoid kernel read-only remount. Uses 25 MB offset (`50000 * 512`).
+- **test_06**: compares decoded mtime with `read_exfat_mtime_raw()` instead of
+  `os.path.getmtime()` — bypasses the kernel exFAT UTC offset bug.
+- **test_07**: batch `_fix_exfat_raw` on all 12 files with raw-block readback verification.
+
+### CI workflows
+
+- `debug-raw-btime` — fast cycle (only debug tests, ~30s)
+- `debug-btime` — full suite (debug + GUI + timezone, ~3min)
+- `cluster-coherence` — diagnostic test for cluster write coherence
+
+## Mount strategy pattern
+
+`src/strategies/mount.py` provides:
+
+- `ImageMountStrategy` — creates loop device from `.img` file and mounts it
+  (tries `udisksctl` first, falls back to `sudo losetup + mount`)
+- `AlreadyMountedStrategy` — for paths already mounted (no-op)
+- `detect_strategy(source)` — auto-selects strategy based on source type
+- `REGISTRY` — dict for lookup by name
+
+## Mtime strategy pattern
+
+`src/strategies/mtime.py` provides:
+
+- `OsUtimeMtimeStrategy` — uses `media.write_mtime()` (which calls `os.utime()`)
+- `ExfatRawMtimeStrategy` — writes mtime via raw block, preserves existing btime
+- `SkipMtimeStrategy` — no-op when exfat_raw btime already handles mtime
+- The `Writer` selects strategy based on filesystem + btime method via
+  `_resolve_mtime_strategy()`
+
+## Capability probes
+
+`src/probe.py` contains all probe functions, split from `env_check.py`:
+
+| Probe | What it checks |
+|---|---|
+| `probe_stat_btime(path)` | `stat -c '%W'` birth time |
+| `probe_statx_btime(path)` | `statx()` syscall STATX_BTIME |
+| `probe_utime(path)` | `os.utime()` works on filesystem |
+| `probe_btime(path)` | All of the above for a path |
+| `probe_exfat_btime()` | Temp exFAT fs: stat/statx/raw/utime/dd/blockdev |
+| `_probe_dd_nocache(device)` | `dd iflag=nocache` support |
+| `_probe_blockdev_flush(device)` | `blockdev --flushbufs` support |
+
+## Block device capability checks (env_check)
+
+```
+exFAT btime probe (temp filesystem):
+  stat -c '%W'                 ✗   # kernel <6.12
+  statx STATX_BTIME            ✗   # value is 0
+  raw block readback           ✓   # always works (bypasses kernel)
+  os.utime()                   ✗   # EPERM on exFAT
+  dd iflag=nocache             ✓   # supported on coreutils 8.16+
+  blockdev --flushbufs         ✓   # works on loop devices
+  overall:                   ✓    # at least one method works
+```
