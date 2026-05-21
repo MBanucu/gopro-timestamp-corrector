@@ -73,6 +73,12 @@ jobs:
              echo "=== dmesg ===" && \
              dmesg | tail -30 || true)
 
+      - name: Run timezone integration test
+        env:
+          PYTHONPATH: test
+        run: |
+          python -m unittest test_timezone_integration -v 2>&1 || true
+
       - name: Re-run debug tests after GUI correction
         if: always()
         env:
