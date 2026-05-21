@@ -189,7 +189,7 @@ class DebugRawBtime(unittest.TestCase):
 
         end_of_image = os.path.getsize(self._img_path)
         max_cluster = 2 + (end_of_image - heap_off) // cs
-        test_cluster = max(max_cluster - 100, 1000)
+        test_cluster = max(max_cluster // 2, 1000)
         test_offset = heap_off + (test_cluster - 2) * cs
         expected = b'CLUSTER_WRITE_TEST_99'
         r = subprocess.run(
