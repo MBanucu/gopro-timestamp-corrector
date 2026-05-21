@@ -53,21 +53,6 @@ def _exfat_decode_time(time_word: int, date_word: int, time_ms: int) -> datetime
                     millisecond * 1000, tzinfo=timezone.utc)
 
 
-def _exfat_backing_file(device: str) -> str | None:
-    """Resolve the backing file for a loop device."""
-    try:
-        r = subprocess.run(
-            ['sudo', 'losetup', '-l', device, '--noheadings', '-O', 'BACK-FILE'],
-            capture_output=True, text=True)
-        if r.returncode == 0:
-            path = r.stdout.strip()
-            if path:
-                return path
-    except Exception:
-        pass
-    return None
-
-
 _BACKING_CACHE: dict[str, str | None] = {}
 
 
