@@ -195,10 +195,11 @@ class DebugRawBtime(unittest.TestCase):
         r = subprocess.run(
             ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={test_offset}',
              f'count={len(expected)}', 'status=none'],
-            input=expected, capture_output=True, text=True)
+            input=expected, capture_output=True)
         if r.returncode != 0:
+            err = r.stderr.decode(errors='replace').strip()[:200] if r.stderr else ''
             self.fail(f'dd write failed at offset {test_offset} '
-                      f'(cluster={test_cluster}): {r.stderr}')
+                      f'(cluster={test_cluster}): {err}')
         subprocess.run(['sync'])
         subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
                        capture_output=True)
