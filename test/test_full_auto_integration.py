@@ -66,18 +66,17 @@ class TestFullAutoIntegration(unittest.TestCase):
         if r.returncode != 0 or not r.stdout.strip():
             return {}
         import json as _json
-        from exiftool_session import _strip_tz
+        from exiftool_session import _parse_dt
         out = {}
         for rec in _json.loads(r.stdout):
             src = rec.get('SourceFile')
             raw = rec.get('CreateDate')
             if not src or not raw:
                 continue
-            val = _strip_tz(str(raw))
-            try:
-                dt = datetime.strptime(val, '%Y:%m:%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            dt = _parse_dt(str(raw))
+            if dt is not None:
                 out[Path(src)] = dt
-            except ValueError:
+            else:
                 out[Path(src)] = None
         return out
 

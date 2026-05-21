@@ -9,27 +9,44 @@ Usage::
 
 import json as _json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from exiftool import ExifToolHelper
 
 
-def _strip_tz(val):
-    return re.sub(r'(\s*[+-]\d{2}:\d{2}|Z)$', '', val).strip()
-
-
 def _parse_dt(val: str) -> datetime | None:
-    val = _strip_tz(val)
+    """Parse an exiftool date string into a UTC-aware datetime.
+
+    exiftool outputs dates in local time with a timezone offset
+    (e.g. ``2026:05:14 14:52:00+09:00``).  This function extracts
+    the offset and converts to UTC, so the returned datetime always
+    carries ``tzinfo=timezone.utc``.
+    """
+    val = str(val).strip()
+    if not val:
+        return None
     try:
+        offset = timedelta()
+        # Match optional space then +HH:MM or -HH:MM at end
+        m = re.search(r'\s*([+-])(\d{2}):(\d{2})\s*$', val)
+        if m:
+            sign = 1 if m.group(1) == '+' else -1
+            offset = timedelta(hours=int(m.group(2)),
+                               minutes=int(m.group(3))) * sign
+            val = val[:m.start()]
+        elif val.endswith('Z'):
+            val = val[:-1].strip()
+        # Strip trailing whitespace
+        val = val.strip()
         if '.' in val:
             main, frac = val.split('.')
             frac = (frac + '000000')[:6]
-            return datetime.strptime(f'{main}.{frac}',
-                                     '%Y:%m:%d %H:%M:%S.%f'
-                                     ).replace(tzinfo=timezone.utc)
-        return datetime.strptime(val, '%Y:%m:%d %H:%M:%S'
-                                 ).replace(tzinfo=timezone.utc)
+            dt = datetime.strptime(f'{main}.{frac}',
+                                   '%Y:%m:%d %H:%M:%S.%f')
+        else:
+            dt = datetime.strptime(val, '%Y:%m:%d %H:%M:%S')
+        return dt.replace(tzinfo=timezone.utc) - offset
     except (ValueError, IndexError):
         return None
 
