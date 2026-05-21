@@ -270,6 +270,33 @@ def read_exfat_btime_raw(filepath: str) -> int | None:
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
+def read_exfat_mtime_raw(filepath: str) -> int | None:
+    """Read modification time from an exFAT file via raw block access.
+
+    Returns epoch seconds (UTC) or ``None`` on failure.
+    Unlike ``os.path.getmtime()`` this bypasses the kernel cache
+    and reads directly from the on‑disk directory entry.
+    """
+    from btime import _resolve_device
+    try:
+        device = _resolve_device(filepath)
+    except OSError:
+        return None
+    if not device:
+        return None
+    boot = _exfat_parse_boot(device)
+    if not boot:
+        return None
+    entry = _exfat_find_file_entry(boot, device, filepath)
+    if entry is None:
+        return None
+    time_word = struct.unpack_from('<H', entry, 0x08)[0]
+    date_word = struct.unpack_from('<H', entry, 0x0A)[0]
+    time_ms = entry[0x14]
+    dt = _exfat_decode_time(time_word, date_word, time_ms)
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
 def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
     """Write both modification time and creation time to an exFAT file.
 
