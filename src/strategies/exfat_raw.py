@@ -270,7 +270,15 @@ def read_exfat_btime_raw(filepath: str) -> int | None:
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
-def _fix_exfat_raw(filepath, dt, dry_run):
+def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
+    """Write both modification time and creation time to an exFAT file.
+
+    *dt* is the target modification time (written to offsets 0x08/0x0A/0x14).
+    When *btime_dt* is ``None`` (default), the creation time (offsets
+    0x0C/0x0E/0x16) is set to the same value.  When *btime_dt* is
+    provided, the creation time is preserved at that value (useful when
+    writing mtime-only after btime was already corrected).
+    """
     from btime import _resolve_device, _resolve_mount_point
 
     device = _resolve_device(filepath)
@@ -283,6 +291,7 @@ def _fix_exfat_raw(filepath, dt, dry_run):
 
     utc = dt.replace(tzinfo=timezone.utc)
     label = utc.strftime("%Y-%m-%d %H:%M:%S")
+    btime_utc = btime_dt.replace(tzinfo=timezone.utc) if btime_dt is not None else utc
     import sys as _sys
     _sys.stderr.write(f"[dbg] _fix_exfat_raw dt={dt!r} utc_timestamp={int(utc.timestamp())} device={device}\n")
 
@@ -321,14 +330,15 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     fchain, fci, foff, fsc, fentries = found
 
     entry = bytearray(fentries[0])
-    date_word, time_word, time_ms_val = _exfat_encode_time(utc)
-    struct.pack_into('<H', entry, 0x08, time_word)
-    struct.pack_into('<H', entry, 0x0A, date_word)
-    entry[0x14] = time_ms_val
+    mdate_word, mtime_word, mtime_ms_val = _exfat_encode_time(utc)
+    bdate_word, btime_word, btime_ms_val = _exfat_encode_time(btime_utc)
+    struct.pack_into('<H', entry, 0x08, mtime_word)
+    struct.pack_into('<H', entry, 0x0A, mdate_word)
+    entry[0x14] = mtime_ms_val
     entry[0x15] = 0
-    struct.pack_into('<H', entry, 0x0C, time_word)
-    struct.pack_into('<H', entry, 0x0E, date_word)
-    entry[0x16] = time_ms_val
+    struct.pack_into('<H', entry, 0x0C, btime_word)
+    struct.pack_into('<H', entry, 0x0E, bdate_word)
+    entry[0x16] = btime_ms_val
     entry[0x17] = 0
 
     modified_entries = [bytes(entry)] + list(fentries[1:])

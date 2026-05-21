@@ -82,6 +82,7 @@ class ExfatBtimeSupport:
     stat_method: bool | None
     statx_method: bool | None
     raw_read_method: bool | None
+    utime_on_exfat: bool | None
     reason: str = ''
 
 
@@ -291,7 +292,8 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
     """
     if not shutil.which('mkfs.exfat'):
         return ExfatBtimeSupport(supported=None, reason='mkfs.exfat not found',
-                                 stat_method=None, statx_method=None, raw_read_method=None)
+                                 stat_method=None, statx_method=None, raw_read_method=None,
+                                 utime_on_exfat=None)
 
     from loop_device import setup_loop_device, teardown_loop_device, LoopDeviceError
 
@@ -307,13 +309,15 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         if r.returncode != 0:
             return ExfatBtimeSupport(supported=None,
                                      reason=f'mkfs.exfat failed: {r.stderr.strip()}',
-                                     stat_method=None, statx_method=None, raw_read_method=None)
+                                     stat_method=None, statx_method=None, raw_read_method=None,
+                                     utime_on_exfat=None)
 
         try:
             loop_dev, mount_point = setup_loop_device(tmp_img)
         except LoopDeviceError as e:
             return ExfatBtimeSupport(supported=None, reason=str(e),
-                                     stat_method=None, statx_method=None, raw_read_method=None)
+                                     stat_method=None, statx_method=None, raw_read_method=None,
+                                     utime_on_exfat=None)
 
         test_file = os.path.join(mount_point, 'probe.bin')
         subprocess.run(['sudo', 'touch', test_file], capture_output=True, timeout=15)
@@ -329,19 +333,33 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
 
         supported = stat_ok or statx_ok or raw_ok
 
+        # Probe os.utime() on exFAT
+        utime_try = 1234567890.0
+        try:
+            os.utime(test_file, (utime_try, utime_try))
+            st = os.stat(test_file)
+            utime_on_exfat = abs(st.st_mtime - utime_try) < 1.0
+        except OSError:
+            utime_on_exfat = False
+        except Exception:
+            utime_on_exfat = None
+
         return ExfatBtimeSupport(
             supported=supported,
             stat_method=stat_ok,
             statx_method=statx_ok,
             raw_read_method=raw_ok,
+            utime_on_exfat=utime_on_exfat,
         )
 
     except FileNotFoundError as e:
         return ExfatBtimeSupport(supported=None, reason=f'missing tool: {e.name}',
-                                 stat_method=None, statx_method=None, raw_read_method=None)
+                                 stat_method=None, statx_method=None, raw_read_method=None,
+                                 utime_on_exfat=None)
     except Exception as e:
         return ExfatBtimeSupport(supported=None, reason=str(e),
-                                 stat_method=None, statx_method=None, raw_read_method=None)
+                                 stat_method=None, statx_method=None, raw_read_method=None,
+                                 utime_on_exfat=None)
     finally:
         if loop_dev:
             teardown_loop_device(loop_dev, mount_point)
@@ -510,6 +528,7 @@ def format_summary(report: EnvReport) -> str:
             ("stat -c '%W'",            e.stat_method),
             ('statx STATX_BTIME',       e.statx_method),
             ('raw block readback',      e.raw_read_method),
+            ('os.utime()',              e.utime_on_exfat),
         ]:
             icon = '✓' if val is True else ('✗' if val is False else '?')
             lines.append(f'  {label:28s} {icon}')

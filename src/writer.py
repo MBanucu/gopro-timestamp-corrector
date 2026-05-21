@@ -1,20 +1,22 @@
-"""Write-only facade accepting preset target times and dispatching to low-level I/O.
-
-This module has no computation logic. It receives a list of WriteJob
-objects (file + target times) and writes them to disk via media.py and btime.py.
-"""
+"""Write-only facade accepting preset target times and dispatching to low-level I/O."""
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal
 
-import media
 import btime
+import media
 from exiftool_session import ExifToolSession
 from options import BTIME_OFF, BTIME_EXFAT_RAW
+from strategies.mtime import (
+    MtimeStrategy,
+    OsUtimeMtimeStrategy,
+    ExfatRawMtimeStrategy,
+    SkipMtimeStrategy,
+)
 
 
 @dataclass
@@ -25,11 +27,6 @@ class WriteJob:
 
 
 def _normalize_btime(value):
-    """Normalise *value* to an ordered list of btime method names.
-
-    Accepts ``'off'`` (or None/False), a single method string, or an
-    iterable of strings.  Returns a list of method names (possibly empty).
-    """
     if value is None or value is False:
         return []
     if isinstance(value, str):
@@ -63,6 +60,7 @@ class Writer:
         self._b_ctx: dict = {}
         self._delta = delta
         self._session = session
+        self._mtime_strategy: MtimeStrategy | None = None
 
         methods = _normalize_btime(fix_btime)
         if methods:
@@ -73,8 +71,25 @@ class Writer:
     def _btime_handles_mtime(self) -> bool:
         return self._b_method == BTIME_EXFAT_RAW
 
+    def _resolve_mtime_strategy(self) -> MtimeStrategy:
+        if self._btime_handles_mtime():
+            return SkipMtimeStrategy()
+        fs = None
+        try:
+            fs = btime.detect_fs(self.target_dir)
+        except Exception:
+            pass
+        if fs in ('exfat', 'fuse', 'exfat_raw') and self._b_method != BTIME_EXFAT_RAW:
+            return ExfatRawMtimeStrategy()
+        return OsUtimeMtimeStrategy()
+
+    @property
+    def mtime_strategy(self) -> MtimeStrategy:
+        if self._mtime_strategy is None:
+            self._mtime_strategy = self._resolve_mtime_strategy()
+        return self._mtime_strategy
+
     def write(self, job: WriteJob) -> bool:
-        """Write a single job to embedded metadata, mtime, and optionally btime."""
         if self.dry_run:
             return True
 
@@ -84,32 +99,22 @@ class Writer:
         if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
             btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
         if job.target_mtime is not None and not self._btime_handles_mtime():
-            media.write_mtime(job.path, job.target_mtime)
+            self.mtime_strategy.write_mtime(job.path, job.target_mtime)
         return ok
 
     def write_embedded_only(self, job: WriteJob) -> bool:
-        """Write only embedded EXIF/QuickTime metadata."""
         if self.dry_run or not job.target_embedded or not self._session:
             return False
         return self._session.write_embedded(job.path, job.target_embedded)
 
     def write_mtime_only(self, job: WriteJob) -> bool:
-        """Write only filesystem modification time.
-
-        When ``exfat_raw`` is the active btime method it handles both
-        mtime and btime in a single raw-block access — skip the
-        separate ``os.utime()`` call (which fails with EPERM on the
-        kernel exfat driver).
-        """
         if self.dry_run or job.target_mtime is None:
             return False
         if self._btime_handles_mtime():
             return True
-        media.write_mtime(job.path, job.target_mtime)
-        return True
+        return self.mtime_strategy.write_mtime(job.path, job.target_mtime)
 
     def write_btime_only(self, job: WriteJob) -> bool:
-        """Write only filesystem birth time (needs btime setup done externally)."""
         if self.dry_run or job.target_mtime is None:
             return False
         if self._b_method:
@@ -123,12 +128,10 @@ class Writer:
         return False
 
     def write_all(self, jobs: list[WriteJob]) -> WriteSummary:
-        """Write multiple jobs. Returns summary."""
         summary = WriteSummary()
         if not jobs:
             return summary
 
-        # ── Batch-write embedded times (via persistent exiftool) ──
         if not self.dry_run and self._session:
             emb_pairs = [(j.path, j.target_embedded) for j in jobs
                          if j.target_embedded is not None]
@@ -136,9 +139,6 @@ class Writer:
         else:
             batch_ok = True
 
-        # ── Per-file: btime + mtime ──────────────────────────────
-        # ``exfat_raw`` writes both timestamps in one raw-block access;
-        # the separate media.write_mtime is skipped for it.
         for job in jobs:
             if not self.dry_run and job.target_embedded is not None and not batch_ok:
                 (summary.errors or []).append(str(job.path))
@@ -149,19 +149,13 @@ class Writer:
             if btime.needs_processing_after(self._b_method) and job.target_mtime is not None:
                 btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
             if job.target_mtime is not None and not self._btime_handles_mtime():
-                media.write_mtime(job.path, job.target_mtime)
+                self.mtime_strategy.write_mtime(job.path, job.target_mtime)
 
         return summary
 
     def close(self):
-        """Tear down btime if needed."""
         if self._b_method and (btime.needs_processing_before(self._b_method) or self._b_method == 'clock'):
             btime.teardown(self._b_method, self._b_ctx, self.dry_run)
-        # Full umount + mount cycle to flush the exFAT driver's private
-        # metadata cache.  _fix_exfat_raw writes via dd (bypasses the
-        # driver), so the driver's cached directory entries become stale.
-        # mount -o remount is insufficient — recent kernel exFAT drivers
-        # keep per-inode cached entries that survive remount.
         if self._b_method == BTIME_EXFAT_RAW and not self.dry_run:
             try:
                 mp = btime._resolve_mount_point(self.target_dir)
