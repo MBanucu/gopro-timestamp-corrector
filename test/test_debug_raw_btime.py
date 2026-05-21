@@ -93,6 +93,23 @@ class DebugRawBtime(unittest.TestCase):
 
     # ── Tests ────────────────────────────────────────────────────
 
+    def test_01_dd_write_read_raw(self):
+        """Direct dd write/read to loop device — verify persistence."""
+        dev = self._resolve_device()
+        test_offset = 100000 * 512
+        expected = b'DEBUG_TEST_PATTERN_42'
+        subprocess.run(
+            ['sudo', 'dd', f'of={dev}', 'bs=1',
+             f'seek={test_offset}', f'count={len(expected)}', 'status=none'],
+            input=expected, check=True, capture_output=True)
+        subprocess.run(['sync'])
+        r = subprocess.run(
+            ['sudo', 'dd', f'if={dev}', 'bs=1',
+             f'skip={test_offset}', f'count={len(expected)}', 'status=none'],
+            check=True, capture_output=True)
+        actual = r.stdout
+        self.assertEqual(expected, actual,
+                         f'dd write/read mismatch: expected={expected!r} actual={actual!r}')
 
     def test_02_dd_write_file_cluster_direct(self):
         """Write to the cluster containing the first file's dir entry, read back raw."""
