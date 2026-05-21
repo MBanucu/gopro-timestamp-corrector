@@ -119,8 +119,17 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         gui._advance_to_run()
         root.update_idletasks()
 
+        self._inst_items = gui.step4._instruction_items
+
         # ── Run correction (run_tool starts a thread) ──────────────
         done = threading.Event()
+        captured_log: list[str] = []
+        orig_log = gui.log
+        def capturing_log(msg):
+            captured_log.append(msg)
+            orig_log(msg)
+        gui.log = capturing_log
+
         orig_on_finish = gui.on_finish
         def on_finish(code):
             gui._exit_code = code
@@ -134,6 +143,14 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         gui.run_tool()
         root.after(60000, root.quit)
         root.mainloop()
+
+        if getattr(gui, '_exit_code', -1) != 0:
+            print('\n'.join(captured_log), flush=True)
+            if hasattr(gui, 'step4'):
+                for i, inst in enumerate(gui.step4._instruction_items):
+                    s = getattr(inst, 'status', 'unknown')
+                    e = getattr(inst, 'error', '')
+                    print(f'  [{i}] {inst.label}: {s} {e}', flush=True)
 
         self.assertTrue(done.is_set(), 'Correction did not complete within 60s')
         self.assertEqual(getattr(gui, '_exit_code', -1), 0,
