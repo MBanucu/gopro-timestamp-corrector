@@ -123,6 +123,9 @@ def _loop_via_sudo(img_path):
                 capture_output=True, text=True)
             if r.returncode == 0:
                 break
+            import sys as _sys
+            print(f"mount -t {fs_type}: rc={r.returncode} stderr={r.stderr.strip()}",
+                  file=_sys.stderr)
         if r.returncode != 0:
             subprocess.run(['sudo', 'losetup', '-d', loop_dev],
                            capture_output=True)
