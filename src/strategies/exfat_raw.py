@@ -343,7 +343,14 @@ def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
 
     current_cluster = boot['root_cluster']
     for component in parts:
-        found = _exfat_find_in_dir(boot, device, current_cluster, component)
+        found = None
+        for _attempt in range(2):
+            found = _exfat_find_in_dir(boot, device, current_cluster, component)
+            if found:
+                break
+            subprocess.run(['sync'])
+            subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
+                           capture_output=True)
         if not found:
             raise RuntimeError(f"exFAT: directory component '{component}' not found")
         dchain, dci, doff, dsc, dentries = found
@@ -351,7 +358,14 @@ def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
         first_cl = struct.unpack_from('<I', stream, 0x14)[0]
         current_cluster = first_cl
 
-    found = _exfat_find_in_dir(boot, device, current_cluster, filename)
+    found = None
+    for _attempt in range(2):
+        found = _exfat_find_in_dir(boot, device, current_cluster, filename)
+        if found:
+            break
+        subprocess.run(['sync'])
+        subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
+                       capture_output=True)
     if not found:
         raise RuntimeError(f"exFAT: file '{filename}' not found in directory")
     fchain, fci, foff, fsc, fentries = found
