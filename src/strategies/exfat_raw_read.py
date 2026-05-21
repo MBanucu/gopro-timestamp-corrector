@@ -55,7 +55,7 @@ class ExfatRawReadStrategy(ExfatRawStrategy):
 
         time_word = struct.unpack_from('<H', entry, 0x0C)[0]
         date_word = struct.unpack_from('<H', entry, 0x0E)[0]
-        time_ms = entry[0x14]
+        time_ms = entry[0x16]
 
         dt = _exfat_decode_time(time_word, date_word, time_ms)
         return int(dt.replace(tzinfo=timezone.utc).timestamp())

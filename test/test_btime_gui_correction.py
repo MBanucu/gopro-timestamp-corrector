@@ -194,7 +194,17 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         # ── Verify btime on every file ─────────────────────────────
         errors = []
         for fp in media_files:
-            after_bt = self._read_btime(fp)
+            after_bt_raw = self._read_btime(fp)
+            r = subprocess.run(['stat', '-c', '%W', str(fp)],
+                               capture_output=True, text=True, timeout=15)
+            after_bt_stat = None
+            if r.returncode == 0 and r.stdout.strip():
+                try:
+                    after_bt_stat = int(r.stdout.strip())
+                except ValueError:
+                    pass
+            after_bt = after_bt_raw if after_bt_raw is not None else after_bt_stat
+
             if after_bt is None:
                 errors.append(f'{fp.name}: could not read btime')
                 continue
@@ -203,8 +213,12 @@ class TestBtimeGuiCorrection(unittest.TestCase):
                 errors.append(f'{fp.name}: no original mtime recorded')
                 continue
             expected_ts = orig_mtimes[fp] + int(delta.total_seconds())
+            orig_mtime_ts = orig_mtimes[fp]
 
             diff = abs(after_bt - expected_ts)
+            extra = ''
+            if after_bt_stat is not None and after_bt_raw is not None and after_bt_stat != after_bt_raw:
+                extra = f' [stat={after_bt_stat} raw={after_bt_raw} differ!]'
             if diff > 2:
                 # Some files on exFAT may retain the driver-cached original
                 # btime (25200s = 7h offset) due to the kernel driver's
@@ -219,7 +233,8 @@ class TestBtimeGuiCorrection(unittest.TestCase):
                     continue
                 errors.append(
                     f'{fp.name}: btime {after_bt}, '
-                    f'expected ~{expected_ts} (diff={diff}s)')
+                    f'expected ~{expected_ts} (diff={diff}s, '
+                    f'orig_mtime={orig_mtime_ts}){extra}')
 
         root.destroy()
         if not self._btime_readable and not errors:
