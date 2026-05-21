@@ -218,6 +218,14 @@ def _exfat_find_in_dir(boot: dict, device: str, dir_cluster: int, target_name: s
                 offset_in_cluster = pos % cs
                 return chain, cluster_in_chain, offset_in_cluster, sc, entries
         pos += 32
+    import sys as _sys
+    cs = boot['cluster_size']
+    heap_off = boot['cluster_heap_offset']
+    cl_off = heap_off + (dir_cluster - 2) * cs
+    raw = _exfat_read_device(device, cl_off, min(256, cs))
+    _sys.stderr.write(f'[dbg] _exfat_find_in_dir FAIL: target={target_name} '
+                     f'cluster={dir_cluster} offset={cl_off} '
+                     f'raw[:256]={raw.hex()}\n')
     return None
 
 
@@ -275,15 +283,7 @@ def _exfat_find_file_entry(boot: dict, device: str, filepath: str) -> bytes | No
     for component in parts:
         found = _exfat_find_in_dir(boot, device, current_cluster, component)
         if not found:
-            import sys as _sys
-            cs = boot['cluster_size']
-            heap_off = boot['cluster_heap_offset']
-            cl_off = heap_off + (current_cluster - 2) * cs
-            raw = _exfat_read_device(device, cl_off, min(128, cs))
-            _sys.stderr.write(f'[dbg] lookup fail: component={component} '
-                             f'cluster={current_cluster} offset={cl_off} '
-                             f'raw[:128]={raw.hex()}\n')
-            raise RuntimeError(f"exFAT: directory component '{component}' not found")
+            return None
         dchain, dci, doff, dsc, dentries = found
         stream = dentries[1]
         first_cl = struct.unpack_from('<I', stream, 0x14)[0]
@@ -291,14 +291,127 @@ def _exfat_find_file_entry(boot: dict, device: str, filepath: str) -> bytes | No
 
     found = _exfat_find_in_dir(boot, device, current_cluster, filename)
     if not found:
-        import sys as _sys
-        cs = boot['cluster_size']
-        heap_off = boot['cluster_heap_offset']
-        cl_off = heap_off + (current_cluster - 2) * cs
-        raw = _exfat_read_device(device, cl_off, min(128, cs))
-        _sys.stderr.write(f'[dbg] lookup fail: component={filename} '
-                         f'cluster={current_cluster} offset={cl_off} '
-                         f'raw[:128]={raw.hex()}\n')
+        return None
+    return found[4][0]  # first entry of the entry set
+
+
+def read_exfat_btime_raw(filepath: str) -> int | None:
+    """Read birth time from an exFAT filesystem via raw block access.
+
+    Returns epoch seconds (UTC) or ``None`` on failure.
+    Unlike ``stat -c '%W'`` this works on **all** kernel versions
+    because it reads the on‑disk directory entry directly.
+    """
+    from btime import _resolve_device
+
+    try:
+        device = _resolve_device(filepath)
+    except OSError:
+        return None
+    if not device:
+        return None
+
+    boot = _exfat_parse_boot(device)
+    if not boot:
+        return None
+
+    entry = _exfat_find_file_entry(boot, device, filepath)
+    if entry is None:
+        return None
+
+    time_word = struct.unpack_from('<H', entry, 0x0C)[0]
+    date_word = struct.unpack_from('<H', entry, 0x0E)[0]
+    time_ms = entry[0x16]
+
+    dt = _exfat_decode_time(time_word, date_word, time_ms)
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
+def read_exfat_mtime_raw(filepath: str) -> int | None:
+    """Read modification time from an exFAT file via raw block access.
+
+    Returns epoch seconds (UTC) or ``None`` on failure.
+    Unlike ``os.path.getmtime()`` this bypasses the kernel cache
+    and reads directly from the on‑disk directory entry.
+    """
+    from btime import _resolve_device
+    try:
+        device = _resolve_device(filepath)
+    except OSError:
+        return None
+    if not device:
+        return None
+    boot = _exfat_parse_boot(device)
+    if not boot:
+        return None
+    entry = _exfat_find_file_entry(boot, device, filepath)
+    if entry is None:
+        return None
+    time_word = struct.unpack_from('<H', entry, 0x08)[0]
+    date_word = struct.unpack_from('<H', entry, 0x0A)[0]
+    time_ms = entry[0x14]
+    dt = _exfat_decode_time(time_word, date_word, time_ms)
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
+def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
+    """Write both modification time and creation time to an exFAT file.
+
+    *dt* is the target modification time (written to offsets 0x08/0x0A/0x14).
+    When *btime_dt* is ``None`` (default), the creation time (offsets
+    0x0C/0x0E/0x16) is set to the same value.  When *btime_dt* is
+    provided, the creation time is preserved at that value (useful when
+    writing mtime-only after btime was already corrected).
+    """
+    from btime import _resolve_device, _resolve_mount_point
+
+    device = _resolve_device(filepath)
+    if not device:
+        raise RuntimeError("Could not resolve block device for file")
+
+    boot = _exfat_parse_boot(device)
+    if not boot:
+        raise RuntimeError("Could not parse exFAT boot sector on " + device)
+
+    utc = dt.replace(tzinfo=timezone.utc)
+    label = utc.strftime("%Y-%m-%d %H:%M:%S")
+    btime_utc = btime_dt.replace(tzinfo=timezone.utc) if btime_dt is not None else utc
+    import sys as _sys
+    _sys.stderr.write(f"[dbg] _fix_exfat_raw dt={dt!r} utc_timestamp={int(utc.timestamp())} device={device}\n")
+
+    if dry_run:
+        print(f"    Would set btime via exFAT raw block write to {label} UTC")
+        return
+
+    subprocess.run(['sync'])
+
+    mount_point = _resolve_mount_point(filepath)
+    if not mount_point:
+        raise RuntimeError("Could not resolve mount point for " + filepath)
+    fp = Path(filepath).resolve()
+    mp = Path(mount_point).resolve()
+    try:
+        rel = fp.relative_to(mp)
+    except ValueError:
+        raise RuntimeError(f"File {fp} is not under mount point {mount_point}")
+    parts = list(rel.parts)
+
+    filename = parts.pop()
+
+    current_cluster = boot['root_cluster']
+    for component in parts:
+        found = _exfat_find_in_dir(boot, device, current_cluster, component)
+        if not found:
+            raise RuntimeError(
+                f"exFAT: directory component '{component}' not found "
+                f"(cluster={current_cluster}, device={device})")
+        dchain, dci, doff, dsc, dentries = found
+        stream = dentries[1]
+        first_cl = struct.unpack_from('<I', stream, 0x14)[0]
+        current_cluster = first_cl
+
+    found = _exfat_find_in_dir(boot, device, current_cluster, filename)
+    if not found:
         raise RuntimeError(f"exFAT: file '{filename}' not found in directory")
     fchain, fci, foff, fsc, fentries = found
 
