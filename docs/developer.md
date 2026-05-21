@@ -122,13 +122,14 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 
 ### CI workflows
 
-| Workflow | Trigger | What it runs | ~Duration |
-|---|---|---|---|
-| `debug-raw-btime` | push/PR to main | `test_debug_raw_btime` only | 30s |
-| `debug-btime` | push/PR to main | debug + GUI + timezone tests | 3min |
-| `cluster-coherence` | push/PR to main | `test_cluster_coherence` | 45s |
+Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 
-See `.github/workflows/` for the full CI definitions.
+| Scope | What it runs | ~Duration |
+|---|---|---|
+| `debug` | `test_debug_raw_btime` (7 tests) | 30s |
+| `unit` | `test.test_unit` (28 tests) | 5s |
+| `cluster` | `test_cluster_coherence` | 45s |
+| `full` | GUI correction + timezone integration | 3min |
 
 ## Project structure
 
