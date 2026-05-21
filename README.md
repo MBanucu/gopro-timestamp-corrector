@@ -124,6 +124,10 @@ Btime methods:
 Each btime method shows its tool dependencies, compatible filesystems,
 and whether all deps are met.  Missing tools are marked with ✗.
 
+The exFAT probe additionally checks block‑device capabilities:
+`dd iflag=nocache`, `blockdev --flushbufs`, and `os.utime()` on an exFAT
+filesystem.  See `src/probe.py` for the full list of probes.
+
 ## Quick start
 
 ```bash
@@ -444,7 +448,7 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ### Test structure
 
 | Area | Tests | File |
-|---|---|---|
+|---|---|---|---|
 | Analysis | 8 unit | `test_analysis.py` |
 | Preview / resolve | 11 unit | `test_preview.py` |
 | GPS parsing | 3 unit | `test_gps.py` |
@@ -465,6 +469,11 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 | GUI structure smoke | 20 smoke | `test_gui_structure.py` |
 | Auto calibration (real) | 3 integration | `test_auto_calibrate_integration.py` |
 | Full pipeline | 1 integration | `test_full_auto_integration.py` |
+| Timezone integration | 7 subprocess | `test_timezone_integration.py` |
+| Raw debug tests | 7 debug | `test_debug_raw_btime.py` |
+| Cluster coherence | 1 integration | `test_cluster_coherence.py` |
+| Ubuntu compatibility | 6 unit | `test_ubuntu_compat.py` |
+| Unit tests | 28 unit | `test_unit.py` |
 
 ## Project structure
 
@@ -475,17 +484,22 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ├── src/
 │   ├── analysis.py         # File scanning, grouping, metadata extraction
 │   ├── btime.py            # Birth‑time facade (delegates to strategies/)
-│   ├── strategies/         # BtimeStrategy classes
-│   │   ├── __init__.py     #   Registry of all strategies
+│   ├── strategies/         # BtimeStrategy + MountStrategy + MtimeStrategy classes
+│   │   ├── __init__.py     #   Registry of all btime strategies
 │   │   ├── base.py         #   BtimeStrategy abstract base class
-│   │   ├── exfat_raw.py    #   Raw exFAT block manipulation
+│   │   ├── exfat_raw.py    #   Raw exFAT block manipulation (btime+mtime)
+│   │   ├── exfat_raw_read.py  #   Raw exFAT btime readback (internal)
 │   │   ├── debugfs.py      #   debugfs (ext4 inode crtime)
 │   │   ├── fuse.py         #   FUSE + faketime remount
-│   │   └── clock.py        #   System clock manipulation
+│   │   ├── clock.py        #   System clock manipulation
+│   │   ├── mount.py        #   ImageMountStrategy + AlreadyMountedStrategy
+│   │   └── mtime.py        #   OsUtimeMtimeStrategy + ExfatRawMtimeStrategy + SkipMtimeStrategy
 │   ├── calibration.py      # JSON calibration load/save/parse
 │   ├── correct_timestamps.py  # CLI orchestrator (also serves --check)
 │   ├── dst.py              # DST ambiguity detection
 │   ├── env_check.py        # System environment checker (tools, btime, strategies)
+│   ├── probe.py            # Capability probes (stat/statx/utime/block device)
+│   ├── loop_device.py      # Loop device setup/teardown convenience (delegates to mount strategies)
 │   ├── exiftool_session.py # Persistent exiftool wrapper via PyExifTool (stay_open)
 │   ├── history.py          # Modification history logger (before/after exiftool JSON)
 │   ├── media.py            # Filesystem helpers (collect, read_mtime, write_mtime)
@@ -517,12 +531,17 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ├── test/
 │   ├── sdcard.img.gz      # Compressed sparse exFAT test image (12 files)
 │   ├── sdcard.img           # Gitignored — decompressed on first test run
-│   ├── shared.py            # Decompress helper for test images
-│   ├── perf_decompress.py   # Benchmark decompress + mount pipeline
-│   ├── run_parallel.py      # Parallel test runner
+│   ├── shared.py                # Decompress helper for test images
+│   ├── perf_decompress.py       # Benchmark decompress + mount pipeline
+│   ├── run_parallel.py          # Parallel test runner
 │   ├── SPARSE_EXFAT_REPORT.md
-│   ├── debug_exfat.py       # Debug helper: raw hex dump of exFAT dir entries
+│   ├── debug_exfat.py           # Debug helper: raw hex dump of exFAT dir entries
 │   ├── test_exfat_raw_btime.py  # Integration tests for raw exFAT btime
+│   ├── test_debug_raw_btime.py  # Targeted debug tests (dd write/read, btime readback, cluster coherence)
+│   ├── test_timezone_integration.py  # Full pipeline under 7 system timezones
+│   ├── test_cluster_coherence.py     # Diagnostic: verify raw writes don't corrupt unrelated clusters
+│   ├── test_ubuntu_compat.py         # Ubuntu-specific dd/kernel/exFAT compatibility tests
+│   ├── test_unit.py                  # 28 unit tests (parse_dt, mount/mtime strategies, probes)
 │   ├── test_fuse_faketime.py    # Integration tests for FUSE+faketime btime
 │   ├── test_history.py          # Tests for modification history logger
 │   ├── test_analysis.py
