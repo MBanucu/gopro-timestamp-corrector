@@ -61,10 +61,14 @@ def main():
                        help=argparse.SUPPRESS)
     parser.add_argument('--coverage', action='store_true',
                         help='Collect coverage data from subprocesses')
+    parser.add_argument('--ignore', '-x', action='append', default=[],
+                        help='Exclude a test module (may be repeated)')
     parser.add_argument('modules', nargs='*')
     args = parser.parse_args()
 
     modules = args.modules or discover_all()
+    for ign in args.ignore:
+        modules = [m for m in modules if m != ign]
 
     print(f'Running {len(modules)} modules, {args.jobs} workers\n')
 
