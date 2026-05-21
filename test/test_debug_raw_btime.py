@@ -176,14 +176,27 @@ class DebugRawBtime(unittest.TestCase):
         self.assertEqual(after_btime, target_ts,
                          f'{first.name}: raw btime ({after_btime}) != target ({target_ts})')
 
+    @staticmethod
+    def _find_free_cluster(boot: dict, dev: str, start: int = 2) -> int | None:
+        """Scan the FAT for a free cluster (value == 0)."""
+        from strategies.exfat_raw import _exfat_read_device
+        fat_size = boot['cluster_heap_offset'] - boot['fat_offset']
+        fat_data = _exfat_read_device(dev, boot['fat_offset'], fat_size)
+        num_entries = len(fat_data) // 4
+        for i in range(start, num_entries):
+            val = struct.unpack_from('<I', fat_data, i * 4)[0] & 0x0FFFFFFF
+            if val == 0:
+                return i
+        return None
+
     def test_05_raw_write_different_cluster(self):
         """Write to a test cluster (not in use) and verify readback."""
         boot, dev = self._exfat_boot()
         cs = boot['cluster_size']
         heap_off = boot['cluster_heap_offset']
 
-        # Use a high cluster that's likely unallocated
-        test_cluster = 1000000
+        test_cluster = self._find_free_cluster(boot, str(dev))
+        self.assertIsNotNone(test_cluster, 'No free cluster found in FAT')
         test_offset = heap_off + (test_cluster - 2) * cs
         expected = b'CLUSTER_WRITE_TEST_99'
         subprocess.run(

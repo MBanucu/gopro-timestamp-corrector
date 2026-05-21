@@ -74,6 +74,7 @@ jobs:
              dmesg | tail -30 || true)
 
       - name: Run timezone integration test
+        if: always()
         env:
           PYTHONPATH: test
         run: |
