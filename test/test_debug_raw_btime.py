@@ -184,7 +184,7 @@ class DebugRawBtime(unittest.TestCase):
         genuinely free clusters.
         """
         dev = self._resolve_device()
-        test_offset = 200000 * 512  # ~100 MB, known-good region
+        test_offset = 100001 * 512  # 51 MB + 512, adjacent to test_01's proven offset
         expected = b'CLUSTER_WRITE_TEST_99'
         r = subprocess.run(
             ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={test_offset}',
