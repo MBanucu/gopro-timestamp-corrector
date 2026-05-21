@@ -53,25 +53,54 @@ def _exfat_decode_time(time_word: int, date_word: int, time_ms: int) -> datetime
                     millisecond * 1000, tzinfo=timezone.utc)
 
 
-def _exfat_read_device(device: str, offset: int, size: int) -> bytes:
-    r = subprocess.run(
-        ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
-         f'count={size}', 'status=none', 'iflag=nocache'],
-        capture_output=True)
-    if r.returncode != 0 or len(r.stdout) != size:
+def _exfat_backing_file(device: str) -> str | None:
+    """Resolve the backing file for a loop device."""
+    try:
         r = subprocess.run(
-            ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
-             f'count={size}', 'status=none'],
-            capture_output=True)
+            ['sudo', 'losetup', '-l', device, '--noheadings', '-O', 'BACK-FILE'],
+            capture_output=True, text=True)
+        if r.returncode == 0:
+            path = r.stdout.strip()
+            if path:
+                return path
+    except Exception:
+        pass
+    return None
+
+
+_BACKING_CACHE: dict[str, str | None] = {}
+
+
+def _exfat_backing_file(device: str) -> str | None:
+    if device not in _BACKING_CACHE:
+        try:
+            r = subprocess.run(
+                ['sudo', 'losetup', '-l', device, '--noheadings', '-O', 'BACK-FILE'],
+                capture_output=True, text=True)
+            _BACKING_CACHE[device] = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+        except Exception:
+            _BACKING_CACHE[device] = None
+    return _BACKING_CACHE[device]
+
+
+def _exfat_read_device(device: str, offset: int, size: int) -> bytes:
+    backing = _exfat_backing_file(device)
+    target = backing or device
+    r = subprocess.run(
+        ['sudo', 'dd', f'if={target}', 'bs=1', f'skip={offset}',
+         f'count={size}', 'status=none'],
+        capture_output=True)
     return r.stdout
 
 
 def _exfat_write_device(device: str, offset: int, data: bytes):
+    backing = _exfat_backing_file(device)
+    target = backing or device
     with tempfile.NamedTemporaryFile() as tf:
         tf.write(data)
         tf.flush()
         subprocess.run(
-            ['sudo', 'dd', f'if={tf.name}', f'of={device}',
+            ['sudo', 'dd', f'if={tf.name}', f'of={target}',
              'bs=1', f'seek={offset}', f'count={len(data)}',
              'status=none'],
             check=True, capture_output=True)
