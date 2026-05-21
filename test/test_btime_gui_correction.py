@@ -17,6 +17,9 @@ from pathlib import Path
 
 from shared import HAS_TK, decompress_sparse_image, setup_loop_device, teardown_loop_device
 
+if HAS_TK:
+    import tkinter as tk
+
 
 @unittest.skipUnless(HAS_TK, 'Tkinter not available')
 class TestBtimeGuiCorrection(unittest.TestCase):
@@ -81,12 +84,29 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         except ValueError:
             return None
 
+    def _capture_log(self, gui):
+        """Return the full output log from the GUI's ScrolledText widget."""
+        try:
+            return gui.output.get(1.0, tk.END).strip()
+        except Exception as e:
+            return f'<could not read log: {e}>'
+
+    def _capture_instruction_statuses(self, gui):
+        """Return instruction statuses from the run step treeview."""
+        try:
+            lines = []
+            for i, item in enumerate(gui.step4._instruction_items):
+                vals = gui.step4.tree.item(item, 'values')
+                lines.append(f'  [{i}] {vals[0]} {vals[1]}')
+            return '\n'.join(lines) if lines else '<empty>'
+        except Exception as e:
+            return f'<could not read instructions: {e}>'
+
     def test_btime_corrected_via_gui_full_flow(self):
         """Run the full GUI correction and verify btime was set to the correct target."""
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-        import tkinter as tk
         from gui.app import ToolGUI
         import analysis as an_mod
         import media
@@ -155,8 +175,14 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         root.mainloop()
 
         self.assertTrue(done.is_set(), 'Correction did not complete within 60s')
-        self.assertEqual(getattr(gui, '_exit_code', -1), 0,
-                         'Correction failed')
+        exit_code = getattr(gui, '_exit_code', -1)
+        if exit_code != 0:
+            log = self._capture_log(gui)
+            instr = self._capture_instruction_statuses(gui)
+            self.assertEqual(exit_code, 0,
+                             f'Correction failed (exit={exit_code})\n'
+                             f'--- Instructions ---\n{instr}\n'
+                             f'--- Output log ---\n{log}')
         root.update_idletasks()
 
         # ── Verify btime on every file ─────────────────────────────
