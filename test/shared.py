@@ -2,6 +2,11 @@
 
 import gzip
 import os
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
 from pathlib import Path
 
 HAS_TK = False
@@ -64,3 +69,88 @@ def write_sparse(gz_path: Path, img_path: Path):
                 os.lseek(dst.fileno(), offset, os.SEEK_SET)
                 dst.write(chunk)
             offset += len(chunk)
+
+
+def _loop_via_udisksctl(img_path):
+    """Try udisksctl loop-setup + mount. Returns (loop_dev, mount_point) or None."""
+    try:
+        r = subprocess.run(
+            ['udisksctl', 'loop-setup', '-f', str(img_path),
+             '--no-user-interaction'],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            return None
+        m = re.search(r'as (/dev/loop\d+)', r.stdout)
+        if not m:
+            return None
+        loop_dev = m.group(1)
+
+        r = subprocess.run(
+            ['udisksctl', 'mount', '-b', loop_dev, '--no-user-interaction'],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            subprocess.run(['sudo', 'losetup', '-d', loop_dev],
+                           capture_output=True)
+            return None
+        m = re.search(r'at ([^ \n]+)', r.stdout)
+        if not m:
+            subprocess.run(['sudo', 'losetup', '-d', loop_dev],
+                           capture_output=True)
+            return None
+        return (loop_dev, m.group(1).rstrip('.'))
+    except FileNotFoundError:
+        return None
+
+
+def _loop_via_sudo(img_path):
+    """Fallback: sudo losetup + sudo mount. Returns (loop_dev, mount_point) or None."""
+    try:
+        r = subprocess.run(
+            ['sudo', 'losetup', '-f', '--show', str(img_path)],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            return None
+        loop_dev = r.stdout.strip()
+
+        mount_point = tempfile.mkdtemp(prefix='gopro_mnt_')
+
+        subprocess.run(['sudo', 'chmod', '666', loop_dev],
+                       capture_output=True)
+
+        r = subprocess.run(
+            ['sudo', 'mount', '-t', 'exfat', loop_dev, mount_point],
+            capture_output=True, text=True)
+        if r.returncode != 0:
+            r = subprocess.run(
+                ['sudo', 'mount', loop_dev, mount_point],
+                capture_output=True, text=True)
+        if r.returncode != 0:
+            subprocess.run(['sudo', 'losetup', '-d', loop_dev],
+                           capture_output=True)
+            os.rmdir(mount_point)
+            return None
+        return (loop_dev, mount_point)
+    except FileNotFoundError:
+        return None
+
+
+def setup_loop_device(img_path):
+    """Set up loop device and mount exFAT image.
+
+    Returns (loop_dev, mount_point) on success.
+    Raises unittest.SkipTest on failure.
+    """
+    result = _loop_via_udisksctl(img_path)
+    if result is not None:
+        return result
+    result = _loop_via_sudo(img_path)
+    if result is not None:
+        return result
+    raise unittest.SkipTest("Could not set up loop device (udisksctl+sudo failed)")
+
+
+def teardown_loop_device(loop_dev, mount_point=None):
+    """Unmount and detach loop device."""
+    if loop_dev:
+        r = subprocess.run(['sudo', 'umount', loop_dev], capture_output=True)
+        subprocess.run(['sudo', 'losetup', '-d', loop_dev], capture_output=True)

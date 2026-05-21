@@ -5,7 +5,8 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from shared import decompress_sparse_image
+from shared import decompress_sparse_image, setup_loop_device, teardown_loop_device
+
 
 import btime
 
@@ -22,51 +23,12 @@ class TestBtimeFsDetection(unittest.TestCase):
         img_path = Path(__file__).parent / 'sdcard.img'
         cls.img_path = decompress_sparse_image(gz_path, img_path)
 
-        try:
-            res = subprocess.run(
-                ['udisksctl', 'loop-setup', '-f', str(cls.img_path), '--no-user-interaction'],
-                capture_output=True, text=True)
-            if res.returncode != 0:
-                raise unittest.SkipTest("udisksctl loop-setup failed")
-            m = re.search(r'as (/dev/loop\d+)', res.stdout)
-            cls.loop_dev = m.group(1) if m else None
-            if not cls.loop_dev:
-                raise unittest.SkipTest("Could not parse loop device")
-
-            res = subprocess.run(
-                ['udisksctl', 'mount', '-b', cls.loop_dev, '--no-user-interaction'],
-                capture_output=True, text=True)
-            if res.returncode != 0:
-                if 'AlreadyMounted' in res.stderr:
-                    m = re.search(r"at `([^`]+)'", res.stderr)
-                    if m:
-                        cls.mount_point = m.group(1)
-                if not cls.mount_point:
-                    raise unittest.SkipTest("udisksctl mount failed")
-            else:
-                m = re.search(r'at ([^ \n]+)', res.stdout)
-                if m:
-                    cls.mount_point = m.group(1).rstrip('.')
-                else:
-                    raise unittest.SkipTest("Could not parse mount point")
-            cls.test_path = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
-        except FileNotFoundError:
-            raise unittest.SkipTest("udisksctl not found")
-        except Exception:
-            cls.tearDownClass()
-            raise
+        cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
+        cls.test_path = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
 
     @classmethod
     def tearDownClass(cls):
-        if getattr(cls, 'loop_dev', None):
-            r = subprocess.run(
-                ['udisksctl', 'unmount', '-b', cls.loop_dev, '--no-user-interaction'],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                subprocess.run(['sudo', 'umount', cls.loop_dev],
-                               capture_output=True)
-            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev],
-                           capture_output=True)
+        teardown_loop_device(cls.loop_dev, cls.mount_point)
 
     def test_detect_fs_exfat(self):
         fs = btime.detect_fs(self.test_path)

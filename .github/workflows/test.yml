@@ -50,6 +50,11 @@ jobs:
           python -m unittest discover -s test -p 'test_file_table.py' -v
           python -m unittest discover -s test -p 'test_calibration_panel.py' -v
           python -m unittest discover -s test -p 'test_gui_structure.py' -v
+          python -m unittest discover -s test -p 'test_strategy.py' -v
+          python -m unittest discover -s test -p 'test_img.py' -v
+          python -m unittest discover -s test -p 'test_btime.py' -v
+          python -m unittest discover -s test -p 'test_btime_gui_correction.py' -v
+          python -m unittest discover -s test -p 'test_auto_calibrate_integration.py' -v
 
   pip-macos:
     runs-on: macos-latest
