@@ -2,7 +2,6 @@
 import os
 import shutil
 import subprocess
-import re
 import tempfile
 import time
 import unittest
@@ -27,7 +26,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         if not gz_path.exists():
             raise unittest.SkipTest(f'Compressed image not found at {gz_path}')
 
-        from shared import decompress_sparse_image
+        from shared import decompress_sparse_image, setup_loop_device
 
         # Decompress to the test directory (cached — skip if already present)
         cached = Path(__file__).parent / 'sdcard.img'
@@ -39,37 +38,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         subprocess.run(['cp', '--sparse=always', str(cached), str(cls.img_path)],
                        check=True, capture_output=True)
 
-        try:
-            r = subprocess.run(
-                ['udisksctl', 'loop-setup', '-f', str(cls.img_path),
-                 '--no-user-interaction'],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                raise unittest.SkipTest('udisksctl loop-setup failed')
-            m = re.search(r'as (/dev/loop\d+)', r.stdout)
-            cls.loop_dev = m.group(1) if m else None
-            if not cls.loop_dev:
-                raise unittest.SkipTest('Could not parse loop device')
-
-            r = subprocess.run(
-                ['udisksctl', 'mount', '-b', cls.loop_dev,
-                 '--no-user-interaction'],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                if 'AlreadyMounted' in r.stderr:
-                    m = re.search(r"at `([^`]+)'", r.stderr)
-                    if m:
-                        cls.mount_point = m.group(1)
-                if not cls.mount_point:
-                    raise unittest.SkipTest('udisksctl mount failed')
-            else:
-                m = re.search(r'at ([^ \n]+)', r.stdout)
-                if m:
-                    cls.mount_point = m.group(1).rstrip('.')
-                else:
-                    raise unittest.SkipTest('Could not parse mount point')
-        except FileNotFoundError:
-            raise unittest.SkipTest('udisksctl not found')
+        cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
 
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
@@ -80,16 +49,8 @@ class TestFullAutoIntegration(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if cls.loop_dev:
-            r = subprocess.run(
-                ['udisksctl', 'unmount', '-b', cls.loop_dev,
-                 '--no-user-interaction'],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                subprocess.run(['sudo', 'umount', cls.loop_dev],
-                               capture_output=True)
-            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev],
-                           capture_output=True)
+        from shared import teardown_loop_device
+        teardown_loop_device(cls.loop_dev, cls.mount_point)
         if cls._work_dir:
             shutil.rmtree(cls._work_dir, ignore_errors=True)
 
