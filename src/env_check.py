@@ -72,13 +72,16 @@ class BtimeProbeResult:
 
 @dataclass
 class ExfatBtimeSupport:
-    """Result of probing the kernel's ability to read back btime on exFAT.
+    """Result of probing exFAT btime readability via three methods.
 
     Creates a temporary exFAT filesystem, writes a file, and checks
-    whether ``stat -c '%W'`` returns a non-zero birth time.
+    each readback method individually.
     """
 
     supported: bool | None
+    stat_method: bool | None
+    statx_method: bool | None
+    raw_read_method: bool | None
     reason: str = ''
 
 
@@ -258,18 +261,40 @@ def _probe_utime(path: str) -> bool | None:
             os.unlink(fname)
 
 
-def _probe_exfat_btime() -> ExfatBtimeSupport:
-    """Probe exFAT btime readback via raw block access (works on all kernels).
+def _probe_stat_btime_on_exfat(test_file: str) -> bool | None:
+    """Test ``stat -c '%W'`` on an exFAT file."""
+    val = _probe_stat_btime(test_file)
+    return val is not None and val > 0
 
-    Creates a temp exFAT filesystem, writes a file, then reads the birth time
-    directly from the on‑disk directory entry using :func:`read_exfat_btime_raw`.
-    This bypasses the kernel's ``statx`` interface, so it works on kernels
-    before 6.12 where the exFAT driver does not advertise ``STATX_BTIME``.
+
+def _probe_statx_btime_on_exfat(test_file: str) -> bool | None:
+    """Test ``statx()`` ``STATX_BTIME`` on an exFAT file."""
+    _, supported = _probe_statx_btime(test_file)
+    return supported
+
+
+def _probe_raw_read_btime_on_exfat(test_file: str) -> bool | None:
+    """Test raw-block btime readback on an exFAT file."""
+    from strategies.exfat_raw import read_exfat_btime_raw
+    val = read_exfat_btime_raw(test_file)
+    return val is not None and val > 0
+
+
+def _probe_exfat_btime() -> ExfatBtimeSupport:
+    """Probe exFAT btime readability via three methods.
+
+    Creates a temp exFAT filesystem, writes a file, then probes all three
+    readback methods:
+    - ``stat -c '%W'`` (kernel ``statx`` interface, needs kernel >= 6.12)
+    - ``statx()`` syscall (via ctypes, needs kernel >= 6.12)
+    - ``read_exfat_btime_raw()`` (raw block read, works on all kernels)
     """
     if not shutil.which('mkfs.exfat'):
-        return ExfatBtimeSupport(supported=None, reason='mkfs.exfat not found')
+        return ExfatBtimeSupport(supported=None, reason='mkfs.exfat not found',
+                                 stat_method=None, statx_method=None, raw_read_method=None)
     if not shutil.which('losetup'):
-        return ExfatBtimeSupport(supported=None, reason='losetup not found')
+        return ExfatBtimeSupport(supported=None, reason='losetup not found',
+                                 stat_method=None, statx_method=None, raw_read_method=None)
 
     tmp_img = None
     loop_dev = None
@@ -283,13 +308,15 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         r = subprocess.run(['mkfs.exfat', tmp_img], capture_output=True, timeout=30)
         if r.returncode != 0:
             return ExfatBtimeSupport(supported=None,
-                                     reason=f'mkfs.exfat failed: {r.stderr.strip()}')
+                                     reason=f'mkfs.exfat failed: {r.stderr.strip()}',
+                                     stat_method=None, statx_method=None, raw_read_method=None)
 
         r = subprocess.run(
             ['sudo', 'losetup', '-f', '--show', tmp_img],
             capture_output=True, text=True, timeout=15)
         if r.returncode != 0 or not r.stdout.strip():
-            return ExfatBtimeSupport(supported=None, reason='losetup failed')
+            return ExfatBtimeSupport(supported=None, reason='losetup failed',
+                                     stat_method=None, statx_method=None, raw_read_method=None)
         loop_dev = r.stdout.strip()
 
         mount_point = tempfile.mkdtemp(prefix='exfat_btime_probe_')
@@ -314,7 +341,8 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
                 msg = r.stderr.decode() if isinstance(r.stderr, bytes) else str(r.stderr)
                 return ExfatBtimeSupport(
                     supported=None,
-                    reason=f'mount failed: {msg[:120]}')
+                    reason=f'mount failed: {msg[:120]}',
+                    stat_method=None, statx_method=None, raw_read_method=None)
 
         test_file = os.path.join(mount_point, 'probe.bin')
         subprocess.run(['sudo', 'touch', test_file], capture_output=True, timeout=15)
@@ -324,19 +352,26 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
                        capture_output=True, timeout=15)
 
-        # Read btime via raw block — works on all kernels
-        from strategies.exfat_raw import read_exfat_btime_raw
-        btime_val = read_exfat_btime_raw(test_file)
+        # Probe all three methods
+        stat_ok = _probe_stat_btime_on_exfat(test_file)
+        statx_ok = _probe_statx_btime_on_exfat(test_file)
+        raw_ok = _probe_raw_read_btime_on_exfat(test_file)
 
-        if btime_val is not None and btime_val > 0:
-            return ExfatBtimeSupport(supported=True)
-        reason = f'raw readback returned {btime_val}' if btime_val is not None else 'raw readback failed'
-        return ExfatBtimeSupport(supported=False, reason=reason)
+        supported = stat_ok or statx_ok or raw_ok
+
+        return ExfatBtimeSupport(
+            supported=supported,
+            stat_method=stat_ok,
+            statx_method=statx_ok,
+            raw_read_method=raw_ok,
+        )
 
     except FileNotFoundError as e:
-        return ExfatBtimeSupport(supported=None, reason=f'missing tool: {e.name}')
+        return ExfatBtimeSupport(supported=None, reason=f'missing tool: {e.name}',
+                                 stat_method=None, statx_method=None, raw_read_method=None)
     except Exception as e:
-        return ExfatBtimeSupport(supported=None, reason=str(e))
+        return ExfatBtimeSupport(supported=None, reason=str(e),
+                                 stat_method=None, statx_method=None, raw_read_method=None)
     finally:
         if mount_point and loop_dev:
             subprocess.run(['sudo', 'umount', mount_point],
@@ -502,10 +537,17 @@ def format_summary(report: EnvReport) -> str:
 
     if report.exfat_btime_support is not None:
         e = report.exfat_btime_support
-        icon = '✓' if e.supported else ('✗' if e.supported is False else '?')
+        overall = '✓' if e.supported else ('✗' if e.supported is False else '?')
         lines.append('')
         lines.append(f'exFAT btime probe (temp filesystem):')
-        lines.append(f'  Kernel exFAT btime readback: {icon}')
+        for label, val in [
+            ("stat -c '%W'",            e.stat_method),
+            ('statx STATX_BTIME',       e.statx_method),
+            ('raw block readback',      e.raw_read_method),
+        ]:
+            icon = '✓' if val is True else ('✗' if val is False else '?')
+            lines.append(f'  {label:28s} {icon}')
+        lines.append(f'  overall:                   {overall}')
         if e.reason:
             lines.append(f'  ({e.reason})')
 
