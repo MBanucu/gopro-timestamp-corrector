@@ -83,6 +83,8 @@ class ExfatBtimeSupport:
     statx_method: bool | None
     raw_read_method: bool | None
     utime_on_exfat: bool | None
+    dd_nocache: bool | None
+    blockdev_flush: bool | None
     reason: str = ''
 
 
@@ -281,6 +283,29 @@ def _probe_raw_read_btime_on_exfat(test_file: str) -> bool | None:
     return val is not None and val > 0
 
 
+def _probe_dd_nocache(device: str) -> bool | None:
+    """Probe whether ``dd iflag=nocache`` works on this device."""
+    try:
+        r = subprocess.run(
+            ['sudo', 'dd', f'if={device}', 'bs=512', 'count=1',
+             'iflag=nocache', 'status=none'],
+            capture_output=True, timeout=10)
+        return r.returncode == 0 and len(r.stdout) == 512
+    except Exception:
+        return None
+
+
+def _probe_blockdev_flush(device: str) -> bool | None:
+    """Probe whether ``blockdev --flushbufs`` works on this device."""
+    try:
+        r = subprocess.run(
+            ['sudo', 'blockdev', '--flushbufs', device],
+            capture_output=True, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return None
+
+
 def _probe_exfat_btime() -> ExfatBtimeSupport:
     """Probe exFAT btime readability via three methods.
 
@@ -293,7 +318,7 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
     if not shutil.which('mkfs.exfat'):
         return ExfatBtimeSupport(supported=None, reason='mkfs.exfat not found',
                                  stat_method=None, statx_method=None, raw_read_method=None,
-                                 utime_on_exfat=None)
+                                 utime_on_exfat=None, dd_nocache=None, blockdev_flush=None)
 
     from loop_device import setup_loop_device, teardown_loop_device, LoopDeviceError
 
@@ -310,14 +335,14 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
             return ExfatBtimeSupport(supported=None,
                                      reason=f'mkfs.exfat failed: {r.stderr.strip()}',
                                      stat_method=None, statx_method=None, raw_read_method=None,
-                                     utime_on_exfat=None)
+                                     utime_on_exfat=None, dd_nocache=None, blockdev_flush=None)
 
         try:
             loop_dev, mount_point = setup_loop_device(tmp_img)
         except LoopDeviceError as e:
             return ExfatBtimeSupport(supported=None, reason=str(e),
                                      stat_method=None, statx_method=None, raw_read_method=None,
-                                     utime_on_exfat=None)
+                                     utime_on_exfat=None, dd_nocache=None, blockdev_flush=None)
 
         test_file = os.path.join(mount_point, 'probe.bin')
         subprocess.run(['sudo', 'touch', test_file], capture_output=True, timeout=15)
@@ -344,22 +369,28 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         except Exception:
             utime_on_exfat = None
 
+        # Probe block device capabilities
+        dd_nocache = _probe_dd_nocache(loop_dev)
+        blockdev_flush = _probe_blockdev_flush(loop_dev)
+
         return ExfatBtimeSupport(
             supported=supported,
             stat_method=stat_ok,
             statx_method=statx_ok,
             raw_read_method=raw_ok,
             utime_on_exfat=utime_on_exfat,
+            dd_nocache=dd_nocache,
+            blockdev_flush=blockdev_flush,
         )
 
     except FileNotFoundError as e:
         return ExfatBtimeSupport(supported=None, reason=f'missing tool: {e.name}',
                                  stat_method=None, statx_method=None, raw_read_method=None,
-                                 utime_on_exfat=None)
+                                 utime_on_exfat=None, dd_nocache=None, blockdev_flush=None)
     except Exception as e:
         return ExfatBtimeSupport(supported=None, reason=str(e),
                                  stat_method=None, statx_method=None, raw_read_method=None,
-                                 utime_on_exfat=None)
+                                 utime_on_exfat=None, dd_nocache=None, blockdev_flush=None)
     finally:
         if loop_dev:
             teardown_loop_device(loop_dev, mount_point)
@@ -529,6 +560,8 @@ def format_summary(report: EnvReport) -> str:
             ('statx STATX_BTIME',       e.statx_method),
             ('raw block readback',      e.raw_read_method),
             ('os.utime()',              e.utime_on_exfat),
+            ('dd iflag=nocache',        e.dd_nocache),
+            ('blockdev --flushbufs',    e.blockdev_flush),
         ]:
             icon = '✓' if val is True else ('✗' if val is False else '?')
             lines.append(f'  {label:28s} {icon}')
