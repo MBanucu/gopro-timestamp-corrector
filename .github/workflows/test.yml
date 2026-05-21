@@ -35,7 +35,8 @@ jobs:
           PYTHONPATH: test
         run: |
           export DISPLAY=:99
-          Xvfb :99 -screen 0 1024x768x24 -xkbmodel none &
+          Xvfb :99 -screen 0 1024x768x24 &
+          sleep 1
           python -m unittest discover -s test -p 'test_analysis.py' -v
           python -m unittest discover -s test -p 'test_gps.py' -v
           python -m unittest discover -s test -p 'test_history.py' -v
