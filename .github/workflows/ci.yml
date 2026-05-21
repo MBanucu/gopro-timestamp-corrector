@@ -24,21 +24,7 @@ jobs:
       - name: Install project deps
         run: pip install -e .
       - name: Capability check
-        run: |
-          echo "=== Python ==="
-          python --version
-          echo "=== Tools ==="
-          which exiftool xvfb mount.exfat-fuse faketime dd sudo losetup blockdev || true
-          echo "=== Kernel ==="
-          uname -a
-          modinfo exfat 2>/dev/null | head -2 || echo "exfat module not loaded"
-          echo "=== sudo ==="
-          sudo -n true && echo "passwordless sudo: YES" || echo "passwordless sudo: NO"
-          echo "=== dd features ==="
-          dd if=/dev/null of=/dev/null bs=1 count=0 status=none 2>&1 && echo "status=none: OK" || echo "status=none: FAIL"
-          dd if=/dev/null of=/dev/null bs=1 count=0 iflag=nocache status=none 2>&1 && echo "iflag=nocache: OK" || echo "iflag=nocache: FAIL"
-          echo "=== exFAT env check ==="
-          PYTHONPATH=src python -m env_check . || true
+        run: PYTHONPATH=src python -m correct_timestamps --check . || true
       - name: Start Xvfb (full scope only)
         if: matrix.scope == 'full'
         run: |
