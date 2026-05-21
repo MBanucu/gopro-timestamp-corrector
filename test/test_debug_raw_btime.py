@@ -176,28 +176,20 @@ class DebugRawBtime(unittest.TestCase):
         self.assertEqual(after_btime, target_ts,
                          f'{first.name}: raw btime ({after_btime}) != target ({target_ts})')
 
-    @staticmethod
-    def _find_free_cluster(boot: dict, dev: str, start: int = 2) -> int | None:
-        """Scan the FAT for a free cluster (value == 0)."""
-        from strategies.exfat_raw import _exfat_read_device
-        fat_size = boot['cluster_heap_offset'] - boot['fat_offset']
-        fat_data = _exfat_read_device(dev, boot['fat_offset'], fat_size)
-        num_entries = len(fat_data) // 4
-        for i in range(start, num_entries):
-            val = struct.unpack_from('<I', fat_data, i * 4)[0] & 0x0FFFFFFF
-            if val == 0:
-                return i
-        return None
-
     def test_05_raw_write_different_cluster(self):
-        """Write to a test cluster (not in use) and verify readback."""
+        """Write to a test cluster (not in use) and verify readback.
+
+        Note: the test image FAT is unreliable (does not mark all used
+        clusters).  Instead of scanning the FAT we use a cluster near
+        the end of the image, far beyond the ~30 used clusters.
+        """
         boot, dev = self._exfat_boot()
         cs = boot['cluster_size']
         heap_off = boot['cluster_heap_offset']
 
-        test_cluster = self._find_free_cluster(boot, str(dev))
-        self.assertIsNotNone(test_cluster, 'No free cluster found in FAT')
-        test_offset = heap_off + (test_cluster - 2) * cs
+        end_of_image = os.path.getsize(self._img_path)
+        max_cluster = 2 + (end_of_image - heap_off) // cs
+        test_cluster = max(max_cluster - 100, 1000)
         expected = b'CLUSTER_WRITE_TEST_99'
         subprocess.run(
             ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={test_offset}',
