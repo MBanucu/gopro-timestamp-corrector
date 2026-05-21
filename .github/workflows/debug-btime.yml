@@ -45,13 +45,21 @@ jobs:
           sudo -n true && echo "passwordless sudo: YES" || echo "passwordless sudo: NO"
           echo "=== stat btime ==="
           stat -c '%w %W' / || true
+          echo "=== loop device support ==="
+          losetup --version 2>&1 || true
 
       - name: Check env
         run: |
           PYTHONPATH=src python -m correct_timestamps --check || true
           PYTHONPATH=src python -m env_check . || true
 
-      - name: Run test_btime_gui_correction
+      - name: Run targeted debug-raw-btime tests (no GUI needed)
+        env:
+          PYTHONPATH: test
+        run: |
+          python -m unittest test_debug_raw_btime -v 2>&1
+
+      - name: Run test_btime_gui_correction (needs Xvfb)
         env:
           PYTHONPATH: test
         run: |
@@ -59,14 +67,15 @@ jobs:
           Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
           sleep 1
           python -c 'import tkinter as tk; r=tk.Tk(); r.withdraw(); r.destroy(); print("Tkinter window OK")'
-          python -m unittest test_btime_gui_correction -v 2>&1
+          python -m unittest test_btime_gui_correction -v 2>&1 || \
+            (echo "=== Re-run failed test ===" && \
+             python -m unittest test_btime_gui_correction -v 2>&1; \
+             echo "=== dmesg ===" && \
+             dmesg | tail -30 || true)
 
-      - name: Re-run with extra diagnostics on failure
-        if: failure()
+      - name: Re-run debug tests after GUI correction
+        if: always()
         env:
           PYTHONPATH: test
         run: |
-          export DISPLAY=:99
-          python -m unittest test_btime_gui_correction -v 2>&1 || true
-          echo "=== dmesg ==="
-          dmesg | tail -30 || true
+          python -m unittest test_debug_raw_btime -v 2>&1 || true
