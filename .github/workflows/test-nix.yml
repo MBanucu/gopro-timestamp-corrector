@@ -1,0 +1,23 @@
+name: test-nix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Check flake
+        run: nix flake check
+
+      - name: Run tests (via Nix)
+        run: nix run .#test
