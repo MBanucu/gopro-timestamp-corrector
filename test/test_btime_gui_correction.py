@@ -61,7 +61,7 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         try:
             import sys
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
-            from env_check import _probe_exfat_btime
+            from probe import probe_exfat_btime as _probe_exfat_btime
             result = _probe_exfat_btime()
             return result.supported is True
         except Exception:

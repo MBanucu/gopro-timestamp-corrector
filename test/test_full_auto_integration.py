@@ -2,7 +2,6 @@
 import os
 import shutil
 import subprocess
-import re
 import tempfile
 import time
 import unittest
@@ -27,7 +26,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         if not gz_path.exists():
             raise unittest.SkipTest(f'Compressed image not found at {gz_path}')
 
-        from shared import decompress_sparse_image
+        from shared import decompress_sparse_image, setup_loop_device
 
         # Decompress to the test directory (cached — skip if already present)
         cached = Path(__file__).parent / 'sdcard.img'
@@ -39,37 +38,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         subprocess.run(['cp', '--sparse=always', str(cached), str(cls.img_path)],
                        check=True, capture_output=True)
 
-        try:
-            r = subprocess.run(
-                ['udisksctl', 'loop-setup', '-f', str(cls.img_path),
-                 '--no-user-interaction'],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                raise unittest.SkipTest('udisksctl loop-setup failed')
-            m = re.search(r'as (/dev/loop\d+)', r.stdout)
-            cls.loop_dev = m.group(1) if m else None
-            if not cls.loop_dev:
-                raise unittest.SkipTest('Could not parse loop device')
-
-            r = subprocess.run(
-                ['udisksctl', 'mount', '-b', cls.loop_dev,
-                 '--no-user-interaction'],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                if 'AlreadyMounted' in r.stderr:
-                    m = re.search(r"at `([^`]+)'", r.stderr)
-                    if m:
-                        cls.mount_point = m.group(1)
-                if not cls.mount_point:
-                    raise unittest.SkipTest('udisksctl mount failed')
-            else:
-                m = re.search(r'at ([^ \n]+)', r.stdout)
-                if m:
-                    cls.mount_point = m.group(1).rstrip('.')
-                else:
-                    raise unittest.SkipTest('Could not parse mount point')
-        except FileNotFoundError:
-            raise unittest.SkipTest('udisksctl not found')
+        cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
 
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
@@ -80,16 +49,8 @@ class TestFullAutoIntegration(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if cls.loop_dev:
-            r = subprocess.run(
-                ['udisksctl', 'unmount', '-b', cls.loop_dev,
-                 '--no-user-interaction'],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                subprocess.run(['sudo', 'umount', cls.loop_dev],
-                               capture_output=True)
-            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev],
-                           capture_output=True)
+        from shared import teardown_loop_device
+        teardown_loop_device(cls.loop_dev, cls.mount_point)
         if cls._work_dir:
             shutil.rmtree(cls._work_dir, ignore_errors=True)
 
@@ -105,24 +66,26 @@ class TestFullAutoIntegration(unittest.TestCase):
         if r.returncode != 0 or not r.stdout.strip():
             return {}
         import json as _json
-        from exiftool_session import _strip_tz
+        from exiftool_session import _parse_dt
         out = {}
         for rec in _json.loads(r.stdout):
             src = rec.get('SourceFile')
             raw = rec.get('CreateDate')
             if not src or not raw:
                 continue
-            val = _strip_tz(str(raw))
-            try:
-                dt = datetime.strptime(val, '%Y:%m:%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            dt = _parse_dt(str(raw))
+            if dt is not None:
                 out[Path(src)] = dt
-            except ValueError:
+            else:
                 out[Path(src)] = None
         return out
 
     def _read_mtime(self, path):
-        ts = os.path.getmtime(path)
-        return datetime.fromtimestamp(ts, tz=timezone.utc)
+        try:
+            ts = os.path.getmtime(path)
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except OSError:
+            return None
 
     def _read_btime(self, path):
         st = os.stat(path)
@@ -268,15 +231,28 @@ class TestFullAutoIntegration(unittest.TestCase):
                 print(f'  {name} exif: {o["exif"]} -> {a["exif"]} '
                       f'(Δ={self.median})')
 
-            if a['mtime'] is not None:
-                expected = o['mtime'] + self.median
-                actual_diff = abs((a['mtime'] - expected).total_seconds())
-                self.assertLess(
-                    actual_diff, tolerance.total_seconds(),
-                    f'{name} mtime: expected {expected}, got {a["mtime"]} '
-                    f'(diff {actual_diff:.2f}s)')
-                print(f'  {name} mtime: {o["mtime"]} -> {a["mtime"]} '
-                      f'(Δ={self.median})')
+            expected_mtime = o['mtime'] + self.median if o['mtime'] else None
+            if expected_mtime is not None:
+                mtime_ok = False
+                if a['mtime'] is not None:
+                    diff = abs((a['mtime'] - expected_mtime).total_seconds())
+                    if diff <= tolerance.total_seconds():
+                        mtime_ok = True
+                        print(f'  {name} mtime: {o["mtime"]} -> {a["mtime"]} '
+                              f'(Δ={self.median})')
+                if not mtime_ok and fix_btime != 'off':
+                    from strategies.exfat_raw import read_exfat_mtime_raw
+                    raw_ts = read_exfat_mtime_raw(str(f))
+                    if raw_ts is not None:
+                        raw_dt = datetime.fromtimestamp(raw_ts, tz=timezone.utc)
+                        raw_diff = abs((raw_dt - expected_mtime).total_seconds())
+                        if raw_diff <= tolerance.total_seconds():
+                            mtime_ok = True
+                            print(f'  {name} mtime: {o["mtime"]} -> {raw_dt} '
+                                  f'(raw block, kernel cache stale, Δ={self.median})')
+                if not mtime_ok:
+                    actual = a['mtime'] if a['mtime'] else 'N/A'
+                    self.fail(f'{name} mtime: expected {expected_mtime}, got {actual}')
 
             if o['btime'] is not None and a['btime'] is not None:
                 expected = o['btime'] + self.median

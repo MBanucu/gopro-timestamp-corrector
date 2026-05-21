@@ -62,12 +62,6 @@ def read_btime(path: str) -> int | None:
     return None
 
 
-@unittest.skipIf(
-    not shutil.which('udisksctl'),
-    'udisksctl not available')
-@unittest.skipIf(
-    not shutil.which('sudo'),
-    'sudo not available')
 class TestExfatRawBtime(unittest.TestCase):
 
     @classmethod
@@ -76,7 +70,9 @@ class TestExfatRawBtime(unittest.TestCase):
         if not gz_path.exists():
             raise unittest.SkipTest('sdcard.img.gz not found')
 
-        from test.shared import decompress_sparse_image
+        from test.shared import decompress_sparse_image, setup_loop_device, teardown_loop_device
+        cls._teardown = teardown_loop_device
+
         cached = Path(__file__).parent / 'sdcard.img'
         decompress_sparse_image(gz_path, cached)
 
@@ -85,43 +81,16 @@ class TestExfatRawBtime(unittest.TestCase):
         subprocess.run(['cp', '--sparse=always', str(cached), str(cls.img_path)],
                        check=True, capture_output=True)
 
-        r = subprocess.run(
-            ['udisksctl', 'loop-setup', '-f', str(cls.img_path),
-             '--no-user-interaction'],
-            capture_output=True, text=True)
-        if r.returncode != 0:
-            raise unittest.SkipTest('udisksctl loop-setup failed')
-        m = re.search(r'as (/dev/loop\d+)', r.stdout)
-        cls.loop_dev = m.group(1) if m else None
-        if not cls.loop_dev:
-            raise unittest.SkipTest('Could not parse loop device')
-
-        r = subprocess.run(
-            ['udisksctl', 'mount', '-b', cls.loop_dev,
-             '--no-user-interaction'],
-            capture_output=True, text=True)
-        if r.returncode == 0:
-            m = re.search(r'at ([^ \n]+)', r.stdout)
-            cls.mount_point = m.group(1).rstrip('.') if m else None
-        elif 'AlreadyMounted' in (r.stderr or ''):
-            m = re.search(r"at `([^`]+)'", r.stderr)
-            cls.mount_point = m.group(1) if m else None
-        if not cls.mount_point:
-            raise unittest.SkipTest('udisksctl mount failed')
-
+        cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
+            cls._teardown(cls.loop_dev, cls.mount_point)
             raise unittest.SkipTest(f'{cls.target} not found')
 
     @classmethod
     def tearDownClass(cls):
-        if cls.loop_dev:
-            subprocess.run(
-                ['udisksctl', 'unmount', '-b', cls.loop_dev,
-                 '--no-user-interaction'],
-                capture_output=True)
-            subprocess.run(['sudo', 'losetup', '-d', cls.loop_dev],
-                           capture_output=True)
+        if hasattr(cls, '_teardown') and cls.loop_dev:
+            cls._teardown(cls.loop_dev, cls.mount_point)
         if cls._work_dir:
             shutil.rmtree(cls._work_dir, ignore_errors=True)
 

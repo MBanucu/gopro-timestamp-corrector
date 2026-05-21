@@ -50,7 +50,6 @@ jobs:
 
       - name: Check env
         run: |
-          PYTHONPATH=src python -m correct_timestamps --check || true
           PYTHONPATH=src python -m env_check . || true
 
       - name: Run targeted debug-raw-btime tests (no GUI needed)
@@ -72,6 +71,13 @@ jobs:
              python -m unittest test_btime_gui_correction -v 2>&1; \
              echo "=== dmesg ===" && \
              dmesg | tail -30 || true)
+
+      - name: Run timezone integration test
+        if: always()
+        env:
+          PYTHONPATH: test
+        run: |
+          python -m unittest test_timezone_integration -v 2>&1 || true
 
       - name: Re-run debug tests after GUI correction
         if: always()

@@ -53,22 +53,56 @@ def _exfat_decode_time(time_word: int, date_word: int, time_ms: int) -> datetime
                     millisecond * 1000, tzinfo=timezone.utc)
 
 
+_BACKING_CACHE: dict[str, str | None] = {}
+
+
+def _exfat_backing_file(device: str) -> str | None:
+    if device not in _BACKING_CACHE:
+        path = None
+        try:
+            dev_name = device.lstrip('/dev/')
+            r = subprocess.run(
+                ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
+                capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                path = r.stdout.strip()
+        except Exception:
+            pass
+        if not path:
+            try:
+                r = subprocess.run(
+                    ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
+                    capture_output=True, text=True, timeout=5)
+                if r.returncode == 0:
+                    path = r.stdout.strip()
+            except Exception:
+                pass
+        import sys as _sys
+        _sys.stderr.write(f'[dbg] _exfat_backing_file({device}) = {path!r}\n')
+        _BACKING_CACHE[device] = path or None
+    return _BACKING_CACHE[device]
+
+
 def _exfat_read_device(device: str, offset: int, size: int) -> bytes:
+    backing = _exfat_backing_file(device)
+    target = backing or device
     r = subprocess.run(
-        ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
+        ['sudo', 'dd', f'if={target}', 'bs=1', f'skip={offset}',
          f'count={size}', 'status=none'],
         capture_output=True)
     return r.stdout
 
 
 def _exfat_write_device(device: str, offset: int, data: bytes):
+    backing = _exfat_backing_file(device)
+    target = backing or device
     with tempfile.NamedTemporaryFile() as tf:
         tf.write(data)
         tf.flush()
         subprocess.run(
-            ['sudo', 'dd', f'if={tf.name}', f'of={device}',
+            ['sudo', 'dd', f'if={tf.name}', f'of={target}',
              'bs=1', f'seek={offset}', f'count={len(data)}',
-             'status=none'],
+             'status=none', 'conv=fsync'],
             check=True, capture_output=True)
 
 
@@ -270,7 +304,42 @@ def read_exfat_btime_raw(filepath: str) -> int | None:
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
-def _fix_exfat_raw(filepath, dt, dry_run):
+def read_exfat_mtime_raw(filepath: str) -> int | None:
+    """Read modification time from an exFAT file via raw block access.
+
+    Returns epoch seconds (UTC) or ``None`` on failure.
+    Unlike ``os.path.getmtime()`` this bypasses the kernel cache
+    and reads directly from the on‑disk directory entry.
+    """
+    from btime import _resolve_device
+    try:
+        device = _resolve_device(filepath)
+    except OSError:
+        return None
+    if not device:
+        return None
+    boot = _exfat_parse_boot(device)
+    if not boot:
+        return None
+    entry = _exfat_find_file_entry(boot, device, filepath)
+    if entry is None:
+        return None
+    time_word = struct.unpack_from('<H', entry, 0x08)[0]
+    date_word = struct.unpack_from('<H', entry, 0x0A)[0]
+    time_ms = entry[0x14]
+    dt = _exfat_decode_time(time_word, date_word, time_ms)
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
+def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
+    """Write both modification time and creation time to an exFAT file.
+
+    *dt* is the target modification time (written to offsets 0x08/0x0A/0x14).
+    When *btime_dt* is ``None`` (default), the creation time (offsets
+    0x0C/0x0E/0x16) is set to the same value.  When *btime_dt* is
+    provided, the creation time is preserved at that value (useful when
+    writing mtime-only after btime was already corrected).
+    """
     from btime import _resolve_device, _resolve_mount_point
 
     device = _resolve_device(filepath)
@@ -283,6 +352,7 @@ def _fix_exfat_raw(filepath, dt, dry_run):
 
     utc = dt.replace(tzinfo=timezone.utc)
     label = utc.strftime("%Y-%m-%d %H:%M:%S")
+    btime_utc = btime_dt.replace(tzinfo=timezone.utc) if btime_dt is not None else utc
     import sys as _sys
     _sys.stderr.write(f"[dbg] _fix_exfat_raw dt={dt!r} utc_timestamp={int(utc.timestamp())} device={device}\n")
 
@@ -309,7 +379,9 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     for component in parts:
         found = _exfat_find_in_dir(boot, device, current_cluster, component)
         if not found:
-            raise RuntimeError(f"exFAT: directory component '{component}' not found")
+            raise RuntimeError(
+                f"exFAT: directory component '{component}' not found "
+                f"(cluster={current_cluster}, device={device})")
         dchain, dci, doff, dsc, dentries = found
         stream = dentries[1]
         first_cl = struct.unpack_from('<I', stream, 0x14)[0]
@@ -321,14 +393,15 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     fchain, fci, foff, fsc, fentries = found
 
     entry = bytearray(fentries[0])
-    date_word, time_word, time_ms_val = _exfat_encode_time(utc)
-    struct.pack_into('<H', entry, 0x08, time_word)
-    struct.pack_into('<H', entry, 0x0A, date_word)
-    entry[0x14] = time_ms_val
+    mdate_word, mtime_word, mtime_ms_val = _exfat_encode_time(utc)
+    bdate_word, btime_word, btime_ms_val = _exfat_encode_time(btime_utc)
+    struct.pack_into('<H', entry, 0x08, mtime_word)
+    struct.pack_into('<H', entry, 0x0A, mdate_word)
+    entry[0x14] = mtime_ms_val
     entry[0x15] = 0
-    struct.pack_into('<H', entry, 0x0C, time_word)
-    struct.pack_into('<H', entry, 0x0E, date_word)
-    entry[0x16] = time_ms_val
+    struct.pack_into('<H', entry, 0x0C, btime_word)
+    struct.pack_into('<H', entry, 0x0E, bdate_word)
+    entry[0x16] = btime_ms_val
     entry[0x17] = 0
 
     modified_entries = [bytes(entry)] + list(fentries[1:])
@@ -348,4 +421,12 @@ def _fix_exfat_raw(filepath, dt, dry_run):
     subprocess.run(['sync'])
     subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
                    capture_output=True)
+    for _ in range(3):
+        verify = _exfat_read_clusters(boot, device, [fchain[fci]])[0]
+        if verify == bytes(cluster_buf):
+            break
+        _exfat_write_clusters(boot, device, [fchain[fci]], [bytes(cluster_buf)])
+        subprocess.run(['sync'])
+        subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
+                       capture_output=True)
     print(f"    \u2713  btime corrected via exFAT raw block write ({label} UTC)")
