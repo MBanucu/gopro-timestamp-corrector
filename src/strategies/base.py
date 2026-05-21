@@ -66,6 +66,18 @@ class BtimeStrategy(ABC):
         return True
 
     @classmethod
+    def is_internal(cls) -> bool:
+        """Return True for strategies that should NOT appear in auto-detected lists.
+
+        Internal strategies are registered in ``REGISTRY`` and are usable
+        by name, but are excluded from :func:`btime.compatible_methods`
+        and :func:`btime.viable_methods`.  Use this for strategies that
+        are functionally identical to another (e.g. ``exfat_raw_read``
+        which adds readback on top of ``exfat_raw``).
+        """
+        return False
+
+    @classmethod
     def check_capabilities(
         cls,
         tools_available: frozenset[str],

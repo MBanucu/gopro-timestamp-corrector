@@ -26,6 +26,10 @@ class ExfatRawReadStrategy(ExfatRawStrategy):
     name = 'exfat_raw_read'
     label = 'exFAT raw block (readback)'
 
+    @classmethod
+    def is_internal(cls) -> bool:
+        return True
+
     @staticmethod
     def read_btime_raw(filepath: str) -> int | None:
         """Read birth time from *filepath* via raw block access.

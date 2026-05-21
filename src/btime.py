@@ -79,7 +79,7 @@ def viable_methods(
     methods: list[str] = []
     if fs_type:
         for name, cls in REGISTRY.items():
-            if name == 'clock':
+            if name == 'clock' or cls.is_internal():
                 continue
             if fs_type in cls.compatible_filesystems() \
                and cls.check_capabilities(tools_available, sudo_available):
@@ -110,6 +110,8 @@ def compatible_methods(fs_type: str | None) -> tuple[str, ...]:
     methods = []
     if fs_type:
         for name, cls in REGISTRY.items():
+            if cls.is_internal():
+                continue
             if fs_type in cls.compatible_filesystems():
                 methods.append(name)
     methods.append('clock')
