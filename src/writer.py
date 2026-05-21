@@ -94,9 +94,17 @@ class Writer:
         return self._session.write_embedded(job.path, job.target_embedded)
 
     def write_mtime_only(self, job: WriteJob) -> bool:
-        """Write only filesystem modification time."""
+        """Write only filesystem modification time.
+
+        When ``exfat_raw`` is the active btime method it handles both
+        mtime and btime in a single raw-block access — skip the
+        separate ``os.utime()`` call (which fails with EPERM on the
+        kernel exfat driver).
+        """
         if self.dry_run or job.target_mtime is None:
             return False
+        if self._btime_handles_mtime():
+            return True
         media.write_mtime(job.path, job.target_mtime)
         return True
 
