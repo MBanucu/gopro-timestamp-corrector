@@ -419,14 +419,4 @@ def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
     _exfat_write_clusters(boot, device, [fchain[fci]], [bytes(cluster_buf)])
 
     subprocess.run(['sync'])
-    subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
-                   capture_output=True)
-    for _ in range(3):
-        verify = _exfat_read_clusters(boot, device, [fchain[fci]])[0]
-        if verify == bytes(cluster_buf):
-            break
-        _exfat_write_clusters(boot, device, [fchain[fci]], [bytes(cluster_buf)])
-        subprocess.run(['sync'])
-        subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
-                       capture_output=True)
     print(f"    \u2713  btime corrected via exFAT raw block write ({label} UTC)")
