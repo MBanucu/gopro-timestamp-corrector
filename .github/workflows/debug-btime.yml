@@ -50,7 +50,6 @@ jobs:
 
       - name: Check env
         run: |
-          PYTHONPATH=src python -m correct_timestamps --check || true
           PYTHONPATH=src python -m env_check . || true
 
       - name: Run targeted debug-raw-btime tests (no GUI needed)
