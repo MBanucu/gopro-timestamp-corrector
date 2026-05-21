@@ -102,7 +102,7 @@ def _exfat_write_device(device: str, offset: int, data: bytes):
         subprocess.run(
             ['sudo', 'dd', f'if={tf.name}', f'of={target}',
              'bs=1', f'seek={offset}', f'count={len(data)}',
-             'status=none'],
+             'status=none', 'conv=fsync'],
             check=True, capture_output=True)
 
 
