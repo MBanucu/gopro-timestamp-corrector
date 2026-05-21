@@ -306,7 +306,7 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
                     ['sudo', 'env', f'PATH={os.environ["PATH"]}',
                      mount_exfat, loop_dev, mount_point,
                      '-o', f'uid={os.getuid()}', '-o', f'gid={os.getgid()}',
-                     '-o', 'allow_other', '-o', 'nonempty'],
+                     '-o', 'allow_other'],
                     capture_output=True, timeout=15)
             if r.returncode != 0:
                 msg = r.stderr.decode() if isinstance(r.stderr, bytes) else str(r.stderr)
@@ -315,8 +315,8 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
                     reason=f'mount failed: {msg[:120]}')
 
         test_file = os.path.join(mount_point, 'probe.bin')
-        with open(test_file, 'wb') as f:
-            f.write(b'x')
+        subprocess.run(['sudo', 'touch', test_file], capture_output=True, timeout=15)
+        subprocess.run(['sudo', 'chmod', '644', test_file], capture_output=True, timeout=15)
 
         subprocess.run(['sync'])
         r = subprocess.run(['stat', '-c', '%W', test_file],
