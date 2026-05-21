@@ -73,23 +73,28 @@ _BACKING_CACHE: dict[str, str | None] = {}
 
 def _exfat_backing_file(device: str) -> str | None:
     if device not in _BACKING_CACHE:
+        path = None
         try:
-            # Try /sys/block interface first (kernel-provided, always correct)
             dev_name = device.lstrip('/dev/')
-            sys_path = f'/sys/block/{dev_name}/loop/backing_file'
-            r = subprocess.run(['sudo', 'cat', sys_path], capture_output=True, text=True)
-            if r.returncode == 0 and r.stdout.strip():
-                _BACKING_CACHE[device] = r.stdout.strip()
-                return _BACKING_CACHE[device]
+            r = subprocess.run(
+                ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
+                capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                path = r.stdout.strip()
         except Exception:
             pass
-        try:
-            r = subprocess.run(
-                ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
-                capture_output=True, text=True)
-            _BACKING_CACHE[device] = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
-        except Exception:
-            _BACKING_CACHE[device] = None
+        if not path:
+            try:
+                r = subprocess.run(
+                    ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
+                    capture_output=True, text=True, timeout=5)
+                if r.returncode == 0:
+                    path = r.stdout.strip()
+            except Exception:
+                pass
+        import sys as _sys
+        _sys.stderr.write(f'[dbg] _exfat_backing_file({device}) = {path!r}\n')
+        _BACKING_CACHE[device] = path or None
     return _BACKING_CACHE[device]
 
 
