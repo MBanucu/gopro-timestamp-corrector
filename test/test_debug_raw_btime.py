@@ -192,10 +192,13 @@ class DebugRawBtime(unittest.TestCase):
         test_cluster = max(max_cluster - 100, 1000)
         test_offset = heap_off + (test_cluster - 2) * cs
         expected = b'CLUSTER_WRITE_TEST_99'
-        subprocess.run(
+        r = subprocess.run(
             ['sudo', 'dd', f'of={dev}', 'bs=1', f'seek={test_offset}',
              f'count={len(expected)}', 'status=none'],
-            input=expected, check=True, capture_output=True)
+            input=expected, capture_output=True, text=True)
+        if r.returncode != 0:
+            self.fail(f'dd write failed at offset {test_offset} '
+                      f'(cluster={test_cluster}): {r.stderr}')
         subprocess.run(['sync'])
         subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
                        capture_output=True)
