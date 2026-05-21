@@ -138,9 +138,14 @@ which runs the full correction pipeline under 7 different system timezones.
 
 ### CI workflows
 
-- `debug-raw-btime` — fast cycle (only debug tests, ~30s)
-- `debug-btime` — full suite (debug + GUI + timezone, ~3min)
-- `cluster-coherence` — diagnostic test for cluster write coherence
+Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
+
+| Scope | What it runs | ~Duration |
+|---|---|---|
+| `debug` | `test_debug_raw_btime` (7 tests) | 30s |
+| `unit` | `test.test_unit` (28 tests) | 5s |
+| `cluster` | `test_cluster_coherence` | 45s |
+| `full` | GUI correction + timezone integration | 3min |
 
 ## Mount strategy pattern
 
