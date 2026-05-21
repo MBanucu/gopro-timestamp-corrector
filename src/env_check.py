@@ -268,9 +268,9 @@ def _probe_stat_btime_on_exfat(test_file: str) -> bool | None:
 
 
 def _probe_statx_btime_on_exfat(test_file: str) -> bool | None:
-    """Test ``statx()`` ``STATX_BTIME`` on an exFAT file."""
-    _, supported = _probe_statx_btime(test_file)
-    return supported
+    """Test whether ``statx()`` returns a meaningful birth time on exFAT."""
+    val, supported = _probe_statx_btime(test_file)
+    return val is not None and val > 0
 
 
 def _probe_raw_read_btime_on_exfat(test_file: str) -> bool | None:
