@@ -75,7 +75,7 @@ The standard kernel-mode exFAT driver (`exfat.ko`, since Linux 5.7) does not all
 
 ### References
 
-- `src/btime.py` lines 113–197 in this repository (`_resolve_mount_point`, `_setup_fuse`)
+- `src/strategies/fuse.py` in this repository (`FuseStrategy`)
 - [`mount.exfat-fuse` man page](https://man.archlinux.org/man/extra/exfat-utils/mount.exfat-fuse.8.en)
 - [libfaketime upstream](https://github.com/wolfcw/libfaketime)
 
@@ -336,7 +336,7 @@ the checksum field itself zeroed during the calculation.
 |------|-------|
 | `sudo` | For block device read/write via `dd` |
 | Device node | The file must reside on a block device with exFAT filesystem |
-| exFAT structure knowledge | Encoded in `_fix_exfat_raw` in `src/btime.py` |
+| exFAT structure knowledge | Encoded in `ExfatRawStrategy` in `src/strategies/exfat_raw.py` |
 
 ### Pros
 
@@ -360,8 +360,9 @@ the checksum field itself zeroed during the calculation.
 
 ### Implementation
 
-The code lives entirely in `src/btime.py`:
+The code lives in `src/strategies/exfat_raw.py`:
 
+- `ExfatRawStrategy` — strategy class (`name='exfat_raw'`, `label='exFAT raw block'`)
 - `_fix_exfat_raw(filepath, dt, dry_run)` — main entry point
 - `_exfat_parse_boot(device)` — parses boot sector
 - `_exfat_find_in_dir(...)` — scans directory cluster chain for a matching filename
@@ -410,8 +411,7 @@ The most brute-force approach: temporarily rewind the system clock, create/modif
 
 ### References
 
-- `src/btime.py` lines 176–223 in this repository (clock setup/teardown)
-- `src/btime.py` lines 210–223 (`_fix_clock_set_time`)
+- `src/strategies/clock.py` in this repository (`ClockStrategy`)
 
 ---
 

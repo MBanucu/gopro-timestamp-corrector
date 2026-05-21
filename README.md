@@ -46,11 +46,14 @@ support for the Waterproof Shutter Remote).
   - `QuickTime:CreateDate`, `TrackCreateDate`, `MediaCreateDate`, … (MP4/LRV)
   - `EXIF:DateTimeOriginal` and related tags (THM)
 - Corrects **filesystem timestamps** (mtime/atime)
-- Corrects **birth time** (btime) via:
+- Corrects **birth time** (btime) via **strategy classes** (`src/strategies/`):
   - `debugfs` on ext4 (Linux)
   - raw exFAT block manipulation (primary, for existing files)
   - `mount.exfat-fuse` + `faketime` on exFAT (fallback, new files only)
   - direct system‑clock manipulation (last resort)
+  - Each strategy auto‑detects missing tools (sudo, debugfs, faketime, etc.)
+    via `check_capabilities()` — methods that can't possibly work are
+    hidden from the GUI and skipped by the CLI instead of failing at runtime
 - **Daylight‑saving detection** — warns about ambiguous hours (fall‑back /
   spring‑forward) and shows fold selectors
 - **Idempotent** — a manifest file prevents double‑correction on re‑runs
@@ -270,9 +273,11 @@ The btime correction uses a **priority‑ordered fallback list**:
 
 - Each method is tried in order; the first one whose setup succeeds is used for all files.
 - Add/remove/reorder methods with the ▲▼+✕ buttons.
-- When the target directory is known, only **compatible methods** for its
+- When the target directory is known, only **viable methods** for its
   filesystem are shown (e.g. `exfat_raw` + `fuse` + `clock` on exFAT,
-  `debugfs` + `clock` on ext4).
+  `debugfs` + `clock` on ext4).  Viability considers both filesystem
+  compatibility **and** system capabilities — a method whose tools are
+  missing (e.g. no `faketime` for FUSE) is hidden automatically.
   An unknown or undetected filesystem defaults to `clock` only.
 - The list starts **disabled** — check the *Filesystem birth time (btime)*
   checkbox to enable it.
@@ -345,17 +350,24 @@ loaded directly from the compiled TZif v2+ binary files on disk.
 
 ## Birth time (btime) support
 
-| Filesystem | Method | Sudo | Notes |
-|---|---|---|---|
-| ext4 | `debugfs` | required | Sets inode crtime directly |
-| exFAT | raw block (`exfat_raw`) | required | Direct block device manipulation; works on existing files (recommended) |
-| exFAT | FUSE + `faketime` | for mount | Unmounts kernel driver, remounts FUSE exFAT under faked time; new files only |
-| any | system clock | required | Temporarily sets `CLOCK_REALTIME` (disruptive) |
+| Filesystem | Method | Sudo | Dependencies checked | Notes |
+|---|---|---|---|---|---|
+| ext4 | `debugfs` | required | `debugfs`, `sync` | Sets inode crtime directly |
+| exFAT | raw block (`exfat_raw`) | required | `dd`, `findmnt`, `sync`, `mount`, `umount` | Direct block device manipulation; works on existing files (recommended) |
+| exFAT | FUSE + `faketime` | for mount | `faketime`, `mount.exfat-fuse`, `findmnt` | Unmounts kernel driver, remounts FUSE exFAT under faked time; new files only |
+| any | system clock | required | `timedatectl`, `date` | Temporarily sets `CLOCK_REALTIME` (disruptive) |
 
 When `--fix-btime` is used, the tool auto‑detects the filesystem and picks
 the best method. On exFAT the **raw block** method (`exfat_raw`) is the
 default; without `sudo` it falls back to FUSE+faketime, and finally to
 the clock method.
+
+**Capability‑based filtering** — before trying any method, the tool
+checks whether its external dependencies are available on the current
+system (tool binaries, passwordless sudo). Methods whose tools are
+missing are skipped with a clear warning instead of failing at runtime.
+The same information powers the GUI: only strategies whose dependencies
+are actually met appear in the btime method list.
 
 **In the GUI**, btime uses a priority‑ordered fallback chain.  Users
 add/remove/reorder methods (e.g. `exfat_raw` → `debugfs` → `clock`)
@@ -394,6 +406,11 @@ implementation, and how it was tested.
 - **Calculator** (`resolve.py` + `preview.py`): pure math, no file I/O,
   no `media` import. `resolve` has `target_time()`, `gps_delta()` and
   `weighted_median_delta()`.
+- **Strategies** (`strategies/`): btime method implementations as
+  `BtimeStrategy` subclasses, each declaring its tool dependencies
+  via `required_tools()` and proving its own viability via
+  `check_capabilities()`. The facade in `btime.py` selects them
+  transparently.
 - **Writer** (`writer.py`): receives a pre-computed list of `WriteJob` objects,
   dispatches to `ExifToolSession.write_embedded` and `btime.fix_file`. No calculator import.
 - **Orchestrator** (`correct_timestamps.py` / `gui/app.py`): reads files via
@@ -441,7 +458,7 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 | Auto calibration (mock) | 4 unit | `test_calibration_panel.py` |
 | CLI integration | 1 integration | `test_img.py` |
 | Strategy manifest | 6 integration | `test_strategy.py` |
-| Btime (unit) | 22 unit | `test_btime.py` |
+| Btime / strategies | 22 unit | `test_btime.py` |
 | Btime (FUSE+faketime) | 4 integration | `test_fuse_faketime.py` |
 | Btime (exFAT raw) | 3 integration | `test_exfat_raw_btime.py` |
 | Modification history | 7 unit | `test_history.py` |
@@ -457,7 +474,14 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 ├── .gitignore
 ├── src/
 │   ├── analysis.py         # File scanning, grouping, metadata extraction
-│   ├── btime.py            # Birth‑time fixing methods (incl. exFAT raw block)
+│   ├── btime.py            # Birth‑time facade (delegates to strategies/)
+│   ├── strategies/         # BtimeStrategy classes
+│   │   ├── __init__.py     #   Registry of all strategies
+│   │   ├── base.py         #   BtimeStrategy abstract base class
+│   │   ├── exfat_raw.py    #   Raw exFAT block manipulation
+│   │   ├── debugfs.py      #   debugfs (ext4 inode crtime)
+│   │   ├── fuse.py         #   FUSE + faketime remount
+│   │   └── clock.py        #   System clock manipulation
 │   ├── calibration.py      # JSON calibration load/save/parse
 │   ├── correct_timestamps.py  # CLI orchestrator (also serves --check)
 │   ├── dst.py              # DST ambiguity detection
