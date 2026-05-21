@@ -72,6 +72,55 @@ support for the Waterproof Shutter Remote).
 - [Nix](https://nixos.org) with flakes enabled (recommended), **or**
 - Python 3.10+, `exiftool`, `pyexiftool` (PyExifTool on PyPI), and optionally `e2fsprogs`, `exfat`, `libfaketime`
 
+## Environment check
+
+Before running, verify all required tools are available:
+
+```bash
+# Via the CLI
+nix run . -- --check
+
+# Or standalone
+gopro-check-env
+```
+
+Example output:
+
+```
+Platform:         linux
+Python:           3.13.12
+Tkinter:          ✓
+exiftool:         /nix/store/…/bin/exiftool
+Sudo (no-pass):   ✓
+
+Strategies:
+  ✓ gps
+  ✓ manual
+  ✓ skip
+
+Btime methods:
+  ✓ exFAT raw block               FS: exfat_raw, fuse, clock
+      ✓ dd (coreutils)
+      ✓ findmnt (util-linux)
+      ✓ sudo
+      ✓ sync
+      ✓ mount (util-linux)
+  ✓ debugfs (ext4)                FS: debugfs, clock
+      ✓ debugfs (e2fsprogs)
+      ✓ sudo
+      ✓ sync
+  ✗ FUSE + faketime (exFAT)       FS: exfat_raw, fuse, clock
+      ✗ faketime (libfaketime)
+      ✗ mount.exfat-fuse (exfat)
+  ✓ System clock                  FS: clock
+      ✓ timedatectl (systemd)
+      ✓ date (coreutils)
+      ✓ sudo
+```
+
+Each btime method shows its tool dependencies, compatible filesystems,
+and whether all deps are met.  Missing tools are marked with ✗.
+
 ## Quick start
 
 ```bash
@@ -84,6 +133,10 @@ nix run .#gui
 
 # Run the CLI
 nix run . -- /path/to/DCIM/100GOPRO --dry-run
+
+# Check your environment (available tools, btime methods, etc.)
+nix run . -- --check
+gopro-check-env                    # standalone env check
 ```
 
 ## CLI usage
@@ -109,6 +162,7 @@ nix run . -- /path/to/files --strategy-manifest strategies.json --gps
 
 | Flag | Description |
 |---|---|
+| `--check` | Check system environment and exit — reports available tools, btime methods, and strategies |
 | `--dry-run` | Preview changes without writing |
 | `--gps` | Determine delta using the first file with GPS data |
 | `--timezone` | Target timezone for GPS correction (e.g. `Europe/Berlin`) |
@@ -405,8 +459,9 @@ PYTHONPATH=src:test python3 -m unittest discover -s test -v
 │   ├── analysis.py         # File scanning, grouping, metadata extraction
 │   ├── btime.py            # Birth‑time fixing methods (incl. exFAT raw block)
 │   ├── calibration.py      # JSON calibration load/save/parse
-│   ├── correct_timestamps.py  # CLI orchestrator
+│   ├── correct_timestamps.py  # CLI orchestrator (also serves --check)
 │   ├── dst.py              # DST ambiguity detection
+│   ├── env_check.py        # System environment checker (tools, btime, strategies)
 │   ├── exiftool_session.py # Persistent exiftool wrapper via PyExifTool (stay_open)
 │   ├── history.py          # Modification history logger (before/after exiftool JSON)
 │   ├── media.py            # Filesystem helpers (collect, read_mtime, write_mtime)
