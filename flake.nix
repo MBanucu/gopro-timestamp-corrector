@@ -73,6 +73,7 @@
           machine.succeed(
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
+              + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
               + f"DISPLAY=:99 {python_bin} -m env_check /tmp/gopro-test/test 2>&1"
           )
           machine.succeed("echo '--- NixOS test: starting Xvfb ---'")

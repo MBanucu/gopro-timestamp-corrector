@@ -38,7 +38,7 @@ jobs:
           PYTHONPATH: test
         run: |
           export DISPLAY=:99
-          Xvfb :99 -screen 0 1024x768x24 &
+          Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
           sleep 1
           python -c 'import tkinter as tk; r=tk.Tk(); r.withdraw(); r.destroy(); print("Tkinter window OK")'
           python -m env_check . || true
