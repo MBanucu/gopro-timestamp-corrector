@@ -19,6 +19,7 @@ from pathlib import Path
 
 import btime
 import options
+from strategies import REGISTRY
 
 
 # ── Data types ──────────────────────────────────────────────────────
@@ -144,22 +145,16 @@ def _check_tk_display() -> bool:
 
 
 def _btime_method_deps(method: str) -> list[str]:
-    mapping = {
-        options.BTIME_DEBUGFS: ['debugfs', 'sudo', 'sync'],
-        options.BTIME_EXFAT_RAW: ['dd', 'findmnt', 'sudo', 'sync', 'mount'],
-        options.BTIME_FUSE: ['faketime', 'mount.exfat-fuse', 'sudo', 'umount', 'mount', 'findmnt'],
-        options.BTIME_CLOCK: ['timedatectl', 'date', 'sudo'],
-    }
-    return mapping.get(method, [])
+    cls = REGISTRY.get(method)
+    if cls is None:
+        return []
+    return list(cls.required_tools())
 
 
-# ── Btime method labels (mirrors gui/steps/plan.py) ─────────────────
+# ── Btime method labels (from strategy classes) ─────────────────────
 
 _BTIME_LABELS: dict[str, str] = {
-    'exfat_raw': 'exFAT raw block',
-    'debugfs': 'debugfs (ext4)',
-    'fuse': 'FUSE + faketime (exFAT)',
-    'clock': 'System clock',
+    name: cls.label for name, cls in REGISTRY.items()
 }
 
 
@@ -438,13 +433,12 @@ def check_env(target_path: str | Path | None = None) -> EnvReport:
 
 
 def _fs_for_method(method: str) -> str:
-    mapping = {
-        options.BTIME_DEBUGFS: 'ext4',
-        options.BTIME_EXFAT_RAW: 'exfat',
-        options.BTIME_FUSE: 'exfat',
-        options.BTIME_CLOCK: 'unknown',
-    }
-    return mapping.get(method, 'unknown')
+    from strategies import REGISTRY
+    cls = REGISTRY.get(method)
+    if cls is None:
+        return 'unknown'
+    compat = cls.compatible_filesystems()
+    return compat[0] if compat else 'unknown'
 
 
 # ── Pretty printing ─────────────────────────────────────────────────

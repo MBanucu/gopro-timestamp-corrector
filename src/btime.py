@@ -24,6 +24,72 @@ def _strategy(method: str):
     return cls()
 
 
+def _tools_on_system() -> frozenset[str]:
+    """Return a frozenset of every external tool available on ``$PATH``.
+
+    Used by :func:`viable_methods` to filter strategies whose dependencies
+    are fully present.
+    """
+    import shutil
+    seen: set[str] = set()
+    for cls in REGISTRY.values():
+        for tool in cls.required_tools():
+            if tool not in seen and shutil.which(tool) is not None:
+                seen.add(tool)
+    return frozenset(seen)
+
+
+def _sudo_works() -> bool:
+    """Return True if passwordless ``sudo`` works."""
+    try:
+        r = subprocess.run(
+            ['sudo', '-n', 'true'],
+            capture_output=True, timeout=10,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+# ── Capability-based filtering ──────────────────────────────────
+
+def viable_methods(
+    fs_type: str | None,
+    *,
+    tools_available: frozenset[str] | None = None,
+    sudo_available: bool | None = None,
+) -> tuple[str, ...]:
+    """Like :func:`compatible_methods` but skips strategies whose tool
+    dependencies are not met on the current system.
+
+    Capability filtering is **only** applied when *both* ``tools_available``
+    and ``sudo_available`` are passed explicitly.  When omitted the
+    function falls back to pure filesystem compatibility
+    (i.e. identical to :func:`compatible_methods` for callers that do
+    not have an environment report).
+
+    This avoids surprising behaviour in contexts (e.g. tests, sandboxed
+    builds) where ``sudo`` or optional tools like ``faketime`` are not
+    present but the caller wants to know what *would* be available on
+    a properly set‑up machine.
+    """
+    if tools_available is None or sudo_available is None:
+        return compatible_methods(fs_type)
+
+    methods: list[str] = []
+    if fs_type:
+        for name, cls in REGISTRY.items():
+            if name == 'clock':
+                continue
+            if fs_type in cls.compatible_filesystems() \
+               and cls.check_capabilities(tools_available, sudo_available):
+                methods.append(name)
+    from strategies.clock import ClockStrategy
+    if ClockStrategy.check_capabilities(tools_available, sudo_available):
+        methods.append('clock')
+    return tuple(methods)
+
+
 # ── Public API (unchanged signatures) ───────────────────────────
 
 def resolve_method(method: str, fs_type: str | None) -> str | None:
@@ -80,12 +146,16 @@ def fix_file(method: str, filepath, dt, ctx: dict, dry_run: bool):
 
 
 def chain_setup(methods, target_path, fs_type, delta, dry_run):
+    viable = set(viable_methods(fs_type)) if fs_type else set()
     expanded = []
     for m in methods:
         if m == BTIME_AUTO:
             expanded.extend(
-                cm for cm in compatible_methods(fs_type) if cm != BTIME_AUTO
+                cm for cm in compatible_methods(fs_type)
+                if cm != BTIME_AUTO and cm in viable
             )
+        elif m not in viable:
+            print(f"  ! Skipping '{m}': not viable on {fs_type or 'unknown'} filesystem")
         else:
             expanded.append(m)
 

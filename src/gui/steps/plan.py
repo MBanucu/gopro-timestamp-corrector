@@ -3,14 +3,12 @@ from tkinter import ttk
 
 import btime
 from plan import Planner
+from strategies import REGISTRY
 
 
 # Human-readable labels for the btime method listbox.
-_BTIME_LABELS = {
-    'exfat_raw': 'exFAT raw block',
-    'debugfs': 'debugfs (ext4)',
-    'fuse': 'FUSE + faketime (exFAT)',
-    'clock': 'System clock',
+_BTIME_LABELS: dict[str, str] = {
+    name: cls.label for name, cls in REGISTRY.items()
 }
 
 # All methods that can appear in the priority list.
@@ -166,16 +164,17 @@ class StepPlan(ttk.Frame):
             w.config(state=state)
 
     def set_filesystem(self, fs_type: str | None):
-        """Filter btime methods to only those compatible with *fs_type*.
+        """Filter btime methods to only those viable for *fs_type*.
 
-        Updates both the planner and the listbox.
+        Filters by both filesystem compatibility and system capabilities
+        (tool availability, sudo).  Updates both the planner and the listbox.
         """
         if fs_type is None:
             self._compatible_methods = list(_BTIME_METHODS)
             self._btime_methods = [m for m in ('clock',)
                                    if m in self._btime_methods] or ['clock']
         else:
-            self._compatible_methods = list(btime.compatible_methods(fs_type))
+            self._compatible_methods = list(btime.viable_methods(fs_type))
             self._btime_methods = list(self._compatible_methods)
         self._sync_btime_methods()
         self._rebuild_listbox()

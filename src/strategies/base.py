@@ -18,6 +18,16 @@ class BtimeStrategy(ABC):
     def compatible_filesystems(cls) -> tuple[str, ...]:
         """Filesystem types this strategy can work on."""
 
+    @classmethod
+    @abstractmethod
+    def required_tools(cls) -> tuple[str, ...]:
+        """External executables this strategy depends on (e.g. ``'sudo'``, ``'dd'``).
+
+        The caller is expected to check availability via ``shutil.which``.
+        Strategies whose tools are missing will be pruned by
+        :func:`btime.viable_methods`.
+        """
+
     @abstractmethod
     def setup(self, target_path: str, delta: timedelta, dry_run: bool) -> dict | None:
         """Prepare the environment for file correction.
@@ -49,3 +59,23 @@ class BtimeStrategy(ABC):
     def handles_mtime(cls) -> bool:
         """Override and return True if ``fix_file`` also updates mtime."""
         return False
+
+    @classmethod
+    def requires_sudo(cls) -> bool:
+        """Override and return False for strategies that never call ``sudo``."""
+        return True
+
+    @classmethod
+    def check_capabilities(
+        cls,
+        tools_available: frozenset[str],
+        sudo_available: bool,
+    ) -> bool:
+        """Return True when the system can run this strategy.
+
+        Checks tool availability and sudo — subclasses may override
+        to add further probes (e.g. exFAT btime readback).
+        """
+        if cls.requires_sudo() and not sudo_available:
+            return False
+        return all(t in tools_available for t in cls.required_tools())

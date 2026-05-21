@@ -15,6 +15,10 @@ class FuseStrategy(BtimeStrategy):
         return ('exfat', 'vfat', 'msdos', 'fuseblk')
 
     @classmethod
+    def required_tools(cls) -> tuple[str, ...]:
+        return ('faketime', 'mount.exfat-fuse', 'sudo', 'umount', 'mount', 'findmnt')
+
+    @classmethod
     def needs_setup(cls) -> bool:
         return True
 

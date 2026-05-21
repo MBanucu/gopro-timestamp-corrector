@@ -203,13 +203,11 @@ class TestBtimePureFunctions(unittest.TestCase):
         self.assertEqual(ctx, {})
 
     def test_chain_setup_skips_unusable_methods(self):
-        # exfat_raw on ext4 — no setup needed, but fix_file will error.
-        # chain_setup doesn't know about fix_file compatibility, so
-        # exfat_raw will "succeed" at setup on ext4 (returns {}).
+        # exfat_raw is not viable on ext4 → skipped, falls back to clock.
         method, ctx = btime.chain_setup(
             ['exfat_raw', 'clock'], '/some/path', 'ext4',
             timedelta(), dry_run=True)
-        self.assertEqual(method, 'exfat_raw')
+        self.assertEqual(method, 'clock')
 
 
 if __name__ == '__main__':

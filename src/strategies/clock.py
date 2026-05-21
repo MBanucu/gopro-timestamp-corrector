@@ -13,6 +13,10 @@ class ClockStrategy(BtimeStrategy):
         return ('unknown',)
 
     @classmethod
+    def required_tools(cls) -> tuple[str, ...]:
+        return ('timedatectl', 'date', 'sudo')
+
+    @classmethod
     def needs_setup(cls) -> bool:
         return True
 

@@ -14,6 +14,10 @@ class DebugfsStrategy(BtimeStrategy):
         return ('ext2', 'ext3', 'ext4')
 
     @classmethod
+    def required_tools(cls) -> tuple[str, ...]:
+        return ('debugfs', 'sudo', 'sync')
+
+    @classmethod
     def needs_teardown(cls) -> bool:
         return True
 

@@ -167,6 +167,10 @@ class ExfatRawStrategy(BtimeStrategy):
         return ('exfat', 'vfat', 'msdos', 'fuseblk')
 
     @classmethod
+    def required_tools(cls) -> tuple[str, ...]:
+        return ('dd', 'findmnt', 'sudo', 'sync', 'mount', 'umount')
+
+    @classmethod
     def needs_teardown(cls) -> bool:
         return True
 
