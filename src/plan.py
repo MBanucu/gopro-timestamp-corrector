@@ -411,10 +411,15 @@ class PlanBuilder:
             instructions[i].status = status
             progress_fn(i, status)
 
-        def get_writer(target, btime_val, delta_str):
+        def get_writer(target, btime_val, delta_arg):
             nonlocal writer
             if writer is None:
-                delta = timedelta(seconds=delta_str) if isinstance(delta_str, (int, float)) else None
+                if isinstance(delta_arg, timedelta):
+                    delta = delta_arg
+                elif isinstance(delta_arg, (int, float)):
+                    delta = timedelta(seconds=delta_arg)
+                else:
+                    delta = None
                 writer = Writer(target, fix_btime=btime_val,
                                 delta=delta, dry_run=False, session=session)
             return writer

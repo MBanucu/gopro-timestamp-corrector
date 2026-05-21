@@ -1,0 +1,72 @@
+name: debug-btime
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  debug-btime-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq exiftool xvfb exfat-fuse faketime
+
+      - name: Install project (and Python deps)
+        run: pip install -e .
+
+      - name: Verify install
+        run: |
+          correct-gopro-timestamps --help
+          python -c 'import tkinter; print("Tkinter module OK — version", tkinter.TkVersion)'
+
+      - name: Diagnose environment
+        run: |
+          echo "=== Kernel ==="
+          uname -a
+          echo "=== exFAT module ==="
+          modinfo exfat 2>/dev/null || echo "exfat module not loaded"
+          lsmod | grep exfat || echo "exfat not in lsmod"
+          echo "=== mount.exfat-fuse ==="
+          which mount.exfat-fuse || echo "not found"
+          mount.exfat-fuse -V 2>&1 || true
+          echo "=== exfatprogs ==="
+          which mkfs.exfat || echo "mkfs.exfat not found"
+          echo "=== sudo ==="
+          sudo -n true && echo "passwordless sudo: YES" || echo "passwordless sudo: NO"
+          echo "=== stat btime ==="
+          stat -c '%w %W' / || true
+
+      - name: Check env
+        run: |
+          PYTHONPATH=src python -m correct_timestamps --check || true
+          PYTHONPATH=src python -m env_check . || true
+
+      - name: Run test_btime_gui_correction
+        env:
+          PYTHONPATH: test
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
+          sleep 1
+          python -c 'import tkinter as tk; r=tk.Tk(); r.withdraw(); r.destroy(); print("Tkinter window OK")'
+          python -m unittest test_btime_gui_correction -v 2>&1
+
+      - name: Re-run with extra diagnostics on failure
+        if: failure()
+        env:
+          PYTHONPATH: test
+        run: |
+          export DISPLAY=:99
+          python -m unittest test_btime_gui_correction -v 2>&1 || true
+          echo "=== dmesg ==="
+          dmesg | tail -30 || true

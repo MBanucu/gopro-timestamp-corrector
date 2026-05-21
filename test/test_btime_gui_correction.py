@@ -146,6 +146,17 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         gui.step2.manual_delta = delta
         root.update_idletasks()
 
+        # ── Verify delta propagated to CorrectionPlan ──────────────
+        plan = gui.step2.plan
+        if plan is not None:
+            sys.stderr.write(f'[dbg] CorrectionPlan.manual_delta={plan.manual_delta!r}\n')
+            for pr in plan.preview:
+                for fp in pr.file_results[:3]:
+                    sys.stderr.write(f'[dbg]   {fp.path.name}: target_mtime={fp.target_mtime!r} '
+                                     f'(mtime={fp.current_mtime!r}, delta={delta!r})\n')
+        else:
+            sys.stderr.write('[dbg] CorrectionPlan is None after setting delta!\n')
+
         # ── Advance to plan step, enable btime with full chain ─────
         gui._advance_to_plan()
         root.update_idletasks()

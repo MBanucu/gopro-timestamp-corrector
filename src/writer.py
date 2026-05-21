@@ -113,6 +113,11 @@ class Writer:
         if self.dry_run or job.target_mtime is None:
             return False
         if self._b_method:
+            import sys as _sys
+            _sys.stderr.write(f'[dbg] write_btime_only: {job.path.name} '
+                             f'target_mtime={job.target_mtime!r} '
+                             f'target_ts={int(job.target_mtime.timestamp())} '
+                             f'b_method={self._b_method!r}\n')
             btime.fix_file(self._b_method, job.path, job.target_mtime, self._b_ctx, self.dry_run)
             return True
         return False

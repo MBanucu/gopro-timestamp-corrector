@@ -283,6 +283,8 @@ def _fix_exfat_raw(filepath, dt, dry_run):
 
     utc = dt.replace(tzinfo=timezone.utc)
     label = utc.strftime("%Y-%m-%d %H:%M:%S")
+    import sys as _sys
+    _sys.stderr.write(f"[dbg] _fix_exfat_raw dt={dt!r} utc_timestamp={int(utc.timestamp())} device={device}\n")
 
     if dry_run:
         print(f"    Would set btime via exFAT raw block write to {label} UTC")
