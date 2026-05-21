@@ -1,0 +1,26 @@
+name: debug-raw-btime
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq exiftool xvfb exfat-fuse faketime
+      - name: Install project deps
+        run: pip install -e .
+      - name: Run debug-raw-btime tests
+        env:
+          PYTHONPATH: test
+        run: python -m unittest test_debug_raw_btime -v 2>&1
