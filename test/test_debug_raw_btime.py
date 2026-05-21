@@ -219,25 +219,16 @@ class DebugRawBtime(unittest.TestCase):
         from strategies.exfat_raw import _exfat_decode_time
         raw_mtime = _exfat_decode_time(time_word, date_word, time_ms)
 
-        # Compare with stat mtime (they should be close)
-        import media
-        stat_mtime = media.read_mtime(first)
-        raw_ts = int(raw_mtime.timestamp())
-        stat_ts = int(stat_mtime.timestamp())
-        diff = abs(raw_ts - stat_ts)
-        sys.stderr.write(f'[dbg] {first.name}: raw_mtime={raw_mtime} stat_mtime={stat_mtime} diff={diff}s\n')
-        if diff > 2:
-            sys.stderr.write(f'[dbg] {first.name}: kernel UTC offset detected ({diff}s). '
-                             f'Using raw mtime as reference.\n')
-            # The kernel exFAT driver on some kernels applies a local-time
-            # offset to stat mtime.  The raw mtime (from directory entry)
-            # is the ground truth.
-            self.assertLessEqual(diff, 14400,
-                                 f'{first.name}: raw vs stat mtime differs by {diff}s '
-                                 f'(likely kernel UTC offset, max 4h expected)')
-        else:
-            self.assertLessEqual(diff, 2,
-                                 f'{first.name}: raw mtime ({raw_mtime}) differs from stat ({stat_mtime}) by {diff}s')
+        # Verify via independent raw-block readback (bypasses kernel exFAT
+        # driver UTC offset bug on CI).
+        from strategies.exfat_raw import read_exfat_mtime_raw
+        via_raw_api = read_exfat_mtime_raw(str(first))
+        self.assertIsNotNone(via_raw_api, f'{first.name}: read_exfat_mtime_raw returned None')
+        diff = int(raw_mtime.timestamp()) - via_raw_api
+        sys.stderr.write(f'[dbg] {first.name}: raw_mtime={raw_mtime} via_raw_api={via_raw_api} diff={diff}s\n')
+        self.assertLessEqual(abs(diff), 2,
+                             f'{first.name}: decoded mtime ({raw_mtime}) differs from '
+                             f'read_exfat_mtime_raw ({via_raw_api}) by {diff}s')
 
     def test_07_write_all_files_then_readback(self):
         """Apply _fix_exfat_raw to all 12 files, verify each via raw readback."""
