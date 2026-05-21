@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "analysis", "btime", "calibration", "correct_timestamps",
+    "dst", "exiftool_session", "history", "media", "options",
+    "plan", "preview", "resolve", "scanner", "writer",
+]
+
+[tool.setuptools.package-dir]
+"" = "src"
+gui = "src/gui"
+"gui.steps" = "src/gui/steps"
+
+[project]
+name = "gopro-timestamp-corrector"
+version = "0.1.0"
+description = "Correct timestamps of GoPro media files with wrong camera clock"
+requires-python = ">=3.10"
+dependencies = [
+    "pyexiftool",
+]
+
+[project.scripts]
+correct-gopro-timestamps = "correct_timestamps:main"
+gopro-timestamp-gui = "gui.app:main"
