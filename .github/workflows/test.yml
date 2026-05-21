@@ -29,6 +29,7 @@ jobs:
           correct-gopro-timestamps --help
           python -c 'import exiftool_session; print("exiftool_session OK")'
           python -c 'import gui.app; print("gui.app OK")'
+          python -c 'import tkinter; print("Tkinter module OK — version", tkinter.TkVersion)'
 
       - name: Run tests
         env:
@@ -37,6 +38,7 @@ jobs:
           export DISPLAY=:99
           Xvfb :99 -screen 0 1024x768x24 &
           sleep 1
+          python -c 'import tkinter as tk; r=tk.Tk(); r.withdraw(); r.destroy(); print("Tkinter window OK")'
           python -m unittest discover -s test -p 'test_analysis.py' -v
           python -m unittest discover -s test -p 'test_gps.py' -v
           python -m unittest discover -s test -p 'test_history.py' -v
