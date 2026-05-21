@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +66,7 @@ class BtimeProbeResult:
     stat_btime: int | None
     statx_btime: int | None
     statx_supported: bool | None
+    utime_works: bool | None
 
 
 @dataclass
@@ -227,6 +230,26 @@ def _probe_statx_btime(path: str) -> tuple[int | None, bool | None]:
         return None, None
 
 
+def _probe_utime(path: str) -> bool | None:
+    """Check whether os.utime() works on this filesystem."""
+    fname = None
+    try:
+        f = tempfile.NamedTemporaryFile(dir=path, delete=False)
+        fname = f.name
+        f.close()
+        ts = 1234567890.0
+        os.utime(fname, (ts, ts))
+        st = os.stat(fname)
+        return abs(st.st_mtime - ts) < 1.0
+    except OSError:
+        return False
+    except Exception:
+        return None
+    finally:
+        if fname is not None and os.path.exists(fname):
+            os.unlink(fname)
+
+
 def probe_btime(path: str | Path) -> BtimeProbeResult:
     """Probe birth-time readability on the filesystem containing *path*."""
     path = str(path)
@@ -237,6 +260,7 @@ def probe_btime(path: str | Path) -> BtimeProbeResult:
 
     stat_btime = _probe_stat_btime(path)
     statx_btime, statx_supported = _probe_statx_btime(path)
+    utime_works = _probe_utime(path)
     # statx_supported is None when syscall fails, else bool
     return BtimeProbeResult(
         path=path,
@@ -244,6 +268,7 @@ def probe_btime(path: str | Path) -> BtimeProbeResult:
         stat_btime=stat_btime,
         statx_btime=statx_btime,
         statx_supported=statx_supported,
+        utime_works=utime_works,
     )
 
 
@@ -363,6 +388,12 @@ def format_summary(report: EnvReport) -> str:
             lines.append(f'  statx btime:     ✗  (kernel does NOT report birth time)')
         else:
             lines.append(f'  statx btime:     ?  (syscall failed)')
+        if p.utime_works is True:
+            lines.append(f'  os.utime():      ✓')
+        elif p.utime_works is False:
+            lines.append(f'  os.utime():      ✗  (EPERM or other error)')
+        else:
+            lines.append(f'  os.utime():      ?  (unexpected error)')
 
     return '\n'.join(lines)
 
