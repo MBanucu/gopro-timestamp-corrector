@@ -291,17 +291,28 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         loop_dev = r.stdout.strip()
 
         mount_point = tempfile.mkdtemp(prefix='exfat_btime_probe_')
+
+        # Try kernel exfat driver first
         r = subprocess.run(
             ['sudo', 'mount', '-t', 'exfat', loop_dev, mount_point],
             capture_output=True, timeout=15)
+
+        # Fall back to FUSE (mount.exfat-fuse) when kernel driver is
+        # unavailable or sudo PATH doesn't include the Nix store.
         if r.returncode != 0:
-            r = subprocess.run(
-                ['sudo', 'mount', '-t', 'fuse.exfat', loop_dev, mount_point],
-                capture_output=True, timeout=15)
+            mount_exfat = shutil.which('mount.exfat-fuse')
+            if mount_exfat:
+                r = subprocess.run(
+                    ['sudo', 'env', f'PATH={os.environ["PATH"]}',
+                     mount_exfat, loop_dev, mount_point,
+                     '-o', f'uid={os.getuid()}', '-o', f'gid={os.getgid()}',
+                     '-o', 'allow_other', '-o', 'nonempty'],
+                    capture_output=True, timeout=15)
             if r.returncode != 0:
+                msg = r.stderr.decode() if isinstance(r.stderr, bytes) else str(r.stderr)
                 return ExfatBtimeSupport(
                     supported=None,
-                    reason=f'mount failed: kernel exfat not available')
+                    reason=f'mount failed: {msg[:120]}')
 
         test_file = os.path.join(mount_point, 'probe.bin')
         with open(test_file, 'wb') as f:
