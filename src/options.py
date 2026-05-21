@@ -12,12 +12,13 @@ BTIME_AUTO = 'auto'
 BTIME_DEBUGFS = 'debugfs'
 BTIME_FUSE = 'fuse'
 BTIME_EXFAT_RAW = 'exfat_raw'
+BTIME_EXFAT_RAW_READ = 'exfat_raw_read'
 BTIME_CLOCK = 'clock'
 
 # All valid btime method identifiers (including internal-only values).
 ALL_BTIME_METHODS = frozenset({
     BTIME_OFF, BTIME_AUTO, BTIME_DEBUGFS,
-    BTIME_FUSE, BTIME_EXFAT_RAW, BTIME_CLOCK,
+    BTIME_FUSE, BTIME_EXFAT_RAW, BTIME_EXFAT_RAW_READ, BTIME_CLOCK,
 })
 
 # User-facing choices for CLI argparse (excludes sentinel 'off').

@@ -259,7 +259,13 @@ def _probe_utime(path: str) -> bool | None:
 
 
 def _probe_exfat_btime() -> ExfatBtimeSupport:
-    """Probe kernel support for reading btime on exFAT via a temp filesystem."""
+    """Probe exFAT btime readback via raw block access (works on all kernels).
+
+    Creates a temp exFAT filesystem, writes a file, then reads the birth time
+    directly from the on‑disk directory entry using :func:`read_exfat_btime_raw`.
+    This bypasses the kernel's ``statx`` interface, so it works on kernels
+    before 6.12 where the exFAT driver does not advertise ``STATX_BTIME``.
+    """
     if not shutil.which('mkfs.exfat'):
         return ExfatBtimeSupport(supported=None, reason='mkfs.exfat not found')
     if not shutil.which('losetup'):
@@ -268,6 +274,7 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
     tmp_img = None
     loop_dev = None
     mount_point = None
+    test_file = None
     try:
         fd, tmp_img = tempfile.mkstemp(suffix='.img', prefix='exfat_btime_probe_')
         os.close(fd)
@@ -314,15 +321,17 @@ def _probe_exfat_btime() -> ExfatBtimeSupport:
         subprocess.run(['sudo', 'chmod', '644', test_file], capture_output=True, timeout=15)
 
         subprocess.run(['sync'])
-        r = subprocess.run(['stat', '-c', '%W', test_file],
-                           capture_output=True, text=True, timeout=15)
-        if r.returncode != 0 or not r.stdout.strip():
-            return ExfatBtimeSupport(supported=None, reason='stat failed')
+        subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
+                       capture_output=True, timeout=15)
 
-        btime_val = int(r.stdout.strip())
-        if btime_val > 0:
+        # Read btime via raw block — works on all kernels
+        from strategies.exfat_raw import read_exfat_btime_raw
+        btime_val = read_exfat_btime_raw(test_file)
+
+        if btime_val is not None and btime_val > 0:
             return ExfatBtimeSupport(supported=True)
-        return ExfatBtimeSupport(supported=False, reason='stat -c %W returned 0')
+        reason = f'raw readback returned {btime_val}' if btime_val is not None else 'raw readback failed'
+        return ExfatBtimeSupport(supported=False, reason=reason)
 
     except FileNotFoundError as e:
         return ExfatBtimeSupport(supported=None, reason=f'missing tool: {e.name}')
@@ -396,7 +405,8 @@ def check_env(target_path: str | Path | None = None) -> EnvReport:
             pass
 
     btime_methods: list[BtimeMethodCapability] = []
-    for method in (options.BTIME_EXFAT_RAW, options.BTIME_DEBUGFS,
+    for method in (options.BTIME_EXFAT_RAW, options.BTIME_EXFAT_RAW_READ,
+                   options.BTIME_DEBUGFS,
                    options.BTIME_FUSE, options.BTIME_CLOCK):
         deps = [_tool(d) for d in _btime_method_deps(method)]
         all_met = all(d.available for d in deps) and sudo_ok

@@ -57,7 +57,7 @@ class TestBtimeGuiCorrection(unittest.TestCase):
 
     @classmethod
     def _check_btime_readback_support(cls):
-        """Create a temp exFAT filesystem and check if stat -c '%W' returns btime."""
+        """Probe exFAT btime readback via raw block access on a temp filesystem."""
         try:
             import sys
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
@@ -75,6 +75,12 @@ class TestBtimeGuiCorrection(unittest.TestCase):
 
     @staticmethod
     def _read_btime(path):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
+        from strategies.exfat_raw import read_exfat_btime_raw
+        val = read_exfat_btime_raw(str(path))
+        if val is not None:
+            return val
         r = subprocess.run(['stat', '-c', '%W', str(path)],
                            capture_output=True, text=True)
         if r.returncode != 0 or not r.stdout.strip():

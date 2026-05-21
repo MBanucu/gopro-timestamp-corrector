@@ -112,14 +112,16 @@ class TestBtimePureFunctions(unittest.TestCase):
     def test_compatible_methods_exfat(self):
         methods = btime.compatible_methods('exfat')
         self.assertIn('exfat_raw', methods)
+        self.assertIn('exfat_raw_read', methods)
         self.assertIn('fuse', methods)
         self.assertIn('clock', methods)
-        self.assertEqual(len(methods), 3)
+        self.assertEqual(len(methods), 4)
         self.assertNotIn('debugfs', methods)
 
     def test_compatible_methods_vfat(self):
         methods = btime.compatible_methods('vfat')
         self.assertIn('exfat_raw', methods)
+        self.assertIn('exfat_raw_read', methods)
         self.assertIn('fuse', methods)
         self.assertIn('clock', methods)
         self.assertNotIn('debugfs', methods)
@@ -127,6 +129,7 @@ class TestBtimePureFunctions(unittest.TestCase):
     def test_compatible_methods_fuseblk(self):
         methods = btime.compatible_methods('fuseblk')
         self.assertIn('exfat_raw', methods)
+        self.assertIn('exfat_raw_read', methods)
         self.assertIn('fuse', methods)
         self.assertIn('clock', methods)
         self.assertNotIn('debugfs', methods)

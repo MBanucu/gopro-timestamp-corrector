@@ -39,6 +39,20 @@ def _exfat_encode_time(dt):
     return date_word, time_word, time_ms
 
 
+def _exfat_decode_time(time_word: int, date_word: int, time_ms: int) -> datetime:
+    year = ((date_word >> 9) & 0x7F) + 1980
+    month = (date_word >> 5) & 0x0F
+    day = date_word & 0x1F
+    hour = (time_word >> 11) & 0x1F
+    minute = (time_word >> 5) & 0x3F
+    sec_2block = time_word & 0x1F
+    odd_second = 1 if time_ms >= 100 else 0
+    second = sec_2block * 2 + odd_second
+    millisecond = (time_ms % 100) * 10
+    return datetime(year, month, day, hour, minute, second,
+                    millisecond * 1000, tzinfo=timezone.utc)
+
+
 def _exfat_read_device(device: str, offset: int, size: int) -> bytes:
     r = subprocess.run(
         ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
@@ -187,6 +201,70 @@ class ExfatRawStrategy(BtimeStrategy):
 
     def teardown(self, ctx, dry_run):
         pass
+
+
+def _exfat_find_file_entry(boot: dict, device: str, filepath: str) -> bytes | None:
+    """Find the file-directory entry for *filepath* on an exFAT volume.
+
+    Returns the raw 32‑byte file‑directory entry, or ``None``.
+    """
+    from btime import _resolve_device, _resolve_mount_point
+
+    mount_point = _resolve_mount_point(filepath)
+    if not mount_point:
+        return None
+    fp = Path(filepath).resolve()
+    mp = Path(mount_point).resolve()
+    try:
+        rel = fp.relative_to(mp)
+    except ValueError:
+        return None
+    parts = list(rel.parts)
+    filename = parts.pop()
+
+    current_cluster = boot['root_cluster']
+    for component in parts:
+        found = _exfat_find_in_dir(boot, device, current_cluster, component)
+        if not found:
+            return None
+        dchain, dci, doff, dsc, dentries = found
+        stream = dentries[1]
+        first_cl = struct.unpack_from('<I', stream, 0x14)[0]
+        current_cluster = first_cl
+
+    found = _exfat_find_in_dir(boot, device, current_cluster, filename)
+    if not found:
+        return None
+    return found[4][0]  # first entry of the entry set
+
+
+def read_exfat_btime_raw(filepath: str) -> int | None:
+    """Read birth time from an exFAT filesystem via raw block access.
+
+    Returns epoch seconds (UTC) or ``None`` on failure.
+    Unlike ``stat -c '%W'`` this works on **all** kernel versions
+    because it reads the on‑disk directory entry directly.
+    """
+    from btime import _resolve_device
+
+    device = _resolve_device(filepath)
+    if not device:
+        return None
+
+    boot = _exfat_parse_boot(device)
+    if not boot:
+        return None
+
+    entry = _exfat_find_file_entry(boot, device, filepath)
+    if entry is None:
+        return None
+
+    time_word = struct.unpack_from('<H', entry, 0x0C)[0]
+    date_word = struct.unpack_from('<H', entry, 0x0E)[0]
+    time_ms = entry[0x14]
+
+    dt = _exfat_decode_time(time_word, date_word, time_ms)
+    return int(dt.replace(tzinfo=timezone.utc).timestamp())
 
 
 def _fix_exfat_raw(filepath, dt, dry_run):
