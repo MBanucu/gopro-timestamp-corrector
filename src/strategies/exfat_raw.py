@@ -56,8 +56,13 @@ def _exfat_decode_time(time_word: int, date_word: int, time_ms: int) -> datetime
 def _exfat_read_device(device: str, offset: int, size: int) -> bytes:
     r = subprocess.run(
         ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
-         f'count={size}', 'status=none'],
+         f'count={size}', 'status=none', 'iflag=nocache'],
         capture_output=True)
+    if r.returncode != 0 or len(r.stdout) != size:
+        r = subprocess.run(
+            ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
+             f'count={size}', 'status=none'],
+            capture_output=True)
     return r.stdout
 
 
@@ -343,16 +348,7 @@ def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
 
     current_cluster = boot['root_cluster']
     for component in parts:
-        found = None
-        for _attempt in range(2):
-            found = _exfat_find_in_dir(boot, device, current_cluster, component)
-            if found:
-                break
-            subprocess.run(['sync'])
-            subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
-                           capture_output=True)
-            import time as _time
-            _time.sleep(0.2)
+        found = _exfat_find_in_dir(boot, device, current_cluster, component)
         if not found:
             raise RuntimeError(
                 f"exFAT: directory component '{component}' not found "
@@ -362,14 +358,7 @@ def _fix_exfat_raw(filepath, dt, dry_run, btime_dt=None):
         first_cl = struct.unpack_from('<I', stream, 0x14)[0]
         current_cluster = first_cl
 
-    found = None
-    for _attempt in range(2):
-        found = _exfat_find_in_dir(boot, device, current_cluster, filename)
-        if found:
-            break
-        subprocess.run(['sync'])
-        subprocess.run(['sudo', 'sh', '-c', 'echo 3 > /proc/sys/vm/drop_caches'],
-                       capture_output=True)
+    found = _exfat_find_in_dir(boot, device, current_cluster, filename)
     if not found:
         raise RuntimeError(f"exFAT: file '{filename}' not found in directory")
     fchain, fci, foff, fsc, fentries = found
