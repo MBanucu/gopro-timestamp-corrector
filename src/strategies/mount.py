@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import shutil
@@ -9,6 +10,16 @@ import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+
+LOOP_SETUP_LOCK = '/tmp/gopro_loop_setup.lock'
+"""File lock serializing loop-device setup across parallel processes.
+
+``losetup -f --show`` has a TOCTOU race when multiple processes call it
+concurrently (both can get the same loop device number).  The file lock
+ensures only one process allocates a loop device at a time, eliminating
+the race entirely.
+"""
 
 
 class MountError(Exception):
@@ -84,15 +95,17 @@ class ImageMountStrategy(MountStrategy):
         self._mount_point = None
 
     def mount(self) -> tuple[str, str]:
-        result = self._via_udisksctl()
-        if result is not None:
-            self._loop_dev, self._mount_point = result
-            return result
-        result = self._via_sudo()
-        if result is not None:
-            self._loop_dev, self._mount_point = result
-            return result
-        raise MountError("Could not set up loop device (udisksctl+sudo failed)")
+        with open(LOOP_SETUP_LOCK, 'w') as _lk:
+            fcntl.flock(_lk, fcntl.LOCK_EX)
+            result = self._via_udisksctl()
+            if result is not None:
+                self._loop_dev, self._mount_point = result
+                return result
+            result = self._via_sudo()
+            if result is not None:
+                self._loop_dev, self._mount_point = result
+                return result
+            raise MountError("Could not set up loop device (udisksctl+sudo failed)")
 
     def _via_udisksctl(self) -> tuple[str, str] | None:
         try:
