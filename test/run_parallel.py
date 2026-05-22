@@ -70,6 +70,10 @@ def run_one(name: str, coverage_source: str | None) -> tuple[str, str, float, st
         status = 'skip'
     else:
         status = 'ok'
+    # Diagnostic: log last line and status to stderr
+    diag = f'[run_parallel] {name}: last_line={last!r} rc={r.returncode} status={status}\n'
+    sys.stderr.write(diag)
+    sys.stderr.flush()
     return name, status, elapsed, r.stdout, r.stderr
 
 
