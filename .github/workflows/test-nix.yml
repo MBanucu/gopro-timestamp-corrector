@@ -42,8 +42,5 @@ jobs:
           sudo udevadm control --reload-rules && sudo udevadm trigger
           ls -la /dev/kvm
 
-      - name: Capability check
-        run: nix develop --command bash -c 'PYTHONPATH=src python -m correct_timestamps --check .' || true
-
       - name: Run NixOS VM test
         run: nix build .#checks.x86_64-linux.nixos-test --no-link -L
