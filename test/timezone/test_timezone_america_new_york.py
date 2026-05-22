@@ -25,6 +25,4 @@ class TestAmericaNewYork(unittest.TestCase):
         m = re.search(r'Ran (\\d+) test', out)
         n = int(m.group(1)) if m else 0
         if n == 0 or 'skipped' in out:
-            print("  [America/New_York] " + str(n) + " tests (integration was skipped)")
-        else:
-            print("  [America/New_York] " + str(n) + " tests passed")
+            self.skipTest("integration was skipped")

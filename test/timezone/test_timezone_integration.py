@@ -87,9 +87,7 @@ class Test{cn}(unittest.TestCase):
         m = re.search(r'Ran (\\\\d+) test', out)
         n = int(m.group(1)) if m else 0
         if n == 0 or 'skipped' in out:
-            print("  [{tz}] " + str(n) + " tests (integration was skipped)")
-        else:
-            print("  [{tz}] " + str(n) + " tests passed")
+            self.skipTest("integration was skipped")
 '''.format(tz=tz, cn=cn)
         (here / f'test_timezone_{s}.py').write_text(content.lstrip('\n'))
     print(f'Regenerated {len(TIMEZONES)} wrapper files.')

@@ -40,7 +40,11 @@ def discover_all():
     return sorted(modules)
 
 
-def run_one(name: str, coverage_source: str | None) -> tuple[str, bool, float, str, str]:
+def run_one(name: str, coverage_source: str | None) -> tuple[str, str, float, str, str]:
+    """Run a test module, return (name, status, elapsed, stdout, stderr).
+
+    Status is ``'ok'``, ``'fail'``, or ``'skip'``.
+    """
     t0 = time.perf_counter()
     env = os.environ.copy()
     env['PYTHONPATH'] = f'{SRC}{os.pathsep}{env.get("PYTHONPATH", "")}'
@@ -58,7 +62,15 @@ def run_one(name: str, coverage_source: str | None) -> tuple[str, bool, float, s
         cmd = [sys.executable, '-m', 'unittest', module, '-v']
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.perf_counter() - t0
-    return name, r.returncode == 0, elapsed, r.stdout, r.stderr
+    out = r.stdout or ''
+    last = out.strip().split('\n')[-1] if out else ''
+    if r.returncode != 0:
+        status = 'fail'
+    elif '(skipped=' in last:
+        status = 'skip'
+    else:
+        status = 'ok'
+    return name, status, elapsed, r.stdout, r.stderr
 
 
 def main():
@@ -79,7 +91,7 @@ def main():
 
     print(f'Running {len(modules)} modules, {args.jobs} workers\n')
 
-    passed = failed = 0
+    passed = failed = skipped = 0
     t_start = time.perf_counter()
     coverage_source = str(SRC) if args.coverage else None
 
@@ -87,10 +99,13 @@ def main():
         futs = {pool.submit(run_one, name, coverage_source): name
                 for name in modules}
         for fut in as_completed(futs):
-            name, ok, elapsed, out, err = fut.result()
-            if ok:
+            name, status, elapsed, out, err = fut.result()
+            if status == 'ok':
                 passed += 1
                 print(f'  OK  {name}  ({elapsed:.1f}s)')
+            elif status == 'skip':
+                skipped += 1
+                print(f'  SKIP {name}  ({elapsed:.1f}s)')
             else:
                 failed += 1
                 print(f'  FAIL {name}  ({elapsed:.1f}s)')
@@ -102,9 +117,15 @@ def main():
                         print(f'    {line}')
 
     total = time.perf_counter() - t_start
-    print(f'\n{passed} passed, {failed} failed ({total:.1f}s)')
+    parts = [f'{passed} passed']
+    if skipped:
+        parts.append(f'{skipped} skipped')
+    if failed:
+        parts.append(f'{failed} failed')
+    print(f'\n{", ".join(parts)} ({total:.1f}s)')
 
-    if args.coverage and (passed > 0 or failed > 0):
+    total_with_skips = passed + skipped
+    if args.coverage and total_with_skips > 0:
         subprocess.run([sys.executable, '-m', 'coverage', 'combine', '--quiet'])
         subprocess.run([sys.executable, '-m', 'coverage', 'report', '-m',
                        f'--include={coverage_source}/*'])
