@@ -62,15 +62,16 @@ def run_one(name: str, coverage_source: str | None) -> tuple[str, str, float, st
         cmd = [sys.executable, '-m', 'unittest', module, '-v']
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.perf_counter() - t0
-    out = r.stdout or ''
-    last = out.strip().split('\n')[-1] if out else ''
+    # unittest writes to stderr, not stdout
+    body = r.stderr or ''
+    last = body.strip().split('\n')[-1] if body else ''
     if r.returncode != 0:
         status = 'fail'
     elif '(skipped=' in last:
         status = 'skip'
     else:
         status = 'ok'
-    # Diagnostic: log raw output repr + last line + status to stderr
+    # Diagnostic: report streams + detected status
     out_len = len(r.stdout) if r.stdout else 0
     err_len = len(r.stderr) if r.stderr else 0
     diag = (f'[run_parallel] {name}: rc={r.returncode} status={status} '
@@ -117,12 +118,9 @@ def main():
             else:
                 failed += 1
                 print(f'  FAIL {name}  ({elapsed:.1f}s)')
-                # Print full failure output
+                # Print full failure output (unittest writes to stderr)
                 for line in err.splitlines():
                     print(f'    {line}')
-                for line in out.splitlines():
-                    if line.startswith('FAIL:') or line.startswith('ERROR:'):
-                        print(f'    {line}')
 
     total = time.perf_counter() - t_start
     parts = [f'{passed} passed']
