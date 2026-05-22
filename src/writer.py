@@ -138,6 +138,8 @@ class Writer:
             emb_pairs = [(j.path, j.target_embedded) for j in jobs
                          if j.target_embedded is not None]
             batch_ok = self._session.write_embedded_batch(emb_pairs)
+            # Sync to flush dirty inodes written by exif batch.
+            subprocess.run(['sync'])
         else:
             batch_ok = True
 
@@ -145,6 +147,20 @@ class Writer:
             if not self.dry_run and job.target_embedded is not None and not batch_ok:
                 (summary.errors or []).append(str(job.path))
                 continue
+
+            # Flush any dirty inode written by the exif batch.  The kernel
+            # exFAT driver does NOT flush dirty inodes on sync() (H5), but
+            # will eventually via periodic writeback.  fsync() forces the
+            # driver to write the in-memory mtime (= now from exif write)
+            # to the directory entry NOW, so the raw-block correction below
+            # is the FINAL write to the DE.
+            if not self.dry_run and job.target_mtime is not None:
+                try:
+                    fd = os.open(str(job.path), os.O_RDONLY)
+                    os.fsync(fd)
+                    os.close(fd)
+                except OSError:
+                    pass
 
             summary.written += 1
 
