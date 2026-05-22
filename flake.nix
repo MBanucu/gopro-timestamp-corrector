@@ -35,6 +35,10 @@
           time.timeZone = "Europe/Berlin";
 
           boot.kernelParams = [ "loglevel=3" ];
+          services.journald.extraConfig = ''
+            ForwardToConsole=no
+          '';
+          systemd.showStatus = false;
 
           environment.systemPackages = with pkgs; [
             exiftool e2fsprogs exfat libfaketime xvfb sudo
