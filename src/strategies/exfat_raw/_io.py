@@ -1,4 +1,11 @@
-"""Low-level raw block I/O for exFAT filesystems."""
+"""Low-level raw block I/O for exFAT filesystems.
+
+I/O goes through the **backing file** (when available) via fast
+``os.pread``/``os.pwrite`` — single syscall, no subprocess overhead.
+
+For physical devices (no backing file), falls back to ``sudo dd``
+through the raw device path.
+"""
 
 import os
 import struct
@@ -7,17 +14,16 @@ import tempfile
 
 
 class ExfatRawIO:
-    """Raw block I/O — reads/writes through ``/dev/loopN`` via ``sudo dd``.
+    """Raw block I/O — prefers backing file; falls back to ``sudo dd``."""
 
-    All I/O goes through the loop device (not the backing file) to
-    keep the loop device's page cache coherent.  ``_backing_file()``
-    always re-reads from sysfs (no cache) to detect TOCTOU races
-    where another process reassigned our loop device.
-    """
-
-    # ── internal: backing-file resolution (no cache) ──────────────
+    # ── backing-file resolution (no cache) ────────────────────────
 
     def _backing_file(self, device: str) -> str | None:
+        """Resolve the backing file for *device* via sysfs.
+
+        Always re-reads from sysfs (no cache) to detect TOCTOU races
+        where another process reassigned our loop device.
+        """
         dev_name = device.lstrip('/dev/')
         for cmd in (
             ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
@@ -40,12 +46,31 @@ class ExfatRawIO:
     # ── low-level I/O ────────────────────────────────────────────
 
     def read(self, device: str, offset: int, size: int) -> bytes:
+        backing = self._backing_file(device)
+        if backing and os.access(backing, os.R_OK):
+            fd = os.open(backing, os.O_RDONLY)
+            try:
+                return os.pread(fd, size, offset)
+            finally:
+                os.close(fd)
+        # Fallback for physical devices
         cmd = ['sudo', 'dd', f'if={device}', 'bs=1',
                f'skip={offset}', f'count={size}', 'status=none']
         r = subprocess.run(cmd, capture_output=True)
         return r.stdout
 
     def write(self, device: str, offset: int, data: bytes):
+        backing = self._backing_file(device)
+        if backing and os.access(backing, os.W_OK):
+            fd = os.open(backing, os.O_WRONLY)
+            try:
+                n = os.pwrite(fd, data, offset)
+                assert n == len(data)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            return
+        # Fallback for physical devices
         with tempfile.NamedTemporaryFile() as tf:
             tf.write(data)
             tf.flush()
