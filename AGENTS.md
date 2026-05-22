@@ -65,8 +65,8 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
 ### `_fix_exfat_raw` (exfat_raw.py)
 
 - Writes **both** creation time AND modification time in one raw-block access.
-- Calls `sync()` after write to flush pending kernel writes.
-- **Does NOT call `os.utime()`** — the kernel exFAT driver maintains its own
+- **Does NOT call `sync()`** — the global ``sync()`` triggers the kernel exFAT driver's ``exfat_sync_fs()`` which incorrectly flushes dirty inodes from ALL mounts, causing cross-mount directory entry corruption on kernel 6.12.87. The ``os.fsync`` on the backing file (inside ``ExfatRawIO.write()``) is sufficient for data persistence.
+- **Does NOT call `os.utime()`** — the kernel exFAT driver has its own
   in-memory directory-entry cache that is not invalidated by raw-block writes.
   Calling `os.utime()` after a raw-block write causes the driver to read the
   stale directory entry from its cache and overwrite the raw-block changes.
@@ -80,6 +80,33 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
 - **Does NOT call `drop_caches`** — on older kernels (<6.12), `drop_caches` with
   loop devices over sparse backing files causes `EIO` on subsequent reads.
   `sync` alone is sufficient for the raw block write to persist.
+
+### exFAT driver cross-mount DE corruption (kernel 6.12.87)
+
+The kernel exFAT driver has a bug where concurrent operations across
+independent mounts can corrupt directory entries.  This was extensively
+investigated via 23+ hypothesis tests in ``test/hypothesis/``:
+
+| Trigger | Corruptions | Source |
+|---|---|---|
+| ExifTool writes on 2 mounts (individual sessions) | **22/24** | H19, H22, H23 |
+| ExifTool writes on 2 mounts (shared session) | **0** | H20 |
+| Plain ``write()`` through mount on 2 mounts | **0** | H20 |
+| ``sync()`` on one mount + exiftool on another | **12/12** | H26 |
+| ``fix_exfat_raw`` alone on 2 mounts | **0** | H19 |
+
+**Root cause**: ExifTool's internal ``write()`` through the exFAT driver
+dirties inodes with ``mtime=now``.  Under concurrent load across multiple
+mounts, the driver's ``exfat_sync_fs()`` incorrectly flushes dirty inodes
+from one mount to another mount's directory entries.
+
+**Mitigations** (all in place):
+1. ``threading.Lock`` in ``ExifToolSession`` serializes metadata writes
+   within each Python process.
+2. ``sync()`` removed from ``fix_exfat_raw`` (the global sync was the
+   primary trigger for cross-mount writeback).
+3. ``os.fsync`` on the backing file (in ``ExfatRawIO.write()``) handles
+   data persistence without triggering the buggy driver writeback.
 
 ### `Writer.close()` (writer.py)
 
