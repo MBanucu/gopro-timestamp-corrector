@@ -89,7 +89,7 @@
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
               + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
-              + f"DISPLAY=:99 GOPRO_SPARSE_COPY=0 {python_bin} -m test.run_parallel -v 2>&1"
+              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -j 2 -v 2>&1"
           )
         '';
       };

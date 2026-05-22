@@ -82,18 +82,9 @@ def write_sparse(gz_path: Path, img_path: Path):
             offset += len(chunk)
 
 
-_SPARSE = os.environ.get('GOPRO_SPARSE_COPY', '1') != '0'
-
-
 def prepare_sparse_image(gz_path: Path, prefix: str = 'gopro_') -> tuple[Path, Path]:
     """Decompress *gz_path* to a cached location (if needed), then copy
-    to an isolated temp working directory.
-
-    When ``GOPRO_SPARSE_COPY=0`` (set in the NixOS VM test) the copy
-    is fully allocated (``--sparse=never``) to avoid loop-device
-    ``REQ_NOWAIT`` + qcow2 latency → EIO.
-
-    Otherwise the copy uses ``--sparse=always``.
+    via ``cp --sparse=always`` to an isolated temp working directory.
 
     Returns ``(temp_dir, image_copy_path)``.
     """
@@ -102,9 +93,8 @@ def prepare_sparse_image(gz_path: Path, prefix: str = 'gopro_') -> tuple[Path, P
 
     work_dir = Path(tempfile.mkdtemp(prefix=prefix))
     img_copy = work_dir / cached.name
-    flag = '--sparse=never' if not _SPARSE else '--sparse=always'
     subprocess.run(
-        ['cp', flag, str(cached), str(img_copy)],
+        ['cp', '--sparse=always', str(cached), str(img_copy)],
         check=True, capture_output=True,
     )
     return work_dir, img_copy
