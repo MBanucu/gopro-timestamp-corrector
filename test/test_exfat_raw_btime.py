@@ -1,64 +1,10 @@
 """Integration test for exFAT raw block btime strategy."""
-import ctypes
-import ctypes.util
-import os
 import shutil
 import subprocess
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-
-
-class statx_timestamp(ctypes.Structure):
-    _fields_ = [
-        ('tv_sec', ctypes.c_int64),
-        ('tv_nsec', ctypes.c_uint32),
-        ('__reserved', ctypes.c_int32),
-    ]
-
-
-class statx_buf(ctypes.Structure):
-    _fields_ = [
-        ('stx_mask', ctypes.c_uint32),
-        ('stx_blksize', ctypes.c_uint32),
-        ('stx_attributes', ctypes.c_uint64),
-        ('stx_nlink', ctypes.c_uint32),
-        ('stx_uid', ctypes.c_uint32),
-        ('stx_gid', ctypes.c_uint32),
-        ('stx_mode', ctypes.c_uint16),
-        ('__spare0', ctypes.c_uint16 * 1),
-        ('stx_ino', ctypes.c_uint64),
-        ('stx_size', ctypes.c_uint64),
-        ('stx_blocks', ctypes.c_uint64),
-        ('stx_attributes_mask', ctypes.c_uint64),
-        ('stx_atime', statx_timestamp),
-        ('stx_btime', statx_timestamp),
-        ('stx_ctime', statx_timestamp),
-        ('stx_mtime', statx_timestamp),
-        ('stx_rdev_major', ctypes.c_uint32),
-        ('stx_rdev_minor', ctypes.c_uint32),
-        ('stx_dev_major', ctypes.c_uint32),
-        ('stx_dev_minor', ctypes.c_uint32),
-        ('__spare2', ctypes.c_uint64 * 14),
-    ]
-
-
-STATX_BTIME = 0x00000200
-_libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
-_libc.statx.restype = ctypes.c_int
-_libc.statx.argtypes = [
-    ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint,
-    ctypes.POINTER(statx_buf),
-]
-
-
-def read_btime(path: str) -> int | None:
-    buf = statx_buf()
-    ret = _libc.statx(-100, path.encode(), 0, STATX_BTIME, ctypes.byref(buf))
-    if ret == 0 and (buf.stx_mask & STATX_BTIME):
-        return buf.stx_btime.tv_sec
-    return None
 
 
 def _ops():
@@ -106,22 +52,21 @@ class TestExfatRawBtime(unittest.TestCase):
         f = files[0]
         fpath = str(f)
 
-        bt_before = read_btime(fpath)
-        self.assertIsNotNone(bt_before, 'btime should be readable')
-
         target_dt = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
         expected_ts = int(target_dt.timestamp())
-        self.assertNotEqual(bt_before, expected_ts,
+
+        raw_before = ops.read_btime_raw(fpath)
+        self.assertIsNotNone(raw_before, 'raw btime should be readable')
+        self.assertNotEqual(raw_before, expected_ts,
                             'btime should differ from target before fix')
 
         ops.fix_exfat_raw(fpath, target_dt, dry_run=False)
 
-        bt_after = read_btime(fpath)
-        self.assertIsNotNone(bt_after, 'btime should be readable after fix')
+        raw_after = ops.read_btime_raw(fpath)
         self.assertEqual(
-            bt_after, expected_ts,
-            f'btime should be exactly {expected_ts} ({target_dt}), '
-            f'got {bt_after}')
+            raw_after, expected_ts,
+            f'raw btime should be exactly {expected_ts} ({target_dt}), '
+            f'got {raw_after}')
 
     def test_multiple_files_get_correct_btime(self):
         ops = _ops()
@@ -137,10 +82,10 @@ class TestExfatRawBtime(unittest.TestCase):
         for f, dt in targets:
             expected = int(dt.timestamp())
             ops.fix_exfat_raw(str(f), dt, dry_run=False)
-            bt = read_btime(str(f))
+            bt_raw = ops.read_btime_raw(str(f))
             self.assertEqual(
-                bt, expected,
-                f'{f.name}: expected {expected} ({dt}), got {bt}')
+                bt_raw, expected,
+                f'{f.name}: expected {expected} ({dt}), got {bt_raw}')
 
     def test_exfat_raw_is_registered_as_method(self):
         from btime import resolve_method, needs_processing_after, fix_file, detect_fs
