@@ -9,3 +9,4 @@ result
 .coverage
 test/sdcard.img
 test/sdcard.img.lock
+.coverage.*
