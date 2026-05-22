@@ -15,14 +15,14 @@ class TestPacificAuckland(unittest.TestCase):
                 "--- stderr ---\n" + result.stderr + "\n"
             )
         if result.returncode != 0:
-            m = re.search(r'Ran (\\d+) test', out)
+            m = re.search(r'Ran (\d+) test', out)
             n = int(m.group(1)) if m else 0
             self.fail(
                 "Pipeline FAILED under TZ=Pacific/Auckland (" + str(n) + " tests)\n"
                 "--- stdout ---\n" + result.stdout + "\n"
                 "--- stderr ---\n" + result.stderr + "\n"
             )
-        m = re.search(r'Ran (\\d+) test', out)
+        m = re.search(r'Ran (\d+) test', out)
         n = int(m.group(1)) if m else 0
         if n == 0 or 'skipped' in out:
             self.skipTest("integration was skipped")
