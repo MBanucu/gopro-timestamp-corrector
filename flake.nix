@@ -50,6 +50,10 @@
 
           security.sudo.enable = true;
           security.sudo.wheelNeedsPassword = false;
+          security.sudo.extraConfig = ''
+            Defaults !pam_session
+            Defaults !pam_setcred
+          '';
           security.sudo.extraRules = [{
             groups = [ "wheel" ];
             commands = [
