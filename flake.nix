@@ -30,7 +30,8 @@
       nixosTest = nixosPkgs.testers.nixosTest {
         name = "gopro-timestamp-corrector";
         nodes.machine = { pkgs, lib, ... }: {
-          virtualisation.memorySize = 2048;
+          virtualisation.cores = 4;
+          virtualisation.memorySize = 4096;
           time.timeZone = "Europe/Berlin";
 
           environment.systemPackages = with pkgs; [
@@ -83,7 +84,7 @@
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
               + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
-              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -j 2 -v 2>&1"
+              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -v 2>&1"
           )
         '';
       };
