@@ -255,8 +255,8 @@ class TestFullAutoIntegration(unittest.TestCase):
                         print(f'  {name} mtime: {o["mtime"]} -> {a["mtime"]} '
                               f'(Δ={self.median})')
                 if not mtime_ok and fix_btime != 'off':
-                    from strategies.exfat_raw import read_exfat_mtime_raw
-                    raw_ts = read_exfat_mtime_raw(str(f))
+                    from strategies.exfat_raw import exfat_ops
+                    raw_ts = exfat_ops.read_mtime_raw(str(f))
                     if raw_ts is not None:
                         raw_dt = datetime.fromtimestamp(raw_ts, tz=timezone.utc)
                         raw_diff = abs((raw_dt - expected_mtime).total_seconds())

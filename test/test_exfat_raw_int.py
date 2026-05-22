@@ -17,6 +17,12 @@ if _BD not in sys.path:
     sys.path.insert(0, _BD)
 
 
+def _ops():
+    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    io = ExfatRawIO()
+    return ExfatRawOps(io, ExfatRawFilesystem(io))
+
+
 class TestReadExfatMtimeRaw(unittest.TestCase):
     """read_exfat_mtime_raw must read mtime via raw block."""
 
@@ -50,39 +56,39 @@ class TestReadExfatMtimeRaw(unittest.TestCase):
         shutil.rmtree(cls._work, ignore_errors=True)
 
     def test_reads_mtime_from_directory_entry(self):
-        from strategies.exfat_raw import read_exfat_mtime_raw
+        ops = _ops()
         files = sorted(self._target.glob('*.MP4'))
         self.assertGreaterEqual(len(files), 1)
-        ts = read_exfat_mtime_raw(str(files[0]))
+        ts = ops.read_mtime_raw(str(files[0]))
         self.assertIsNotNone(ts)
         self.assertGreater(ts, 1778000000)
 
     def test_returns_none_on_nonexistent(self):
-        from strategies.exfat_raw import read_exfat_mtime_raw
-        self.assertIsNone(read_exfat_mtime_raw('/nonexistent/file.mp4'))
+        ops = _ops()
+        self.assertIsNone(ops.read_mtime_raw('/nonexistent/file.mp4'))
 
     def test_mtime_matches_btime_before_correction(self):
-        from strategies.exfat_raw import read_exfat_mtime_raw, read_exfat_btime_raw
+        ops = _ops()
         files = sorted(self._target.glob('*.MP4'))
-        mtime = read_exfat_mtime_raw(str(files[0]))
-        btime = read_exfat_btime_raw(str(files[0]))
+        mtime = ops.read_mtime_raw(str(files[0]))
+        btime = ops.read_btime_raw(str(files[0]))
         self.assertIsNotNone(mtime)
         self.assertIsNotNone(btime)
         self.assertLessEqual(abs(mtime - btime), 5)
 
     def test_mtime_matches_stat_on_nixos(self):
-        from strategies.exfat_raw import read_exfat_mtime_raw
+        ops = _ops()
         files = sorted(self._target.glob('*.MP4'))
         try:
             os.utime(files[0], (1234567890.0, 1234567890.0))
-            raw = read_exfat_mtime_raw(str(files[0]))
+            raw = ops.read_mtime_raw(str(files[0]))
             self.assertIsNotNone(raw)
         except (OSError, PermissionError):
             self.skipTest('os.utime() failed on this filesystem')
 
 
 class TestExfatRawBtimeDt(unittest.TestCase):
-    """_fix_exfat_raw with btime_dt must preserve creation time."""
+    """ExfatRawOps.fix_exfat_raw with btime_dt must preserve creation time."""
 
     @classmethod
     def setUpClass(cls):
@@ -114,21 +120,20 @@ class TestExfatRawBtimeDt(unittest.TestCase):
         shutil.rmtree(cls._work, ignore_errors=True)
 
     def test_btime_dt_preserves_creation_time(self):
-        from strategies.exfat_raw import read_exfat_btime_raw, _fix_exfat_raw
+        ops = _ops()
         import media
         files = sorted(self._target.glob('*'))
         first = files[0]
         orig_mtime = media.read_mtime(first)
-        orig_btime_raw = read_exfat_btime_raw(str(first))
+        orig_btime_raw = ops.read_btime_raw(str(first))
         self.assertIsNotNone(orig_btime_raw)
         new_mtime = orig_mtime + timedelta(hours=1)
         orig_btime_dt = datetime.fromtimestamp(orig_btime_raw, tz=timezone.utc)
-        _fix_exfat_raw(str(first), new_mtime, dry_run=False, btime_dt=orig_btime_dt)
-        after_btime_raw = read_exfat_btime_raw(str(first))
+        ops.fix_exfat_raw(str(first), new_mtime, dry_run=False, btime_dt=orig_btime_dt)
+        after_btime_raw = ops.read_btime_raw(str(first))
         self.assertIsNotNone(after_btime_raw)
         self.assertEqual(after_btime_raw, orig_btime_raw)
-        from strategies.exfat_raw import read_exfat_mtime_raw
-        after_mtime_raw = read_exfat_mtime_raw(str(first))
+        after_mtime_raw = ops.read_mtime_raw(str(first))
         expected_ts = int(new_mtime.replace(tzinfo=timezone.utc).timestamp())
         self.assertEqual(after_mtime_raw, expected_ts)
 

@@ -2,7 +2,6 @@
 import ctypes
 import ctypes.util
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -62,6 +61,12 @@ def read_btime(path: str) -> int | None:
     return None
 
 
+def _ops():
+    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    io = ExfatRawIO()
+    return ExfatRawOps(io, ExfatRawFilesystem(io))
+
+
 class TestExfatRawBtime(unittest.TestCase):
 
     @classmethod
@@ -95,9 +100,7 @@ class TestExfatRawBtime(unittest.TestCase):
             shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def test_set_btime_on_existing_file(self):
-        """Set btime via exFAT raw block and verify it changes to the exact target."""
-        from btime import _fix_exfat_raw
-
+        ops = _ops()
         files = sorted(self.target.iterdir())
         self.assertGreater(len(files), 0)
         f = files[0]
@@ -111,7 +114,7 @@ class TestExfatRawBtime(unittest.TestCase):
         self.assertNotEqual(bt_before, expected_ts,
                             'btime should differ from target before fix')
 
-        _fix_exfat_raw(fpath, target_dt, dry_run=False)
+        ops.fix_exfat_raw(fpath, target_dt, dry_run=False)
 
         bt_after = read_btime(fpath)
         self.assertIsNotNone(bt_after, 'btime should be readable after fix')
@@ -121,9 +124,7 @@ class TestExfatRawBtime(unittest.TestCase):
             f'got {bt_after}')
 
     def test_multiple_files_get_correct_btime(self):
-        """Different files get different btimes via exFAT raw block."""
-        from btime import _fix_exfat_raw
-
+        ops = _ops()
         files = sorted(self.target.iterdir())
         self.assertGreaterEqual(len(files), 3)
 
@@ -135,62 +136,58 @@ class TestExfatRawBtime(unittest.TestCase):
 
         for f, dt in targets:
             expected = int(dt.timestamp())
-            _fix_exfat_raw(str(f), dt, dry_run=False)
+            ops.fix_exfat_raw(str(f), dt, dry_run=False)
             bt = read_btime(str(f))
             self.assertEqual(
                 bt, expected,
                 f'{f.name}: expected {expected} ({dt}), got {bt}')
 
     def test_exfat_raw_is_registered_as_method(self):
-        """The exfat_raw method is recognized by resolve_method."""
         from btime import resolve_method, needs_processing_after, fix_file, detect_fs
-
         self.assertEqual(resolve_method('exfat_raw', 'exfat'), 'exfat_raw')
         self.assertTrue(needs_processing_after('exfat_raw'))
 
     def test_read_exfat_btime_raw_after_write(self):
-        """Set btime via _fix_exfat_raw, verify read_exfat_btime_raw reads it back."""
-        from strategies.exfat_raw import read_exfat_btime_raw
-        from btime import _fix_exfat_raw
-
+        ops = _ops()
         files = sorted(self.target.iterdir())
         self.assertGreater(len(files), 0)
         f = str(files[0])
 
-        # Set to a known timestamp with 10ms-aligned millisecond
         target_dt = datetime(2025, 12, 25, 10, 30, 45, 120000, tzinfo=timezone.utc)
         expected_ts = int(target_dt.timestamp())
 
-        _fix_exfat_raw(f, target_dt, dry_run=False)
+        ops.fix_exfat_raw(f, target_dt, dry_run=False)
 
-        raw_bt = read_exfat_btime_raw(f)
-        self.assertIsNotNone(raw_bt, 'read_exfat_btime_raw should return a value')
+        raw_bt = ops.read_btime_raw(f)
+        self.assertIsNotNone(raw_bt, 'read_btime_raw should return a value')
         self.assertEqual(
             raw_bt, expected_ts,
-            f'read_exfat_btime_raw should return {expected_ts} ({target_dt}), '
+            f'read_btime_raw should return {expected_ts} ({target_dt}), '
             f'got {raw_bt}')
 
     def test_read_exfat_btime_raw_returns_none_on_bad_path(self):
-        """read_exfat_btime_raw returns None for non-existent files."""
-        from strategies.exfat_raw import read_exfat_btime_raw
-        result = read_exfat_btime_raw('/nonexistent/file.mp4')
+        from strategies.exfat_raw import exfat_ops
+        result = exfat_ops.read_btime_raw('/nonexistent/file.mp4')
         self.assertIsNone(result)
 
     def test_exfat_raw_read_strategy_read_btime_raw(self):
-        """ExfatRawReadStrategy.read_btime_raw works like read_exfat_btime_raw."""
-        from strategies.exfat_raw_read import ExfatRawReadStrategy
-        from strategies.exfat_raw import read_exfat_btime_raw
+        from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, \
+            ExfatRawOps, ExfatRawReadStrategy, exfat_ops
 
         files = sorted(self.target.iterdir())
         self.assertGreater(len(files), 0)
         f = str(files[0])
 
-        strategy_val = ExfatRawReadStrategy.read_btime_raw(f)
-        direct_val = read_exfat_btime_raw(f)
+        io = ExfatRawIO()
+        fs = ExfatRawFilesystem(io)
+        ops = ExfatRawOps(io, fs)
+        strategy = ExfatRawReadStrategy(ops)
+        strategy_val = strategy.read_btime_raw(f)
+        direct_val = exfat_ops.read_btime_raw(f)
 
         self.assertEqual(
             strategy_val, direct_val,
-            'ExfatRawReadStrategy.read_btime_raw should match read_exfat_btime_raw')
+            'ExfatRawReadStrategy.read_btime_raw should match read_btime_raw')
 
 
 if __name__ == '__main__':

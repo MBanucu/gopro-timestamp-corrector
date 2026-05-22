@@ -247,7 +247,3 @@ def _resolve_mount_point(path):
         return r.stdout.strip()
     return None
 
-
-# ── Backward-compatible aliases for private functions ───────────
-
-from strategies.exfat_raw import _fix_exfat_raw  # noqa: E402, F401

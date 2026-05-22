@@ -174,8 +174,8 @@ def _probe_statx_btime_on_exfat(test_file: str) -> bool | None:
 
 
 def _probe_raw_read_btime_on_exfat(test_file: str) -> bool | None:
-    from strategies.exfat_raw import read_exfat_btime_raw
-    val = read_exfat_btime_raw(test_file)
+    from strategies.exfat_raw import exfat_ops
+    val = exfat_ops.read_btime_raw(test_file)
     return val is not None and val > 0
 
 

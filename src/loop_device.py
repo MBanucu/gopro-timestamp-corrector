@@ -22,3 +22,5 @@ def teardown_loop_device(loop_dev: str, mount_point: str | None = None):
     if loop_dev:
         subprocess.run(['sudo', 'umount', loop_dev], capture_output=True)
         subprocess.run(['sudo', 'losetup', '-d', loop_dev], capture_output=True)
+        from strategies.exfat_raw import exfat_io
+        exfat_io.clear_cache(loop_dev)

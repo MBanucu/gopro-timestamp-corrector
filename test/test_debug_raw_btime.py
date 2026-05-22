@@ -9,7 +9,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +19,14 @@ from shared import HAS_TK, decompress_sparse_image, setup_loop_device, teardown_
 _BD = str(Path(__file__).resolve().parent.parent / 'src')
 if _BD not in sys.path:
     sys.path.insert(0, _BD)
+
+
+def _raw_io():
+    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    io = ExfatRawIO()
+    fs = ExfatRawFilesystem(io)
+    ops = ExfatRawOps(io, fs)
+    return io, fs, ops
 
 
 class DebugRawBtime(unittest.TestCase):
@@ -75,7 +82,6 @@ class DebugRawBtime(unittest.TestCase):
         return files[0]
 
     def _resolve_device(self):
-        """Resolve block device for the current mount."""
         from btime import _resolve_device
         return _resolve_device(str(self._mount_point))
 
@@ -83,18 +89,34 @@ class DebugRawBtime(unittest.TestCase):
         from btime import _resolve_mount_point
         return _resolve_mount_point(str(self._mount_point))
 
+    @property
+    def _io(self):
+        if not hasattr(self, '__io'):
+            self.__io, self.__fs, self.__ops = _raw_io()
+        return self.__io
+
+    @property
+    def _fs(self):
+        if not hasattr(self, '__fs'):
+            self.__io, self.__fs, self.__ops = _raw_io()
+        return self.__fs
+
+    @property
+    def _ops(self):
+        if not hasattr(self, '__ops'):
+            self.__io, self.__fs, self.__ops = _raw_io()
+        return self.__ops
+
     def _exfat_boot(self):
-        from strategies.exfat_raw import _exfat_parse_boot
         dev = self._resolve_device()
         self.assertIsNotNone(dev)
-        boot = _exfat_parse_boot(dev)
+        boot = self._io.parse_boot(dev)
         self.assertIsNotNone(boot)
         return boot, dev
 
     # ── Tests ────────────────────────────────────────────────────
 
     def test_01_dd_write_read_raw(self):
-        """Direct dd write/read to loop device — verify persistence."""
         dev = self._resolve_device()
         test_offset = 100000 * 512
         expected = b'DEBUG_TEST_PATTERN_42'
@@ -112,24 +134,19 @@ class DebugRawBtime(unittest.TestCase):
                          f'dd write/read mismatch: expected={expected!r} actual={actual!r}')
 
     def test_02_dd_write_file_cluster_direct(self):
-        """Write to the cluster containing the first file's dir entry, read back raw."""
         boot, dev = self._exfat_boot()
         first = self._first_file()
-        from strategies.exfat_raw import _exfat_find_file_entry
-        entry = _exfat_find_file_entry(boot, str(dev), str(first))
+        entry = self._fs.find_file_entry(boot, str(dev), str(first))
         self.assertIsNotNone(entry, f'Could not find entry for {first.name}')
 
-        # Read the original creation time
         time_word = struct.unpack_from('<H', entry, 0x0C)[0]
         date_word = struct.unpack_from('<H', entry, 0x0E)[0]
         time_ms = entry[0x16]
         sys.stderr.write(f'[dbg] {first.name}: raw entry creation time_word={time_word} date_word={date_word} time_ms={time_ms}\n')
 
     def test_03_btime_readback_before_correction(self):
-        """Read btime via raw block before any correction."""
         first = self._first_file()
-        from strategies.exfat_raw import read_exfat_btime_raw
-        btime_val = read_exfat_btime_raw(str(first))
+        btime_val = self._ops.read_btime_raw(str(first))
         stat_r = subprocess.run(['stat', '-c', '%W', str(first)],
                                 capture_output=True, text=True)
         stat_val = int(stat_r.stdout.strip()) if stat_r.returncode == 0 and stat_r.stdout.strip() else None
@@ -137,9 +154,7 @@ class DebugRawBtime(unittest.TestCase):
         self.assertIsNotNone(btime_val, 'raw btime readback returned None')
 
     def test_04_fix_exfat_raw_then_readback(self):
-        """Call _fix_exfat_raw with a known delta, verify readback changes."""
         first = self._first_file()
-        from strategies.exfat_raw import read_exfat_btime_raw, _fix_exfat_raw
         import media
 
         orig_mtime = media.read_mtime(first)
@@ -150,30 +165,25 @@ class DebugRawBtime(unittest.TestCase):
 
         sys.stderr.write(f'[dbg] {first.name}: orig_mtime={orig_mtime} target_dt={target_dt} target_ts={target_ts}\n')
 
-        # Read btime before
-        before_btime = read_exfat_btime_raw(str(first))
+        before_btime = self._ops.read_btime_raw(str(first))
         sys.stderr.write(f'[dbg] {first.name}: before_btime={before_btime}\n')
 
-        # Apply correction
-        _fix_exfat_raw(str(first), target_dt, dry_run=False)
+        self._ops.fix_exfat_raw(str(first), target_dt, dry_run=False)
 
-        # Read btime after (via raw block)
-        after_btime = read_exfat_btime_raw(str(first))
+        after_btime = self._ops.read_btime_raw(str(first))
         stat_r = subprocess.run(['stat', '-c', '%W', str(first)],
                                 capture_output=True, text=True)
         after_stat = int(stat_r.stdout.strip()) if stat_r.returncode == 0 and stat_r.stdout.strip() else None
         sys.stderr.write(f'[dbg] {first.name}: after_raw={after_btime} after_stat={after_stat}\n')
 
-        # Verify the raw block readback shows the corrected time
         if after_btime is not None:
             diff = abs(after_btime - target_ts)
             sys.stderr.write(f'[dbg] {first.name}: diff={diff}s (target_ts={target_ts} after_raw={after_btime})\n')
             if diff > 2:
-                # Debug: re-read the raw entry and dump bytes
-                from strategies.exfat_raw import _exfat_parse_boot, _exfat_find_file_entry, _exfat_decode_time
+                from strategies.exfat_raw._pure import _exfat_decode_time
                 dev = self._resolve_device()
-                boot = _exfat_parse_boot(str(dev))
-                post_entry = _exfat_find_file_entry(boot, str(dev), str(first))
+                boot = self._io.parse_boot(str(dev))
+                post_entry = self._fs.find_file_entry(boot, str(dev), str(first))
                 if post_entry:
                     pt_word = struct.unpack_from('<H', post_entry, 0x0C)[0]
                     pd_word = struct.unpack_from('<H', post_entry, 0x0E)[0]
@@ -185,12 +195,8 @@ class DebugRawBtime(unittest.TestCase):
                          f'{first.name}: raw btime ({after_btime}) != target ({target_ts})')
 
     def test_05_raw_write_different_cluster(self):
-        """Verify a test pattern written at setUpClass (before any FS modificiations)
-        is still readable.  The write was done before test_04 to avoid the kernel
-        exFAT driver remounting read-only after a raw block modification (CI <6.12).
-        """
         if not self._test_05_available:
-            self.skipTest('setUpClass dd write failed — raw write rejected (kernel <6.12?)')
+            self.skipTest('setUpClass dd write failed')
         dev = self._resolve_device()
         if not dev:
             self.skipTest('Could not resolve loop device')
@@ -206,36 +212,27 @@ class DebugRawBtime(unittest.TestCase):
                          f'Cluster readback mismatch at offset {self._test_05_offset}')
 
     def test_06_find_entry_name_match(self):
-        """Verify _exfat_find_file_entry finds the right name and matches stat mtime."""
         boot, dev = self._exfat_boot()
-        from strategies.exfat_raw import _exfat_find_file_entry
         first = self._first_file()
-        entry = _exfat_find_file_entry(boot, str(dev), str(first))
+        entry = self._fs.find_file_entry(boot, str(dev), str(first))
         self.assertIsNotNone(entry)
 
-        # Read the modification time from the raw entry
         time_word = struct.unpack_from('<H', entry, 0x08)[0]
         date_word = struct.unpack_from('<H', entry, 0x0A)[0]
         time_ms = entry[0x14]
-        from strategies.exfat_raw import _exfat_decode_time
+        from strategies.exfat_raw._pure import _exfat_decode_time
         raw_mtime = _exfat_decode_time(time_word, date_word, time_ms)
 
-        # Verify via independent raw-block readback (bypasses kernel exFAT
-        # driver UTC offset bug on CI).
-        from strategies.exfat_raw import read_exfat_mtime_raw
-        via_raw_api = read_exfat_mtime_raw(str(first))
-        self.assertIsNotNone(via_raw_api, f'{first.name}: read_exfat_mtime_raw returned None')
+        via_raw_api = self._ops.read_mtime_raw(str(first))
+        self.assertIsNotNone(via_raw_api, f'{first.name}: read_mtime_raw returned None')
         diff = int(raw_mtime.timestamp()) - via_raw_api
         sys.stderr.write(f'[dbg] {first.name}: raw_mtime={raw_mtime} via_raw_api={via_raw_api} diff={diff}s\n')
         self.assertLessEqual(abs(diff), 2,
                              f'{first.name}: decoded mtime ({raw_mtime}) differs from '
-                             f'read_exfat_mtime_raw ({via_raw_api}) by {diff}s')
+                             f'read_mtime_raw ({via_raw_api}) by {diff}s')
 
     def test_07_write_all_files_then_readback(self):
-        """Apply _fix_exfat_raw to all 12 files, verify each via raw readback."""
-        from strategies.exfat_raw import read_exfat_btime_raw, _fix_exfat_raw
         import media
-
         files = sorted(self._target.glob('*'))
         self.assertGreaterEqual(len(files), 1)
         delta = timedelta(hours=-2)
@@ -245,9 +242,9 @@ class DebugRawBtime(unittest.TestCase):
             target_dt = orig_mtime + delta
             target_ts = int(target_dt.replace(tzinfo=timezone.utc).timestamp())
 
-            before_btime = read_exfat_btime_raw(str(fp))
-            _fix_exfat_raw(str(fp), target_dt, dry_run=False)
-            after_btime = read_exfat_btime_raw(str(fp))
+            before_btime = self._ops.read_btime_raw(str(fp))
+            self._ops.fix_exfat_raw(str(fp), target_dt, dry_run=False)
+            after_btime = self._ops.read_btime_raw(str(fp))
 
             stat_r = subprocess.run(['stat', '-c', '%W', str(fp)],
                                     capture_output=True, text=True)

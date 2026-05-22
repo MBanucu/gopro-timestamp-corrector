@@ -91,9 +91,8 @@ class TestLoopDevice(unittest.TestCase):
     """Verify loop device operations."""
 
     def test_backing_file_resolution(self):
-        """_exfat_backing_file must resolve the backing file for loop devices."""
-        from strategies.exfat_raw import _exfat_backing_file
-        # Create a temp image and set up loop device
+        """ExfatRawIO._backing_file must resolve the backing file for loop devices."""
+        from strategies.exfat_raw import ExfatRawIO
         import tempfile
         img = tempfile.NamedTemporaryFile(suffix='.img', delete=False)
         img.close()
@@ -106,7 +105,8 @@ class TestLoopDevice(unittest.TestCase):
                 self.skipTest('losetup failed')
             loop_dev = r.stdout.strip()
             try:
-                backing = _exfat_backing_file(loop_dev)
+                io = ExfatRawIO()
+                backing = io._backing_file(loop_dev)
                 self.assertIsNotNone(backing,
                                      f'No backing file for {loop_dev}')
                 self.assertEqual(backing, img.name,
@@ -151,31 +151,28 @@ class TestSparseCopy(unittest.TestCase):
                            check=True, capture_output=True)
             loop_dev, mount_point = setup_loop_device(str(img_path))
             try:
-                from strategies.exfat_raw import (
-                    _exfat_parse_boot, _exfat_read_fat,
-                    _exfat_find_in_dir,
-                )
+                from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem
                 from btime import _resolve_device
+                io = ExfatRawIO()
+                fs = ExfatRawFilesystem(io)
                 dev = _resolve_device(mount_point)
-                boot = _exfat_parse_boot(dev)
+                boot = io.parse_boot(dev)
                 rc = boot['root_cluster']
-                fat_rc = _exfat_read_fat(boot, dev, rc)
+                fat_rc = fs.read_fat(boot, dev, rc)
                 self.assertNotEqual(fat_rc, 0,
                                     f'Root cluster {rc} has 0 FAT entry')
-                # Check DCIM
-                dcim = _exfat_find_in_dir(boot, dev, rc, 'DCIM')
+                dcim = fs.find_in_dir(boot, dev, rc, 'DCIM')
                 if dcim:
                     import struct
                     dcim_cl = struct.unpack_from('<I', dcim[4][1], 0x14)[0]
-                    fat_dcim = _exfat_read_fat(boot, dev, dcim_cl)
+                    fat_dcim = fs.read_fat(boot, dev, dcim_cl)
                     self.assertNotEqual(fat_dcim, 0,
                                         f'DCIM cluster {dcim_cl} has 0 FAT entry')
-                # Check 100GOPRO
                 if dcim:
-                    gopro = _exfat_find_in_dir(boot, dev, dcim_cl, '100GOPRO')
+                    gopro = fs.find_in_dir(boot, dev, dcim_cl, '100GOPRO')
                     if gopro:
                         gopro_cl = struct.unpack_from('<I', gopro[4][1], 0x14)[0]
-                        fat_gopro = _exfat_read_fat(boot, dev, gopro_cl)
+                        fat_gopro = fs.read_fat(boot, dev, gopro_cl)
                         self.assertNotEqual(fat_gopro, 0,
                                             f'100GOPRO cluster {gopro_cl} has 0 FAT entry')
             finally:
