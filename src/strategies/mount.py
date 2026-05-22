@@ -130,9 +130,35 @@ class ImageMountStrategy(MountStrategy):
             if r.returncode != 0:
                 return None
             loop_dev = r.stdout.strip()
+            # Verify the backing file matches our image (TOCTOU guard).
+            # Two parallel losetup -f calls could both get the same device;
+            # the last one wins.  If we lost the race, retry.
+            back = self._read_backing_file(loop_dev)
+            while back is not None and back != str(self._img_path):
+                r = subprocess.run(
+                    ['sudo', 'losetup', '-f', '--show', str(self._img_path)],
+                    capture_output=True, text=True)
+                if r.returncode != 0:
+                    return None
+                loop_dev = r.stdout.strip()
+                back = self._read_backing_file(loop_dev)
             return self._via_sudo_with(loop_dev)
         except FileNotFoundError:
             return None
+
+    @staticmethod
+    def _read_backing_file(loop_dev: str) -> str | None:
+        """Read the backing file path for *loop_dev* via sysfs."""
+        dev_name = loop_dev.lstrip('/dev/')
+        r = subprocess.run(
+            ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
+            capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+        r2 = subprocess.run(
+            ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', loop_dev],
+            capture_output=True, text=True, timeout=5)
+        return r2.stdout.strip() or None if r2.returncode == 0 else None
 
     def _via_sudo_with(self, loop_dev: str) -> tuple[str, str] | None:
         """Mount an already-allocated loop device via ``sudo mount``.
