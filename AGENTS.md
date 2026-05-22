@@ -109,8 +109,10 @@ output strings (e.g., `2026:05:14 14:52:00+09:00`) and converts to UTC, instead
 of stripping the offset and stamping the local time as UTC.  The old `_strip_tz()`
 function has been removed.
 
-This is critical for the timezone integration test (`test_timezone_integration.py`)
-which runs the full correction pipeline under 7 different system timezones.
+This is critical for the timezone integration test — see
+`test_timezone_integration.py` (shared helpers) and the generated
+`test_timezone_<slug>.py` wrappers (one per TZ).  The wrappers are run in
+parallel by ``run_parallel.py`` (one subprocess per TZ).
 
 ## Test notes
 
@@ -125,6 +127,19 @@ which runs the full correction pipeline under 7 different system timezones.
 - `setup_loop_device(img_path)` / `teardown_loop_device(loop_dev, mount_point)`
   — loop device + mount lifecycle. Skips test on failure.
 - `write_sparse(gz_path, img_path)` — low-level streaming decompressor.
+
+### `test_timezone_integration.py` — per‑TZ wrappers
+
+- `test_timezone_integration.py` is a **helper module** with `run_tz(tz)` that
+  spawns a subprocess running the full pipeline under the given ``TZ``.
+- 7 generated ``test_timezone_<slug>.py`` files (one per timezone) each call
+  ``run_tz()`` with their specific timezone.
+- ``run_parallel.py`` auto‑discovers the wrapper files and runs them in
+  parallel (up to 4 at a time), reducing wall‑clock from ~210s to ~60s.
+- To add a new timezone, add it to ``TIMEZONES`` in
+  ``test_timezone_integration.py`` then run
+  ``python3 test/test_timezone_integration.py`` to regenerate the wrappers.
+- Generated files are tracked in git (regenerate before committing).
 
 ### `test_debug_raw_btime.py` (debug tests)
 
@@ -144,7 +159,7 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 | `debug` | `test_debug_raw_btime` (7 tests) | 30s |
 | `unit` | `test.test_unit` (28 tests) | 5s |
 | `cluster` | `test_cluster_coherence` | 45s |
-| `full` | GUI correction + timezone integration | 3min |
+| `full` | GUI correction + timezone integration | 90s |
 
 ## Mount strategy pattern
 

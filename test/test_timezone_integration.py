@@ -1,18 +1,15 @@
-"""Run the full integration pipeline under multiple system timezones.
+"""Shared helpers for per‑timezone integration tests.
 
-Each timezone runs in an isolated subprocess to verify the timestamp
-correction produces identical results regardless of local timezone.
+Each timezone gets its own ``test_timezone_<name>.py`` module so that
+``run_parallel.py`` can run them all in parallel (one subprocess per TZ).
 
-Invoke under nix develop so the subprocess python has pyexiftool:
-
-    nix develop --command python3 -m unittest test.test_timezone_integration -v
+When adding a new timezone:
+1. Add it to ``TIMEZONES`` below.
+2. Run ``python3 test/test_timezone_integration.py`` to regenerate wrappers.
 """
-
 import os
-import re
 import subprocess
 import sys
-import unittest
 from pathlib import Path
 
 
@@ -26,51 +23,74 @@ TIMEZONES = [
     'Pacific/Auckland',
 ]
 
-_TIMEOUT = 600
+TEST_MODULE = 'test.test_full_auto_integration.TestFullAutoIntegration.test_full_pipeline'
 
 
-class TestTimezoneIntegration(unittest.TestCase):
-    """Run the full auto integration pipeline under each system TZ."""
+def slug(tz: str) -> str:
+    return tz.lower().replace('/', '_').replace('-', '_')
 
-    def test_full_pipeline_under_timezones(self):
-        test_dir = Path(__file__).parent.resolve()
-        repo_root = test_dir.parent
-        module = 'test.test_full_auto_integration.TestFullAutoIntegration.test_full_pipeline'
 
-        for tz in TIMEZONES:
-            with self.subTest(tz=tz):
-                env = os.environ.copy()
-                env['TZ'] = tz
-                env['PYTHONPATH'] = f'src:{test_dir}'
-                r = subprocess.run(
-                    [sys.executable, '-m', 'unittest', module, '-v'],
-                    cwd=str(repo_root),
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=_TIMEOUT,
-                )
-                output = r.stdout + r.stderr
-                if 'Ran ' not in output:
-                    self.fail(
-                        f'No tests were discovered in subprocess under TZ={tz}\n'
-                        f'--- stdout ---\n{r.stdout}\n'
-                        f'--- stderr ---\n{r.stderr}\n'
-                    )
-                m = re.search(r'Ran (\d+) test', output)
-                test_count = int(m.group(1)) if m else 0
-                if r.returncode != 0:
-                    self.fail(
-                        f'Integration test FAILED under TZ={tz} '
-                        f'({test_count} tests)\n'
-                        f'--- stdout ---\n{r.stdout}\n'
-                        f'--- stderr ---\n{r.stderr}\n'
-                    )
-                if test_count == 0 or 'skipped' in output:
-                    print(f'  [{tz}] {test_count} tests ran (integration was skipped)')
-                else:
-                    print(f'  [{tz}] {test_count} tests passed')
+def cls_name(tz: str) -> str:
+    return ''.join(w.capitalize() for w in slug(tz).split('_'))
+
+
+def run_tz(tz: str) -> subprocess.CompletedProcess:
+    """Run the full pipeline inside a subprocess with ``TZ={tz}``."""
+    test_dir = Path(__file__).parent.resolve()
+    repo_root = test_dir.parent
+    env = os.environ.copy()
+    env['TZ'] = tz
+    env['PYTHONPATH'] = f'src:{test_dir}'
+    return subprocess.run(
+        [sys.executable, '-m', 'unittest', TEST_MODULE, '-v'],
+        cwd=str(repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+
+
+def _regenerate_wrappers():
+    """Create/overwrite ``test_timezone_<slug>.py`` for every TZ in TIMEZONES."""
+    here = Path(__file__).parent.resolve()
+    for tz in TIMEZONES:
+        s = slug(tz)
+        cn = cls_name(tz)
+        content = '''"""Timezone test: {tz}."""
+import re
+import unittest
+from test_timezone_integration import run_tz
+
+
+class Test{cn}(unittest.TestCase):
+    def test_pipeline(self):
+        result = run_tz('{tz}')
+        out = result.stdout + result.stderr
+        if 'Ran ' not in out:
+            self.fail(
+                "No tests discovered under TZ={tz}\\n"
+                "--- stdout ---\\n" + result.stdout + "\\n"
+                "--- stderr ---\\n" + result.stderr + "\\n"
+            )
+        if result.returncode != 0:
+            m = re.search(r'Ran (\\\\d+) test', out)
+            n = int(m.group(1)) if m else 0
+            self.fail(
+                "Pipeline FAILED under TZ={tz} (" + str(n) + " tests)\\n"
+                "--- stdout ---\\n" + result.stdout + "\\n"
+                "--- stderr ---\\n" + result.stderr + "\\n"
+            )
+        m = re.search(r'Ran (\\\\d+) test', out)
+        n = int(m.group(1)) if m else 0
+        if n == 0 or 'skipped' in out:
+            print("  [{tz}] " + str(n) + " tests (integration was skipped)")
+        else:
+            print("  [{tz}] " + str(n) + " tests passed")
+'''.format(tz=tz, cn=cn)
+        (here / f'test_timezone_{s}.py').write_text(content.lstrip('\n'))
+    print(f'Regenerated {len(TIMEZONES)} wrapper files.')
 
 
 if __name__ == '__main__':
-    unittest.main()
+    _regenerate_wrappers()

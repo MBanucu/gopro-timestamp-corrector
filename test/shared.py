@@ -45,11 +45,17 @@ def decompress_sparse_image(gz_path: Path, dest_path: Path) -> Path:
     Writes non-zero data blocks directly into a sparse file without
     ever creating a dense 8 GB intermediate file on disk.
 
+    Uses ``fcntl.flock`` on a sidecar lockfile so that concurrent
+    callers (e.g. parallel subprocesses) do not race on the cache.
+
     Returns *dest_path* (already exists or freshly decompressed).
     """
-    if dest_path.exists():
-        return dest_path
-    write_sparse(gz_path, dest_path)
+    import fcntl
+    lock_path = dest_path.with_suffix('.img.lock')
+    with open(lock_path, 'w') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        if not dest_path.exists():
+            write_sparse(gz_path, dest_path)
     return dest_path
 
 
