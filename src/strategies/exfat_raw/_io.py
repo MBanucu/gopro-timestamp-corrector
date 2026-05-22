@@ -49,12 +49,29 @@ class ExfatRawIO:
     # ── low-level I/O ────────────────────────────────────────────
 
     def read(self, device: str, offset: int, size: int) -> bytes:
+        backing = self._backing_file(device)
+        if backing and os.access(backing, os.R_OK):
+            fd = os.open(backing, os.O_RDONLY)
+            try:
+                return os.pread(fd, size, offset)
+            finally:
+                os.close(fd)
         cmd = ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
                f'count={size}', 'status=none']
         r = subprocess.run(cmd, capture_output=True)
         return r.stdout
 
     def write(self, device: str, offset: int, data: bytes):
+        backing = self._backing_file(device)
+        if backing and os.access(backing, os.W_OK):
+            fd = os.open(backing, os.O_WRONLY)
+            try:
+                n = os.pwrite(fd, data, offset)
+                assert n == len(data)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            return
         with tempfile.NamedTemporaryFile() as tf:
             tf.write(data)
             tf.flush()
