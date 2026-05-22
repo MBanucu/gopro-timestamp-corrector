@@ -14,6 +14,15 @@ class TestFullAutoIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # Debug: show timezone info that affects this process
+        import time as _time
+        tz = os.environ.get('TZ', '(unset)')
+        print(f'[tzdiag] TZ={tz!r} time.tzname={_time.tzname!r} '
+              f'time.timezone={_time.timezone} is_dst={_time.daylight}')
+        import datetime as _dt
+        print(f'[tzdiag] datetime.now()={_dt.datetime.now()!r} '
+              f'datetime.now(utc)={_dt.datetime.now(_dt.timezone.utc)!r}')
+
         cls._work_dir = None
         cls._temp_dir = None
         cls.mount_point = None
@@ -98,9 +107,14 @@ class TestFullAutoIntegration(unittest.TestCase):
         exif_batch = self._read_exif_batch(files)
         md = {}
         for f in files:
+            mtime = self._read_mtime(f)
+            if mtime is not None:
+                import os as _os
+                raw_ts = _os.path.getmtime(f)
+                print(f'[tzdiag] {f.name}: os.path.getmtime()={raw_ts} -> {mtime}')
             md[f] = {
                 'exif': exif_batch.get(f),
-                'mtime': self._read_mtime(f),
+                'mtime': mtime,
                 'btime': self._read_btime(f),
             }
         return md
