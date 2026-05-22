@@ -1,5 +1,6 @@
 """High-level exFAT raw-block operations — read/write btime, mtime, correction."""
 
+import os
 import struct
 import subprocess
 from datetime import datetime, timezone
@@ -59,7 +60,8 @@ class ExfatRawOps:
     # ── core fix operation ───────────────────────────────────────
 
     def fix_exfat_raw(self, filepath: str, dt: datetime, dry_run: bool,
-                       btime_dt: datetime | None = None):
+                       btime_dt: datetime | None = None,
+                       update_cache: bool = True):
         from btime import _resolve_device
 
         device = _resolve_device(filepath)
@@ -129,5 +131,12 @@ class ExfatRawOps:
         self._fs.write_clusters(boot, device, [fchain[fci]], [bytes(cluster_buf)])
 
         subprocess.run(['sync'])
+
+        if not dry_run and update_cache:
+            mtime_ts = utc.timestamp()
+            try:
+                os.utime(filepath, (mtime_ts, mtime_ts))
+            except OSError:
+                pass
 
         print(f"    \u2713  btime corrected via exFAT raw block write ({label} UTC)")
