@@ -2,6 +2,9 @@
 
 import gzip
 import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -71,6 +74,24 @@ def write_sparse(gz_path: Path, img_path: Path):
                 os.lseek(dst.fileno(), offset, os.SEEK_SET)
                 dst.write(chunk)
             offset += len(chunk)
+
+
+def prepare_sparse_image(gz_path: Path, prefix: str = 'gopro_') -> tuple[Path, Path]:
+    """Decompress *gz_path* to a cached location (if needed), then copy
+    via ``cp --sparse=always`` to an isolated temp working directory.
+
+    Returns ``(temp_dir, image_copy_path)``.
+    """
+    cached = gz_path.with_suffix('')  # e.g. sdcard.img.gz → sdcard.img
+    decompress_sparse_image(gz_path, cached)
+
+    work_dir = Path(tempfile.mkdtemp(prefix=prefix))
+    img_copy = work_dir / cached.name
+    subprocess.run(
+        ['cp', '--sparse=always', str(cached), str(img_copy)],
+        check=True, capture_output=True,
+    )
+    return work_dir, img_copy
 
 
 def setup_loop_device(img_path):
