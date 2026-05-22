@@ -4,7 +4,8 @@ import subprocess
 import re
 from pathlib import Path
 
-from shared import decompress_sparse_image, setup_loop_device, teardown_loop_device
+from shared import prepare_sparse_image, setup_loop_device, teardown_loop_device
+import shutil
 
 
 class TestImgIntegration(unittest.TestCase):
@@ -12,18 +13,20 @@ class TestImgIntegration(unittest.TestCase):
     def setUpClass(cls):
         cls.mount_point = None
         cls.loop_dev = None
+        cls._work_dir = None
 
         gz_path = Path(__file__).parent / 'sdcard.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest(f"Compressed image not found at {gz_path}")
-        img_path = Path(__file__).parent / 'sdcard.img'
-        cls.img_path = decompress_sparse_image(gz_path, img_path)
+        cls._work_dir, cls.img_path = prepare_sparse_image(gz_path)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
 
     @classmethod
     def tearDownClass(cls):
         teardown_loop_device(cls.loop_dev, cls.mount_point)
+        if cls._work_dir:
+            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def test_gps_correction_on_img(self):
         target = Path(self.mount_point) / 'DCIM' / '100GOPRO'

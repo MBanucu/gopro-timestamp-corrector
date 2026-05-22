@@ -12,22 +12,9 @@ nix run .#test -- test_analysis test_gps  # multiple specific modules
 nix develop            # dev shell with exiftool, e2fsprogs, etc.
 ```
 
-## Tests
-
-```sh
-# Parallel runner (default: all cores):
-PYTHONPATH=src:test python3 test/run_parallel.py -j 4
-
-# Single test module:
-PYTHONPATH=src:test python3 -m unittest test.test_datepicker -v
-
-# Serial discovery:
-PYTHONPATH=src:test python3 -m unittest discover -s test -v
-```
-
 - GUI tests run headlessly via Xvfb (no display required).
 - Integration tests (`test_exfat_raw_btime.py`, `test_fuse_faketime.py`, `test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`.
-- `test/test_strategy.py` writes temp files, must be run from repo root (`PYTHONPATH=src:test`).
+- `test/test_strategy.py` writes temp files, must be run from repo root.
 - Large fixture: `test/sdcard.img.gz` (~14 MB, decompressed on first test run).
 
 ## Architecture
@@ -126,6 +113,18 @@ This is critical for the timezone integration test (`test_timezone_integration.p
 which runs the full correction pipeline under 7 different system timezones.
 
 ## Test notes
+
+### `test/shared.py` — test image helpers
+
+- `decompress_sparse_image(gz_path, dest_path)` — decompresses a `.gz` sparse image
+  to `dest_path` if not already present; no-op on subsequent calls.
+- `prepare_sparse_image(gz_path, prefix='gopro_')` — decompresses to a cached
+  location (reuses existing cache), then `cp --sparse=always` to a
+  `tempfile.mkdtemp()` work dir. Returns `(work_dir, copy_path)` for safe
+  isolated testing. Used by all tests that mount `sdcard.img`.
+- `setup_loop_device(img_path)` / `teardown_loop_device(loop_dev, mount_point)`
+  — loop device + mount lifecycle. Skips test on failure.
+- `write_sparse(gz_path, img_path)` — low-level streaming decompressor.
 
 ### `test_debug_raw_btime.py` (debug tests)
 

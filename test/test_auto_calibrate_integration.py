@@ -6,7 +6,7 @@ import unittest
 from datetime import timezone
 from pathlib import Path
 
-from shared import HAS_TK, decompress_sparse_image, setup_loop_device, teardown_loop_device
+from shared import HAS_TK, prepare_sparse_image, setup_loop_device, teardown_loop_device
 
 if HAS_TK:
     import tkinter as tk
@@ -16,15 +16,14 @@ if HAS_TK:
 class TestAutoCalibrateIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._temp_dir = None
+        cls._work_dir = None
         cls.mount_point = None
         cls.loop_dev = None
 
         gz_path = Path(__file__).parent / 'sdcard.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest(f'Compressed image not found at {gz_path}')
-        img_path = Path(__file__).parent / 'sdcard.img'
-        cls.img_path = decompress_sparse_image(gz_path, img_path)
+        cls._work_dir, cls.img_path = prepare_sparse_image(gz_path)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
 
@@ -37,8 +36,8 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         teardown_loop_device(cls.loop_dev, cls.mount_point)
-        if cls._temp_dir:
-            shutil.rmtree(cls._temp_dir, ignore_errors=True)
+        if cls._work_dir:
+            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def setUp(self):
         self.root = tk.Tk()

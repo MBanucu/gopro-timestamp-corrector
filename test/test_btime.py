@@ -5,7 +5,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from shared import decompress_sparse_image, setup_loop_device, teardown_loop_device
+from shared import prepare_sparse_image, setup_loop_device, teardown_loop_device
 
 
 import btime
@@ -16,12 +16,12 @@ class TestBtimeFsDetection(unittest.TestCase):
     def setUpClass(cls):
         cls.loop_dev = None
         cls.mount_point = None
+        cls._work_dir = None
 
         gz_path = Path(__file__).parent / 'sdcard.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest(f"Compressed image not found at {gz_path}")
-        img_path = Path(__file__).parent / 'sdcard.img'
-        cls.img_path = decompress_sparse_image(gz_path, img_path)
+        cls._work_dir, cls.img_path = prepare_sparse_image(gz_path)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
         cls.test_path = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
@@ -29,6 +29,8 @@ class TestBtimeFsDetection(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         teardown_loop_device(cls.loop_dev, cls.mount_point)
+        if cls._work_dir:
+            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def test_detect_fs_exfat(self):
         fs = btime.detect_fs(self.test_path)
