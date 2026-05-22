@@ -7,44 +7,35 @@ import tempfile
 
 
 class ExfatRawIO:
-    """Raw block I/O with per-instance backing-file cache.
+    """Raw block I/O — reads/writes through ``/dev/loopN`` via ``sudo dd``.
 
-    Each instance has its own backing-file cache, making it safe to
-    use in tests without cross-contamination.  The canonical singleton
-    is ``exfat_io`` in :mod:`strategies.exfat_raw`.
+    All I/O goes through the loop device (not the backing file) to
+    keep the loop device's page cache coherent.  ``_backing_file()``
+    always re-reads from sysfs (no cache) to detect TOCTOU races
+    where another process reassigned our loop device.
     """
 
-    def __init__(self):
-        self._backing_cache: dict[str, str | None] = {}
-
-    # ── internal: backing-file resolution ────────────────────────
+    # ── internal: backing-file resolution (no cache) ──────────────
 
     def _backing_file(self, device: str) -> str | None:
-        if device not in self._backing_cache:
-            dev_name = device.lstrip('/dev/')
-            for cmd in (
-                ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
-                ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
-                ['losetup', '-n', '-O', 'BACK-FILE', device],
-                ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
-            ):
-                try:
-                    r = subprocess.run(
-                        cmd, capture_output=True, text=True, timeout=5)
-                    if r.returncode == 0:
-                        self._backing_cache[device] = r.stdout.strip() or None
-                        break
-                except Exception:
-                    pass
-            else:
-                self._backing_cache[device] = None
-        return self._backing_cache[device]
+        dev_name = device.lstrip('/dev/')
+        for cmd in (
+            ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
+            ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
+            ['losetup', '-n', '-O', 'BACK-FILE', device],
+            ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
+        ):
+            try:
+                r = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=5)
+                if r.returncode == 0:
+                    return r.stdout.strip() or None
+            except Exception:
+                pass
+        return None
 
     def clear_cache(self, device: str | None = None):
-        if device is None:
-            self._backing_cache.clear()
-        else:
-            self._backing_cache.pop(device, None)
+        pass  # no-op — no backing-file cache to clear
 
     # ── low-level I/O ────────────────────────────────────────────
 
@@ -55,12 +46,11 @@ class ExfatRawIO:
         return r.stdout
 
     def write(self, device: str, offset: int, data: bytes):
-        blen = len(data)
         with tempfile.NamedTemporaryFile() as tf:
             tf.write(data)
             tf.flush()
             cmd = ['sudo', 'dd', f'if={tf.name}', f'of={device}',
-                   'bs=1', f'seek={offset}', f'count={blen}',
+                   'bs=1', f'seek={offset}', f'count={len(data)}',
                    'status=none', 'conv=fsync']
             subprocess.run(cmd, check=True, capture_output=True)
 

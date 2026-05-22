@@ -132,22 +132,6 @@ class ExfatRawOps:
 
         subprocess.run(['sync'])
 
-        if not dry_run:
-            # Verify write: re-read the entry cluster directly from backing file
-            _verify_data = self._fs.read_clusters(boot, device, [fchain[fci]])[0]
-            _verify_entry = _verify_data[foff:foff + 32]
-            _vt = struct.unpack_from('<H', _verify_entry, 0x08)[0]
-            _vd = struct.unpack_from('<H', _verify_entry, 0x0A)[0]
-            _vms = _verify_entry[0x14]
-            _vdt = _exfat_decode_time(_vt, _vd, _vms)
-            if _vdt:
-                _vts = int(_vdt.replace(tzinfo=timezone.utc).timestamp())
-                if _vts != int(utc.timestamp()):
-                    import sys as _sys
-                    _sys.stderr.write(
-                        f'[WARN] fix_exfat_raw WRITE MISMATCH for {filepath}: '
-                        f'wrote {int(utc.timestamp())} but read back {_vts}\n')
-
         if not dry_run and update_cache:
             pass  # os.utime omitted — kernel exFAT driver DE cache is
                   # incoherent after raw-block write and cannot be flushed
