@@ -138,6 +138,11 @@ class Writer:
             emb_pairs = [(j.path, j.target_embedded) for j in jobs
                          if j.target_embedded is not None]
             batch_ok = self._session.write_embedded_batch(emb_pairs)
+            # Sync after exif metadata write to flush dirty inodes
+            # before the raw-block correction below.  Without this,
+            # kernel writeback may overwrite the corrected directory
+            # entry with the dirty inode's mtime (= now).
+            subprocess.run(['sync'])
         else:
             batch_ok = True
 
