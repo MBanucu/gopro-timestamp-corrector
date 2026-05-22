@@ -66,6 +66,17 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
 
 - Writes **both** creation time AND modification time in one raw-block access.
 - Calls `sync()` after write to flush pending kernel writes.
+- **Does NOT call `os.utime()`** — the kernel exFAT driver maintains its own
+  in-memory directory-entry cache that is not invalidated by raw-block writes.
+  Calling `os.utime()` after a raw-block write causes the driver to read the
+  stale directory entry from its cache and overwrite the raw-block changes.
+  The following mechanisms were tested empirically (12 runs × 2 workers each,
+  24 worker attempts per strategy) and all **failed** to prevent the overwrite:
+  ``fsync`` (file & dir), ``stat``, ``open``/``read``/``pread``, ``sleep``,
+  ``sync``, ``subprocess touch -t``, double ``os.utime``, ``rewrite``.
+  The only reliable option is to skip ``os.utime()`` entirely after a
+  raw-block write.  The stale kernel cache is a cosmetic issue:
+  ``stat`` shows the old mtime, but the raw block data is correct.
 - **Does NOT call `drop_caches`** — on older kernels (<6.12), `drop_caches` with
   loop devices over sparse backing files causes `EIO` on subsequent reads.
   `sync` alone is sufficient for the raw block write to persist.

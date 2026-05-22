@@ -133,10 +133,9 @@ class ExfatRawOps:
         subprocess.run(['sync'])
 
         if not dry_run and update_cache:
-            mtime_ts = utc.timestamp()
-            try:
-                os.utime(filepath, (mtime_ts, mtime_ts))
-            except OSError:
-                pass
+            pass  # os.utime omitted — kernel exFAT driver DE cache is
+                  # incoherent after raw-block write and cannot be flushed
+                  # from userspace; utime would read stale btime and
+                  # overwrite the raw-block changes.
 
         print(f"    \u2713  btime corrected via exFAT raw block write ({label} UTC)")

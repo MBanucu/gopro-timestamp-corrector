@@ -49,26 +49,18 @@ class ExfatRawIO:
     # ── low-level I/O ────────────────────────────────────────────
 
     def read(self, device: str, offset: int, size: int) -> bytes:
-        backing = self._backing_file(device)
-        target = backing or device
-        use_sudo = not (backing and os.access(backing, os.R_OK))
-        cmd = (['sudo'] if use_sudo else []) + [
-            'dd', f'if={target}', 'bs=1', f'skip={offset}',
-            f'count={size}', 'status=none']
+        cmd = ['sudo', 'dd', f'if={device}', 'bs=1', f'skip={offset}',
+               f'count={size}', 'status=none']
         r = subprocess.run(cmd, capture_output=True)
         return r.stdout
 
     def write(self, device: str, offset: int, data: bytes):
-        backing = self._backing_file(device)
-        target = backing or device
-        use_sudo = not (backing and os.access(backing, os.W_OK))
         with tempfile.NamedTemporaryFile() as tf:
             tf.write(data)
             tf.flush()
-            cmd = (['sudo'] if use_sudo else []) + [
-                'dd', f'if={tf.name}', f'of={target}',
-                'bs=1', f'seek={offset}', f'count={len(data)}',
-                'status=none', 'conv=fsync']
+            cmd = ['sudo', 'dd', f'if={tf.name}', f'of={device}',
+                   'bs=1', f'seek={offset}', f'count={len(data)}',
+                   'status=none', 'conv=fsync']
             subprocess.run(cmd, check=True, capture_output=True)
 
     # ── boot sector ──────────────────────────────────────────────
