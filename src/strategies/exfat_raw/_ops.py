@@ -80,8 +80,6 @@ class ExfatRawOps:
             print(f"    Would set btime via exFAT raw block write to {label} UTC")
             return
 
-        subprocess.run(['sync'])
-
         resolved = self._fs._resolve_path(filepath)
         if not resolved:
             raise RuntimeError(f"Could not resolve path {filepath}")
@@ -130,7 +128,10 @@ class ExfatRawOps:
             off += 32
         self._fs.write_clusters(boot, device, [fchain[fci]], [bytes(cluster_buf)])
 
-        subprocess.run(['sync'])
+        # fsync on the backing file (inside _io.write) already persists data.
+        # No global sync() here — it triggers exFAT driver writeback that can
+        # flush dirty inodes from ANOTHER mount to THIS mount's directory
+        # entry (kernel 6.12.87 cross-mount DE corruption bug).
 
         if not dry_run and update_cache:
             pass  # os.utime omitted — kernel exFAT driver DE cache is
