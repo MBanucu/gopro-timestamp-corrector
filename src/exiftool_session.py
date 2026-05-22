@@ -1,5 +1,10 @@
 """Managed exiftool session via PyExifTool (persistent ``-stay_open`` process).
 
+Writes are serialized across all processes via a file lock
+(``EXIFTOOL_WRITE_LOCK``) to prevent the kernel exFAT driver bug
+on kernel 6.12.87: concurrent exiftool ``write()`` calls across
+multiple exFAT mounts cause cross-mount directory entry corruption.
+
 Usage::
 
     with ExifToolSession() as session:
@@ -7,12 +12,24 @@ Usage::
         ok = session.write_embedded_batch(pairs)
 """
 
+import fcntl
 import json as _json
+import os
 import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from exiftool import ExifToolHelper
+
+
+EXIFTOOL_WRITE_LOCK = '/tmp/gopro_exiftool_write.lock'
+"""File lock serializing exiftool metadata writes across all processes.
+
+Without this lock, concurrent ``exiftool`` calls on 2+ independent
+exFAT mounts can trigger a kernel exFAT driver writeback bug that
+corrupts directory entries (cross-mount DE corruption).  The lock
+ensures only one exiftool write is in-flight at any time.
+"""
 
 
 def _parse_dt(val: str) -> datetime | None:
@@ -257,11 +274,20 @@ class ExifToolSession:
     def write_embedded_batch(
         self, pairs: list[tuple[Path, datetime]]
     ) -> bool:
-        """Write embedded times for all *pairs* via the persistent process."""
+        """Write embedded times for all *pairs* via the persistent process.
+
+        Acquires a cross-process file lock (``EXIFTOOL_WRITE_LOCK``) for the
+        duration of the batch, serializing writes across all Python processes.
+        This prevents the kernel exFAT driver bug on kernel 6.12.87 where
+        concurrent ``write()`` calls across multiple exFAT mounts corrupt
+        directory entries.
+        """
         ok = True
-        for path, dt in pairs:
-            if not self.write_embedded(path, dt):
-                ok = False
+        with open(EXIFTOOL_WRITE_LOCK, 'w') as _lk:
+            fcntl.flock(_lk, fcntl.LOCK_EX)
+            for path, dt in pairs:
+                if not self.write_embedded(path, dt):
+                    ok = False
         return ok
 
     # ── History dump ───────────────────────────────────────────────────────
