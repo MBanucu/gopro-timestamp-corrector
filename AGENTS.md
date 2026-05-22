@@ -128,17 +128,19 @@ parallel by ``run_parallel.py`` (one subprocess per TZ).
   — loop device + mount lifecycle. Skips test on failure.
 - `write_sparse(gz_path, img_path)` — low-level streaming decompressor.
 
-### `test_timezone_integration.py` — per‑TZ wrappers
+### `test/timezone/` — per‑TZ wrappers (sub‑package)
 
-- `test_timezone_integration.py` is a **helper module** with `run_tz(tz)` that
-  spawns a subprocess running the full pipeline under the given ``TZ``.
-- 7 generated ``test_timezone_<slug>.py`` files (one per timezone) each call
-  ``run_tz()`` with their specific timezone.
-- ``run_parallel.py`` auto‑discovers the wrapper files and runs them in
-  parallel (up to 4 at a time), reducing wall‑clock from ~210s to ~60s.
+- `test/timezone/test_timezone_integration.py` is a **helper module** with
+  ``run_tz(tz)`` that spawns a subprocess running the full pipeline under the
+  given ``TZ``.
+- 7 generated ``test/timezone/test_timezone_<slug>.py`` files (one per timezone)
+  each call ``run_tz()`` with their specific timezone.
+- ``test/run_parallel.py`` auto‑discovers the wrapper files (including nested
+  packages) and runs them in parallel (up to 4 at a time), reducing wall‑clock
+  from ~210s to ~60s.
 - To add a new timezone, add it to ``TIMEZONES`` in
-  ``test_timezone_integration.py`` then run
-  ``python3 test/test_timezone_integration.py`` to regenerate the wrappers.
+  ``test/timezone/test_timezone_integration.py`` then run
+  ``python3 test/timezone/test_timezone_integration.py`` to regenerate wrappers.
 - Generated files are tracked in git (regenerate before committing).
 
 ### `test_debug_raw_btime.py` (debug tests)

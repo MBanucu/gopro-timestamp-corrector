@@ -48,6 +48,14 @@ jobs:
                  echo "=== dmesg ===" && \
                  dmesg | tail -30 || true)
               python -m unittest test_exfat_raw_int -v 2>&1 || true
-              python -m unittest test_timezone_integration -v 2>&1 || true
+              python -m test.run_parallel \
+                timezone.test_timezone_utc \
+                timezone.test_timezone_asia_tokyo \
+                timezone.test_timezone_asia_kolkata \
+                timezone.test_timezone_europe_berlin \
+                timezone.test_timezone_america_new_york \
+                timezone.test_timezone_america_anchorage \
+                timezone.test_timezone_pacific_auckland \
+                2>&1 || true
               ;;
           esac

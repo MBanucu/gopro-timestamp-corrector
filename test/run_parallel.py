@@ -29,7 +29,8 @@ def discover_all():
     def walk(s):
         if isinstance(s, unittest.TestCase):
             mod = type(s).__module__
-            if mod.startswith('test_'):
+            last = mod.rsplit('.', 1)[-1]
+            if last.startswith('test_'):
                 modules.add(mod)
         elif hasattr(s, '__iter__'):
             for item in s:
@@ -43,12 +44,18 @@ def run_one(name: str, coverage_source: str | None) -> tuple[str, bool, float, s
     t0 = time.perf_counter()
     env = os.environ.copy()
     env['PYTHONPATH'] = f'{SRC}{os.pathsep}{env.get("PYTHONPATH", "")}'
+    # name may be a full dotted path (e.g. test.timezone.test_timezone_utc)
+    # or a flat module (e.g. test_analysis).  Only prepend test. for flat ones.
+    if name.startswith('test.'):
+        module = name
+    else:
+        module = 'test.' + name
     if coverage_source:
         cmd = [sys.executable, '-m', 'coverage', 'run',
                '--parallel-mode', '--source', coverage_source,
-               '-m', 'unittest', 'test.' + name, '-v']
+               '-m', 'unittest', module, '-v']
     else:
-        cmd = [sys.executable, '-m', 'unittest', 'test.' + name, '-v']
+        cmd = [sys.executable, '-m', 'unittest', module, '-v']
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     elapsed = time.perf_counter() - t0
     return name, r.returncode == 0, elapsed, r.stdout, r.stderr

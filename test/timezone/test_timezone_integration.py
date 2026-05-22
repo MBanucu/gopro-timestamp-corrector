@@ -1,11 +1,13 @@
 """Shared helpers for per‑timezone integration tests.
 
-Each timezone gets its own ``test_timezone_<name>.py`` module so that
-``run_parallel.py`` can run them all in parallel (one subprocess per TZ).
+Each timezone gets its own ``test_timezone_<name>.py`` module in this
+directory so that ``run_parallel.py`` can run them all in parallel
+(one subprocess per TZ).
 
 When adding a new timezone:
 1. Add it to ``TIMEZONES`` below.
-2. Run ``python3 test/test_timezone_integration.py`` to regenerate wrappers.
+2. Run ``python3 test/timezone/test_timezone_integration.py`` to regenerate
+   wrappers.
 """
 import os
 import subprocess
@@ -36,8 +38,9 @@ def cls_name(tz: str) -> str:
 
 def run_tz(tz: str) -> subprocess.CompletedProcess:
     """Run the full pipeline inside a subprocess with ``TZ={tz}``."""
-    test_dir = Path(__file__).parent.resolve()
-    repo_root = test_dir.parent
+    here = Path(__file__).parent.resolve()          # test/timezone/
+    test_dir = here.parent                          # test/
+    repo_root = test_dir.parent                     # repo root
     env = os.environ.copy()
     env['TZ'] = tz
     env['PYTHONPATH'] = f'src:{test_dir}'
@@ -60,7 +63,7 @@ def _regenerate_wrappers():
         content = '''"""Timezone test: {tz}."""
 import re
 import unittest
-from test_timezone_integration import run_tz
+from test.timezone.test_timezone_integration import run_tz
 
 
 class Test{cn}(unittest.TestCase):

@@ -1,16 +1,16 @@
-"""Timezone test: Pacific/Auckland."""
+"""Timezone test: Asia/Tokyo."""
 import re
 import unittest
-from test_timezone_integration import run_tz
+from test.timezone.test_timezone_integration import run_tz
 
 
-class TestPacificAuckland(unittest.TestCase):
+class TestAsiaTokyo(unittest.TestCase):
     def test_pipeline(self):
-        result = run_tz('Pacific/Auckland')
+        result = run_tz('Asia/Tokyo')
         out = result.stdout + result.stderr
         if 'Ran ' not in out:
             self.fail(
-                "No tests discovered under TZ=Pacific/Auckland\n"
+                "No tests discovered under TZ=Asia/Tokyo\n"
                 "--- stdout ---\n" + result.stdout + "\n"
                 "--- stderr ---\n" + result.stderr + "\n"
             )
@@ -18,13 +18,13 @@ class TestPacificAuckland(unittest.TestCase):
             m = re.search(r'Ran (\\d+) test', out)
             n = int(m.group(1)) if m else 0
             self.fail(
-                "Pipeline FAILED under TZ=Pacific/Auckland (" + str(n) + " tests)\n"
+                "Pipeline FAILED under TZ=Asia/Tokyo (" + str(n) + " tests)\n"
                 "--- stdout ---\n" + result.stdout + "\n"
                 "--- stderr ---\n" + result.stderr + "\n"
             )
         m = re.search(r'Ran (\\d+) test', out)
         n = int(m.group(1)) if m else 0
         if n == 0 or 'skipped' in out:
-            print("  [Pacific/Auckland] " + str(n) + " tests (integration was skipped)")
+            print("  [Asia/Tokyo] " + str(n) + " tests (integration was skipped)")
         else:
-            print("  [Pacific/Auckland] " + str(n) + " tests passed")
+            print("  [Asia/Tokyo] " + str(n) + " tests passed")
