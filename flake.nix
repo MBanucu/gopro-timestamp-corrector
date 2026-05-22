@@ -76,7 +76,8 @@
           python_bin = "${nixosTestPython}/bin/python3"
 
           machine.succeed("echo '--- NixOS test: VM kernel ---'")
-          machine.succeed("echo 'VM kernel: $(uname -a)'")
+          kernel = machine.succeed("uname -a")
+          machine.succeed(f"echo 'VM kernel: {kernel.strip()}'")
           machine.succeed("echo '--- NixOS test: copying source ---'")
           machine.succeed("echo '--- NixOS test: environment check ---'")
           machine.succeed(
