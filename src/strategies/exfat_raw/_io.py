@@ -14,34 +14,45 @@ import tempfile
 
 
 class ExfatRawIO:
-    """Raw block I/O — prefers backing file; falls back to ``sudo dd``."""
+    """Raw block I/O — prefers backing file; falls back to ``sudo dd``.
 
-    # ── backing-file resolution (no cache) ────────────────────────
+    Backing-file paths are cached per device (sysfs is read once).
+    The cache is safe because ``setup_loop_device`` now serializes
+    loop device allocation via a file lock (``LOOP_SETUP_LOCK`` in
+    ``mount.py``), preventing TOCTOU races.
+    """
+
+    def __init__(self):
+        self._backing_cache: dict[str, str | None] = {}
+
+    # ── backing-file resolution (cached) ─────────────────────────
 
     def _backing_file(self, device: str) -> str | None:
-        """Resolve the backing file for *device* via sysfs.
-
-        Always re-reads from sysfs (no cache) to detect TOCTOU races
-        where another process reassigned our loop device.
-        """
-        dev_name = device.lstrip('/dev/')
-        for cmd in (
-            ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
-            ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
-            ['losetup', '-n', '-O', 'BACK-FILE', device],
-            ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
-        ):
-            try:
-                r = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=5)
-                if r.returncode == 0:
-                    return r.stdout.strip() or None
-            except Exception:
-                pass
-        return None
+        if device not in self._backing_cache:
+            dev_name = device.lstrip('/dev/')
+            for cmd in (
+                ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
+                ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
+                ['losetup', '-n', '-O', 'BACK-FILE', device],
+                ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
+            ):
+                try:
+                    r = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=5)
+                    if r.returncode == 0:
+                        self._backing_cache[device] = r.stdout.strip() or None
+                        break
+                except Exception:
+                    pass
+            else:
+                self._backing_cache[device] = None
+        return self._backing_cache[device]
 
     def clear_cache(self, device: str | None = None):
-        pass  # no-op — no backing-file cache to clear
+        if device is None:
+            self._backing_cache.clear()
+        else:
+            self._backing_cache.pop(device, None)
 
     # ── low-level I/O ────────────────────────────────────────────
 
