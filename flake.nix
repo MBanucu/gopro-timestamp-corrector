@@ -82,9 +82,6 @@
               + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
               + f"DISPLAY=:99 {python_bin} -m env_check /tmp/gopro-test/test 2>&1"
           )
-          machine.succeed("echo '--- NixOS test: loop dio check (before) ---'")
-          machine.succeed("cat /sys/block/*/loop/dio 2>/dev/null || echo '(no loop devices yet)'")
-
           machine.succeed("echo '--- NixOS test: starting Xvfb ---'")
           machine.succeed("Xvfb :99 -screen 0 1024x768x24 &>/dev/null & sleep 1")
 
@@ -92,10 +89,8 @@
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
               + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
-              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -v 2>&1"
+              + f"DISPLAY=:99 GOPRO_SPARSE_COPY=0 {python_bin} -m test.run_parallel -v 2>&1"
           )
-          machine.succeed("echo '--- NixOS test: loop dio check (after) ---'")
-          machine.succeed("cat /sys/block/*/loop/dio 2>/dev/null || echo '(no loop devices)'")
         '';
       };
     in (eachSystem (system:
