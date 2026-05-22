@@ -264,6 +264,12 @@ class TestFullAutoIntegration(unittest.TestCase):
                             mtime_ok = True
                             print(f'  {name} mtime: {o["mtime"]} -> {raw_dt} '
                                   f'(raw block, kernel cache stale, Δ={self.median})')
+                        else:
+                            print(f'  {name} mtime raw MISMATCH: '
+                                  f'raw={raw_dt} expected={expected_mtime} '
+                                  f'diff={raw_diff:.1f}s')
+                    else:
+                        print(f'  {name} mtime raw: None (read_mtime_raw failed)')
                 if not mtime_ok:
                     actual = a['mtime'] if a['mtime'] else 'N/A'
                     self.fail(f'{name} mtime: expected {expected_mtime}, got {actual}')
