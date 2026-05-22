@@ -59,22 +59,19 @@ _BACKING_CACHE: dict[str, str | None] = {}
 def _exfat_backing_file(device: str) -> str | None:
     if device not in _BACKING_CACHE:
         path = None
-        try:
-            dev_name = device.lstrip('/dev/')
-            r = subprocess.run(
-                ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
-                capture_output=True, text=True, timeout=5)
-            if r.returncode == 0:
-                path = r.stdout.strip()
-        except Exception:
-            pass
-        if not path:
+        dev_name = device.lstrip('/dev/')
+        for cmd in (
+            ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
+            ['sudo', 'cat', f'/sys/block/{dev_name}/loop/backing_file'],
+            ['losetup', '-n', '-O', 'BACK-FILE', device],
+            ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
+        ):
             try:
                 r = subprocess.run(
-                    ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', device],
-                    capture_output=True, text=True, timeout=5)
+                    cmd, capture_output=True, text=True, timeout=5)
                 if r.returncode == 0:
                     path = r.stdout.strip()
+                    break
             except Exception:
                 pass
         _BACKING_CACHE[device] = path or None
@@ -84,24 +81,26 @@ def _exfat_backing_file(device: str) -> str | None:
 def _exfat_read_device(device: str, offset: int, size: int) -> bytes:
     backing = _exfat_backing_file(device)
     target = backing or device
-    r = subprocess.run(
-        ['sudo', 'dd', f'if={target}', 'bs=1', f'skip={offset}',
-         f'count={size}', 'status=none'],
-        capture_output=True)
+    use_sudo = not (backing and os.access(backing, os.R_OK))
+    cmd = (['sudo'] if use_sudo else []) + [
+        'dd', f'if={target}', 'bs=1', f'skip={offset}',
+        f'count={size}', 'status=none']
+    r = subprocess.run(cmd, capture_output=True)
     return r.stdout
 
 
 def _exfat_write_device(device: str, offset: int, data: bytes):
     backing = _exfat_backing_file(device)
     target = backing or device
+    use_sudo = not (backing and os.access(backing, os.W_OK))
     with tempfile.NamedTemporaryFile() as tf:
         tf.write(data)
         tf.flush()
-        subprocess.run(
-            ['sudo', 'dd', f'if={tf.name}', f'of={target}',
-             'bs=1', f'seek={offset}', f'count={len(data)}',
-             'status=none', 'conv=fsync'],
-            check=True, capture_output=True)
+        cmd = (['sudo'] if use_sudo else []) + [
+            'dd', f'if={tf.name}', f'of={target}',
+            'bs=1', f'seek={offset}', f'count={len(data)}',
+            'status=none', 'conv=fsync']
+        subprocess.run(cmd, check=True, capture_output=True)
 
 
 def _exfat_parse_boot(device: str):
