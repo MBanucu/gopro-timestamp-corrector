@@ -160,11 +160,14 @@
           installPhase = ''
             python_test="${pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ])}/bin/python3"
             mkdir -p $out/bin
+            deps_bin="${pkgs.lib.makeBinPath deps}"
             cat > $out/bin/run-tests << WRAPPER
         #!${pkgs.bash}/bin/bash
-        export PYTHONPATH="\$PYTHONPATH:$src:$src/src:${pkgs.lib.makeBinPath deps}:$out/lib"
+        export PATH="$deps_bin:\$PATH"
+        export PYTHONPATH="\$PYTHONPATH:$src:$src/src:$out/lib"
         Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
         XVFB_PID=\$!
+        sleep 1
         DISPLAY=:99 $python_test -m test.run_parallel -j 4 --coverage "\$@"
         EXIT_CODE=\$?
         kill \$XVFB_PID 2>/dev/null
