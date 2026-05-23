@@ -57,6 +57,18 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         # Probe kernel btime readback support on exFAT via a temp filesystem
         cls._btime_readable = cls._check_btime_readback_support()
 
+    @classmethod
+    def _check_btime_readback_support(cls):
+        """Probe exFAT btime readback via raw block access on a temp filesystem."""
+        try:
+            import sys
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
+            from probe import probe_exfat_btime as _probe_exfat_btime
+            result = _probe_exfat_btime()
+            return result.supported is True
+        except Exception:
+            return False
+
     @staticmethod
     def _read_btime(path):
         import sys
