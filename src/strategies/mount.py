@@ -207,8 +207,8 @@ class ImageMountStrategy(MountStrategy):
 
     def unmount(self):
         if self._loop_dev:
-            subprocess.run(['sudo', 'umount', self._loop_dev], capture_output=True)
-            subprocess.run(['sudo', 'losetup', '-d', self._loop_dev], capture_output=True)
+            from loop_device import teardown_loop_device
+            teardown_loop_device(self._loop_dev, self._mount_point)
             self._loop_dev = None
             self._mount_point = None
 
