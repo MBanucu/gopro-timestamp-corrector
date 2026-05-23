@@ -60,8 +60,7 @@ class TestPidElection(unittest.TestCase):
     def _start_server(self, pf: str, timeout: int = 10) -> subprocess.Popen:
         proc = subprocess.Popen(
             [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
-             '--idle-timeout', str(timeout), '--port-file', pf,
-             '--no-exiftool'],
+             '--idle-timeout', str(timeout), '--port-file', pf],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
