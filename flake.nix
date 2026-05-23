@@ -93,7 +93,7 @@
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
               + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
-              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -v 2>&1"
+              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -v -j 1 2>&1"
           )
         '';
       };
@@ -168,7 +168,7 @@
         Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
         XVFB_PID=\$!
         sleep 1
-        DISPLAY=:99 $python_test -m test.run_parallel -j 4 --coverage "\$@"
+        DISPLAY=:99 $python_test -m test.run_parallel --coverage "\$@"
         EXIT_CODE=\$?
         kill \$XVFB_PID 2>/dev/null
         exit \$EXIT_CODE
