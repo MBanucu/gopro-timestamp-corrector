@@ -76,7 +76,9 @@ Only the server itself uses `ExifToolSession(connect=None)` for direct access.
   `ExifToolClient()` directly), it first tries to connect to an existing server.
   If none is found, it spawns one as a background subprocess via
   `exiftool_server.spawn_server()`.  The caller blocks up to 5 s waiting for
-  the server to become ready.
+  the server to become ready.  Concurrent callers are serialised with a
+  **double-checked lock** (``fcntl.flock`` on ``{port_file}.client.lock``)
+  so only one caller ever enters the spawn path.
 - **Auto-shutdown**: The server tracks time since the last completed request.
   A watchdog thread checks every `max(1s, timeout/4)` seconds.  If idle exceeds
   the timeout (default 60 s), the server shuts down gracefully.
@@ -140,8 +142,8 @@ removed as redundant.
 | `src/exiftool_server.py` | `ExifToolServer` class, `spawn_server()`, `_takeover_or_exit()` |
 | `src/exiftool_client.py` | `ExifToolClient` with same API as `ExifToolSession` |
 | `src/exiftool_session.py` | `ExifToolSession()` delegation (defaults to `connect='auto'`) |
-| `src/options.py` | `EXIFTOOL_SERVER_PORT_FILE`, `EXIFTOOL_SERVER_IDLE_TIMEOUT` |
-| `test/test_exiftool_server.py` | 15 tests: protocol, auto-spawn, idle, client, session |
+| `src/options.py` | `EXIFTOOL_SERVER_PORT_FILE`, `EXIFTOOL_SERVER_LOCK_FILE`, `EXIFTOOL_SERVER_IDLE_TIMEOUT` |
+| `test/test_exiftool_server.py` | 14 tests: protocol, auto-spawn, idle, client, session (isolated port files per class) |
 | `test/test_pid_election.py` | 2 tests: sequential and concurrent PID election |
 
 ## exFAT raw block write & cache coherence
@@ -197,9 +199,12 @@ from one mount to another mount's directory entries.
 
 Since `ExifToolSession()` now defaults to `connect='auto'` (server mode),
 all production code (CLI, GUI) automatically routes exiftool operations
-through the single server process.  The `fcntl.flock` lock is no longer
-needed — the server serialises all requests in-process, eliminating
-write concurrency entirely even across multiple CLI/GUI invocations.
+through the single server process.  The old cross-process `fcntl.flock`
+lock has been removed as redundant — the server serialises all requests
+in-process, eliminating write concurrency entirely across multiple CLI/GUI
+invocations.  A separate client-side `fcntl.flock` (on ``{port_file}.client.lock``)
+exists only to serialise concurrent callers during auto-spawn so that no
+two callers ever try to start a server at the same time.
 See `ExifTool server / client` above.
 
 ### `Writer.close()` (writer.py)
