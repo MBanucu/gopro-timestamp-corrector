@@ -274,14 +274,16 @@ class ExifToolServer:
                 line = reader.readline()
                 if not line:
                     return
-                resp = self._dispatch(line.strip())
+                peer = conn.getpeername()
+                resp = self._dispatch(line.strip(), peer)
                 conn.sendall((resp + '\n').encode())
             except (OSError, socket.timeout):
                 pass
             finally:
                 self._last_request_time = time.monotonic()
 
-    def _dispatch(self, line: str) -> str:
+    def _dispatch(self, line: str,
+                  peer: tuple[str, int] | None = None) -> str:
         """Parse JSON-RPC request and return JSON response string."""
         try:
             req = json.loads(line)
@@ -295,9 +297,11 @@ class ExifToolServer:
         req_id = req.get('id')
 
         if method == 'ping':
-            self._log(f'ping from peer')
+            who = f'{peer[0]}:{peer[1]}' if peer else '?'
+            self._log(f'ping from {who}')
         elif method == 'shutdown':
-            self._log(f'shutdown from peer')
+            who = f'{peer[0]}:{peer[1]}' if peer else '?'
+            self._log(f'shutdown from {who}')
 
         handler = getattr(self, f'_method_{method}', None)
         if handler is None:

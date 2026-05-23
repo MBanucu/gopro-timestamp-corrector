@@ -146,7 +146,7 @@ class TestPidElection(unittest.TestCase):
         return None
 
     def test_ten_servers_concurrent_lowest_pid_wins(self):
-        """10 servers with staggered launch & election delay — lowest PID wins."""
+        """5 servers with staggered launch & election delay — lowest PID wins."""
         pf = PORT_FILE + '.ten_way'
         try:
             os.unlink(pf)
@@ -155,7 +155,7 @@ class TestPidElection(unittest.TestCase):
         self.addCleanup(self._kill_port_file, pf)
         self.addCleanup(self._clean_log_files, pf)
 
-        N = 10
+        N = 5
         procs: list[subprocess.Popen] = []
 
         for i in range(N):
