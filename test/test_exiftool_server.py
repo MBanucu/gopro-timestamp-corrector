@@ -4,9 +4,10 @@ These tests cover:
 - Server ping / status / shutdown protocol
 - Client auto-spawn and connection
 - ``ExifToolSession(connect='auto')`` delegation
-- PID election (lower PID wins)
 - Idle timeout auto-shutdown
 - Protocol error handling
+
+(pid-election tests moved to ``test_pid_election.py``.)
 """
 
 import json
@@ -15,7 +16,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -268,82 +268,6 @@ class TestIdleShutdown(unittest.TestCase):
             os.unlink(pf)
         except OSError:
             pass
-
-
-class TestPidElection(unittest.TestCase):
-    """Test that when two servers start, the lower PID wins."""
-
-    def setUp(self):
-        _clean_port_file()
-
-    def tearDown(self):
-        _clean_port_file()
-
-    def _start_server(self, pf: str, timeout: int = 10) -> subprocess.Popen:
-        proc = subprocess.Popen(
-            [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
-             '--idle-timeout', str(timeout), '--port-file', pf],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return proc
-
-    def _wait_for_port(self, pf: str, timeout: float = 5) -> int | None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                with open(pf) as f:
-                    data = json.load(f)
-                if _send(data['port'], 'ping').get('result') == 'pong':
-                    return data['port']
-            except (OSError, json.JSONDecodeError, KeyError,
-                    ConnectionError):
-                pass
-            time.sleep(0.05)
-        return None
-
-    def test_lower_pid_wins(self):
-        """Start server A (lower PID expected), then server B.
-        B should detect A is alive and exit.
-        """
-        pf = PORT_FILE + '.election'
-        try:
-            os.unlink(pf)
-        except OSError:
-            pass
-
-        proc_a = self._start_server(pf, timeout=10)
-        port_a = self._wait_for_port(pf)
-        self.assertIsNotNone(port_a)
-
-        # Read A's PID from port file
-        with open(pf) as f:
-            data_a = json.load(f)
-        pid_a = data_a['pid']
-
-        # Start server B
-        proc_b = self._start_server(pf, timeout=10)
-
-        # B should exit quickly (A has lower PID)
-        try:
-            proc_b.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            proc_b.kill()
-            self.fail('Server B did not exit after detecting existing server')
-
-        # A should still be running
-        self.assertTrue(
-            _send(port_a, 'ping').get('result') == 'pong',
-            'Server A should still be running')
-
-        # Clean up
-        _send(port_a, 'shutdown')
-        proc_a.wait(timeout=3)
-        try:
-            os.unlink(pf)
-        except OSError:
-            pass
-
 
 class TestFormatterRoundtrip(unittest.TestCase):
     """Test that datetime ISO formatting is symmetric."""

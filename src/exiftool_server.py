@@ -4,6 +4,7 @@ Auto-spawned by ``ExifToolSession(connect='auto')`` on demand.
 Runs until idle timeout (60s) or explicit shutdown.
 """
 
+import fcntl
 import json
 import os
 import signal
@@ -22,6 +23,12 @@ from options import EXIFTOOL_SERVER_PORT_FILE, EXIFTOOL_SERVER_IDLE_TIMEOUT
 
 _PORT_FILE = os.path.join(tempfile.gettempdir(), EXIFTOOL_SERVER_PORT_FILE)
 _IDLE_TIMEOUT = EXIFTOOL_SERVER_IDLE_TIMEOUT
+
+
+def _log(msg: str):
+    """Log a message to stderr (prefix with [exiftool-server])."""
+    ts = datetime.now(timezone.utc).strftime('%H:%M:%S.%f')
+    print(f'[{ts} exiftool-server] {msg}', file=sys.stderr, flush=True)
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -83,50 +90,57 @@ def _send_shutdown(port: int, timeout: float = 2.0) -> bool:
 
 
 def _takeover_or_exit(port: int, pid: int) -> bool:
-    """Claim the port file via PID election.
+    """Claim the port file via PID election (flock-based mutual exclusion).
 
-    Returns True if this process should continue as the server,
-    False if it should exit (existing server with lower PID wins).
+    Opens the port file and acquires an exclusive lock.  Under the lock
+    reads the current winner and either takes over (lower PID) or exits
+    (higher PID).  Returns True if this process should continue serving,
+    False if it should exit.
+
+    Unlike the old O_EXCL approach, there is no race window between
+    delete-and-recreate — only one process holds the lock at a time.
     """
-    for _ in range(5):
-        try:
-            fd = os.open(_PORT_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        except FileExistsError:
-            pass
-        else:
-            with os.fdopen(fd, 'w') as f:
-                json.dump({'port': port, 'pid': pid,
-                           'started_at': datetime.now(timezone.utc).isoformat()}, f)
-            return True
+    fd = os.open(_PORT_FILE, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
 
-        existing = _resolve_port_file()
-        if existing is None:
+        content = os.read(fd, 4096).decode()
+        if content:
             try:
-                os.unlink(_PORT_FILE)
-            except OSError:
-                pass
-            continue
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                data = None
 
-        e_port, e_pid = existing
-        if _ping_server(e_port):
-            if pid < e_pid:
-                _send_shutdown(e_port)
-                time.sleep(0.2)
-                try:
-                    os.unlink(_PORT_FILE)
-                except OSError:
-                    pass
-                continue
+            if data and 'pid' in data and 'port' in data:
+                e_pid, e_port = data['pid'], data['port']
+
+                if e_pid == pid:
+                    _log(f'pid {pid}: already recorded as winner')
+                    return True
+
+                if _ping_server(e_port, timeout=1.0):
+                    if pid > e_pid:
+                        _log(f'pid {pid}: alive server pid={e_pid} < our pid, exiting')
+                        return False
+                    _log(f'pid {pid}: pid < existing {e_pid}, taking over')
+                    _send_shutdown(e_port)
+                    time.sleep(0.2)
+                else:
+                    _log(f'pid {pid}: existing pid={e_pid} stale')
             else:
-                return False  # existing server (lower PID) wins
-        else:
-            try:
-                os.unlink(_PORT_FILE)
-            except OSError:
-                pass
-            continue
+                _log(f'pid {pid}: corrupt port file, overwriting')
 
-    return False
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.ftruncate(fd, 0)
+        os.write(fd, json.dumps({
+            'port': port, 'pid': pid,
+            'started_at': datetime.now(timezone.utc).isoformat(),
+        }).encode())
+        _log(f'pid {pid}: wrote port file, continuing as server')
+        return True
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def _get_port_file() -> str:
@@ -415,7 +429,7 @@ class ExifToolServer:
             signal.signal(signal.SIGINT, _handler)
 
     def _log(self, msg: str):
-        print(f'[exiftool-server] {msg}', file=sys.stderr)
+        _log(msg)
 
 
 def main():
