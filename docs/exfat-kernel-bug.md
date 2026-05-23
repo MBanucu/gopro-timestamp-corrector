@@ -81,15 +81,7 @@ parallel test suite (`run_parallel.py`/`nix run .#test`).
 
 ## How to Reproduce
 
-```sh
-# Requires: 2+ exFAT mounts with GoPro video files
-
-PYTHONPATH=src python3 -m unittest test.hypothesis.test_h14_high_load -v
-# -> 100% failure rate, 4-7 corrupted DEs per 24 files
-
-PYTHONPATH=src python3 -m unittest test.hypothesis.test_h19_raw_trigger.H19_RawTrigger.test_p6_exif_only -v
-# -> ExifTool alone (no fix_exfat_raw) corrupts 20/24 DEs
-```
+Tests that demonstrated this bug have been removed. The mitigations remain in place (shared server serialization, no `sync()` after raw writes).
 
 ## Kernel Version
 

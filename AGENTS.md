@@ -237,10 +237,7 @@ output strings (e.g., `2026:05:14 14:52:00+09:00`) and converts to UTC, instead
 of stripping the offset and stamping the local time as UTC.  The old `_strip_tz()`
 function has been removed.
 
-This is critical for the timezone integration test — see
-`test_timezone_integration.py` (shared helpers) and the generated
-`test_timezone_<slug>.py` wrappers (one per TZ).  The wrappers are run in
-parallel by ``run_parallel.py`` (one subprocess per TZ).
+This is critical for timezone correctness.
 
 ## Test notes
 
@@ -256,20 +253,7 @@ parallel by ``run_parallel.py`` (one subprocess per TZ).
   — loop device + mount lifecycle. Skips test on failure.
 - `write_sparse(gz_path, img_path)` — low-level streaming decompressor.
 
-### `test/timezone/` — per‑TZ wrappers (sub‑package)
 
-- `test/timezone/test_timezone_integration.py` is a **helper module** with
-  ``run_tz(tz)`` that spawns a subprocess running the full pipeline under the
-  given ``TZ``.
-- 7 generated ``test/timezone/test_timezone_<slug>.py`` files (one per timezone)
-  each call ``run_tz()`` with their specific timezone.
-- ``test/run_parallel.py`` auto‑discovers the wrapper files (including nested
-  packages) and runs them in parallel (up to 4 at a time), reducing wall‑clock
-  from ~210s to ~60s.
-- To add a new timezone, add it to ``TIMEZONES`` in
-  ``test/timezone/test_timezone_integration.py`` then run
-  ``python3 test/timezone/test_timezone_integration.py`` to regenerate wrappers.
-- Generated files are tracked in git (regenerate before committing).
 
 ### `test_debug_raw_btime.py` (debug tests)
 
