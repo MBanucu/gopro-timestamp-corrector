@@ -23,8 +23,13 @@ from options import EXIFTOOL_SERVER_PORT_FILE, EXIFTOOL_SERVER_IDLE_TIMEOUT
 
 
 _PORT_FILE = os.path.join(tempfile.gettempdir(), EXIFTOOL_SERVER_PORT_FILE)
+_LOCK_FILE: str | None = None  # derived from _PORT_FILE; set in main()
 _IDLE_TIMEOUT = EXIFTOOL_SERVER_IDLE_TIMEOUT
 _LOG_FILE: str | None = None
+
+
+def _get_lock_path() -> str:
+    return _LOCK_FILE or _PORT_FILE + '.lock'
 
 
 def _log(msg: str):
@@ -49,22 +54,42 @@ def _resolve_port_file() -> tuple[int, int] | None:
         return None
 
 
+def _write_port_file(port: int, pid: int):
+    """Atomically write port file (via atomic rename)."""
+    data = {
+        'port': port, 'pid': pid,
+        'started_at': datetime.now(timezone.utc).isoformat(),
+    }
+    tmp = _PORT_FILE + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(data, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.rename(tmp, _PORT_FILE)
+
+
 def _takeover_or_exit(port: int, pid: int) -> bool:
     """Claim the port file via PID election (flock-based mutual exclusion).
 
-    Opens the port file and acquires an exclusive lock.  Under the lock
-    reads the current winner and either takes over (lower PID) or exits
-    (higher PID).  Returns True if this process should continue serving,
-    False if it should exit.
-
-    Unlike the old O_EXCL approach, there is no race window between
-    delete-and-recreate — only one process holds the lock at a time.
+    Locks a dedicated ``.lock`` file (never deleted), then reads the
+    current port file contents.  If this process has a lower PID than
+    the existing winner it writes itself as the winner *before* sending
+    shutdown — this ensures the old server's ``_clean_port_file`` reads
+    the new winner's PID and does NOT delete the port file out from
+    under us.
     """
-    fd = os.open(_PORT_FILE, os.O_CREAT | os.O_RDWR, 0o644)
+    lock_path = _get_lock_path()
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
-        content = os.read(fd, 4096).decode()
+        content = None
+        try:
+            with open(_PORT_FILE) as f:
+                content = f.read().strip()
+        except OSError:
+            pass
+
         if content:
             try:
                 data = json.loads(content)
@@ -83,24 +108,25 @@ def _takeover_or_exit(port: int, pid: int) -> bool:
                         _log(f'pid {pid}: alive server pid={e_pid} < our pid, exiting')
                         return False
                     _log(f'pid {pid}: pid < existing {e_pid}, taking over')
+                    # Write ourselves as winner FIRST so that the old
+                    # server's _clean_port_file sees our PID and doesn't
+                    # unlink the file while we hold the old inode.
+                    _write_port_file(port, pid)
+                    _log(f'pid {pid}: sending shutdown to pid {e_pid} at port {e_port}')
                     send_shutdown(e_port)
                     time.sleep(0.2)
+                    return True
                 else:
                     _log(f'pid {pid}: existing pid={e_pid} stale')
             else:
                 _log(f'pid {pid}: corrupt port file, overwriting')
 
-        os.lseek(fd, 0, os.SEEK_SET)
-        os.ftruncate(fd, 0)
-        os.write(fd, json.dumps({
-            'port': port, 'pid': pid,
-            'started_at': datetime.now(timezone.utc).isoformat(),
-        }).encode())
+        _write_port_file(port, pid)
         _log(f'pid {pid}: wrote port file, continuing as server')
         return True
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
 
 
 def _get_port_file() -> str:
@@ -458,6 +484,7 @@ def main():
     args = parser.parse_args()
 
     _PORT_FILE = args.port_file
+    _LOCK_FILE = args.port_file + '.lock'
     _IDLE_TIMEOUT = args.idle_timeout
     if args.log_file:
         _LOG_FILE = args.log_file
