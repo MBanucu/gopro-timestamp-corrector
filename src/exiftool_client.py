@@ -55,6 +55,9 @@ def _send_request(port: int, method: str,
     req = json.dumps({'id': 1, 'method': method, 'params': params})
     s = socket.create_connection(('127.0.0.1', port), timeout=10.0)
     try:
+        # Long timeout for response — batch writes (exiftool) can take
+        # 30-60s+ for many files through a single-threaded server.
+        s.settimeout(120.0)
         s.sendall((req + '\n').encode())
         resp = s.makefile('r', encoding='utf-8').readline()
         if not resp:
