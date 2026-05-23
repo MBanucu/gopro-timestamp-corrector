@@ -68,7 +68,8 @@ def _detach_loop(loop_dev: str) -> bool:
 def setup_loop_device(img_path: str) -> tuple[str, str]:
     """Set up loop device and mount an image.
 
-    Tries udisksctl first (no sudo), then sudo losetup + sudo mount.
+    Uses udisksctl for loop-setup + mount (no sudo needed).  On mount-path
+    collision falls through to ``sudo mount`` to a unique tempdir.
     Returns (loop_dev, mount_point).
     Raises LoopDeviceError on failure.
     """

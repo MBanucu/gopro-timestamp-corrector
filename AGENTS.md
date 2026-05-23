@@ -281,6 +281,11 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 
 - `ImageMountStrategy` — creates loop device from `.img` file and mounts it
   (tries `udisksctl` first, falls back to `sudo losetup + mount`)
+  - Mount-point collision detection via `_existing_mount_points()`: records
+    all mount paths occupied by loop devices **before** calling
+    `loop-setup`.  After mount succeeds (via udisksctl or auto-mount), if
+    the resulting path was already occupied, falls through to
+    `_via_sudo_with()` which mounts to a unique tempdir.
 - `AlreadyMountedStrategy` — for paths already mounted (no-op)
 - `detect_strategy(source)` — auto-selects strategy based on source type
 - `REGISTRY` — dict for lookup by name

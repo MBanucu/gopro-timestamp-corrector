@@ -5,9 +5,11 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -177,6 +179,43 @@ def _probe_raw_read_btime_on_exfat(test_file: str) -> bool | None:
     from strategies.exfat_raw import exfat_ops
     val = exfat_ops.read_btime_raw(test_file)
     return val is not None and val > 0
+
+
+def probe_udisksctl_automount(img_path: str) -> bool | None:
+    """Check whether ``udisksctl loop-setup`` auto-mounts on this system.
+
+    Creates a loop device, waits for the async auto-mount (up to 3 s),
+    checks mountinfo, cleans up, and returns ``True`` (auto-mount),
+    ``False`` (no auto-mount), or ``None`` (udisksctl unavailable or
+    setup failed).
+    """
+    if not shutil.which('udisksctl'):
+        return None
+    r = subprocess.run(
+        ['udisksctl', 'loop-setup', '-f', img_path, '--no-user-interaction'],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    m = re.search(r'as (/dev/loop\d+)', r.stdout)
+    if not m:
+        return None
+    loop_dev = m.group(1)
+    minor = loop_dev.lstrip('/dev/loop')
+    automount = False
+    try:
+        for _ in range(6):  # up to 3 s
+            with open('/proc/self/mountinfo') as f:
+                if any(f' 7:{minor} ' in line for line in f):
+                    automount = True
+                    break
+            time.sleep(0.5)
+    except OSError:
+        pass
+    finally:
+        subprocess.run(
+            ['udisksctl', 'unmount', '-b', loop_dev, '--no-user-interaction'],
+            capture_output=True)
+    return automount
 
 
 def _probe_dd_nocache(device: str) -> bool | None:

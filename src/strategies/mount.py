@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import os
 import re
 import shutil
@@ -10,16 +9,6 @@ import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-
-
-LOOP_SETUP_LOCK = '/tmp/gopro_loop_setup.lock'
-"""File lock serializing loop-device setup across parallel processes.
-
-``losetup -f --show`` has a TOCTOU race when multiple processes call it
-concurrently (both can get the same loop device number).  The file lock
-ensures only one process allocates a loop device at a time, eliminating
-the race entirely.
-"""
 
 
 class MountError(Exception):
@@ -83,7 +72,10 @@ class AlreadyMountedStrategy(MountStrategy):
 class ImageMountStrategy(MountStrategy):
     """Create a loop device from an image file and mount it.
 
-    Tries udisksctl first (no sudo), then sudo losetup + sudo mount.
+    Uses udisksctl for loop-setup and mount (no sudo needed).  On mount-
+    path collision (udisksctl returns an existing mount from a different
+    device with the same volume serial) falls through to ``sudo mount``
+    to a unique tempdir.  Falls back to ``sudo losetup + sudo mount``.
     """
 
     name = 'image'
@@ -95,19 +87,50 @@ class ImageMountStrategy(MountStrategy):
         self._mount_point = None
 
     def mount(self) -> tuple[str, str]:
-        with open(LOOP_SETUP_LOCK, 'w') as _lk:
-            fcntl.flock(_lk, fcntl.LOCK_EX)
-            result = self._via_udisksctl()
-            if result is not None:
-                self._loop_dev, self._mount_point = result
-                return result
-            result = self._via_sudo()
-            if result is not None:
-                self._loop_dev, self._mount_point = result
-                return result
-            raise MountError("Could not set up loop device (udisksctl+sudo failed)")
+        result = self._via_udisksctl()
+        if result is not None:
+            self._loop_dev, self._mount_point = result
+            return result
+        result = self._via_sudo()
+        if result is not None:
+            self._loop_dev, self._mount_point = result
+            return result
+        raise MountError("Could not set up loop device (udisksctl+sudo failed)")
+
+    @classmethod
+    def _find_mount(cls, loop_dev: str) -> str | None:
+        """Return the mount point for *loop_dev* from mountinfo, or None."""
+        minor = loop_dev.lstrip('/dev/loop')
+        needle = f' 7:{minor} '
+        try:
+            with open('/proc/self/mountinfo') as f:
+                for line in f:
+                    if needle in line:
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            return parts[4]
+        except OSError:
+            pass
+        return None
+
+    @staticmethod
+    def _existing_mount_points() -> set[str]:
+        """Return mount paths currently occupied by loop devices."""
+        mps: set[str] = set()
+        try:
+            with open('/proc/self/mountinfo') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        major = parts[2].split(':')[0]
+                        if major == '7':
+                            mps.add(parts[4])
+        except OSError:
+            pass
+        return mps
 
     def _via_udisksctl(self) -> tuple[str, str] | None:
+        occupied_before = self._existing_mount_points()
         try:
             r = subprocess.run(
                 ['udisksctl', 'loop-setup', '-f', str(self._img_path),
@@ -119,21 +142,53 @@ class ImageMountStrategy(MountStrategy):
             if not m:
                 return None
             loop_dev = m.group(1)
+
             r = subprocess.run(
                 ['udisksctl', 'mount', '-b', loop_dev, '--no-user-interaction'],
                 capture_output=True, text=True)
-            if r.returncode != 0:
-                # udisksctl mount failed — retry with direct sudo mount
-                # instead of detaching + re-allocating (which races with
-                # concurrent losetup -f in other processes).
+            if r.returncode == 0:
+                m = re.search(r'at ([^ \n]+)', r.stdout)
+                if not m:
+                    subprocess.run(
+                        ['sudo', 'losetup', '-d', loop_dev], capture_output=True)
+                    return None
+                mount_point = m.group(1).rstrip('.')
+                if self._mount_has_device(mount_point, loop_dev) \
+                        and mount_point not in occupied_before:
+                    return (loop_dev, mount_point)
                 return self._via_sudo_with(loop_dev)
-            m = re.search(r'at ([^ \n]+)', r.stdout)
-            if not m:
-                subprocess.run(['sudo', 'losetup', '-d', loop_dev], capture_output=True)
-                return None
-            return (loop_dev, m.group(1).rstrip('.'))
+
+            # mount failed — auto-mount may have already done it.
+            mount_point = self._find_mount(loop_dev)
+            if mount_point and self._mount_has_device(mount_point, loop_dev) \
+                    and mount_point not in occupied_before:
+                return (loop_dev, mount_point)
+            return self._via_sudo_with(loop_dev)
         except FileNotFoundError:
             return None
+        except OSError:
+            return None
+
+    @staticmethod
+    def _mount_has_device(mount_point: str, loop_dev: str) -> bool:
+        """Return True if *mount_point* is mounted exclusively from *loop_dev*.
+
+        Checks ALL mountinfo entries at the given mount point to detect
+        mount shadowing — a second device mounted at the same path would
+        mean our device does not exclusively own the mount.
+        """
+        minor = loop_dev.lstrip('/dev/loop')
+        our_dev = f'7:{minor}'
+        try:
+            with open('/proc/self/mountinfo') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 5 and parts[4] == mount_point.rstrip('/'):
+                        if parts[2] != our_dev:
+                            return False
+        except OSError:
+            return True
+        return True
 
     def _via_sudo(self) -> tuple[str, str] | None:
         try:
