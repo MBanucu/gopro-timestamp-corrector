@@ -71,5 +71,8 @@ CAL_TIME_LABEL = '  HH:MM:SS.mmm (24h)'
 EXIFTOOL_SERVER_PORT_FILE = 'gopro-exiftool-server.json'
 """Filename (in ``tempfile.gettempdir()``) storing the server's TCP port and PID."""
 
+EXIFTOOL_SERVER_LOCK_FILE = 'gopro-exiftool-server.lock'
+"""Lock file (same directory) for serialising concurrent ``_ensure_server()`` callers."""
+
 EXIFTOOL_SERVER_IDLE_TIMEOUT = 60
 """Seconds of inactivity before the server auto-shuts down."""
