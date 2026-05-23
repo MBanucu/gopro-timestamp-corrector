@@ -155,7 +155,7 @@ class TestPidElection(unittest.TestCase):
         self.addCleanup(self._kill_port_file, pf)
         self.addCleanup(self._clean_log_files, pf)
 
-        N = 5
+        N = 10
         procs: list[subprocess.Popen] = []
 
         for i in range(N):
