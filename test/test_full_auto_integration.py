@@ -66,27 +66,15 @@ class TestFullAutoIntegration(unittest.TestCase):
     # ── Helpers ───────────────────────────────────────────────
 
     def _read_exif_batch(self, paths: list[Path]) -> dict[Path, datetime | None]:
-        """Read QuickTime:CreateDate for all *paths* in a single exiftool call."""
+        """Read QuickTime:CreateDate for all *paths* via ExifToolSession."""
         if not paths:
             return {}
-        r = subprocess.run(
-            ['exiftool', '-json', '-QuickTime:CreateDate'] + [str(p) for p in paths],
-            capture_output=True, text=True)
-        if r.returncode != 0 or not r.stdout.strip():
-            return {}
-        import json as _json
-        from exiftool_session import _parse_dt
-        out = {}
-        for rec in _json.loads(r.stdout):
-            src = rec.get('SourceFile')
-            raw = rec.get('CreateDate')
-            if not src or not raw:
-                continue
-            dt = _parse_dt(str(raw))
-            if dt is not None:
-                out[Path(src)] = dt
-            else:
-                out[Path(src)] = None
+        from exiftool_session import ExifToolSession
+        with ExifToolSession() as session:
+            batch = session.read_tags_batch(paths)
+        out: dict[Path, datetime | None] = {}
+        for path, (embedded, _gps) in batch.items():
+            out[path] = embedded
         return out
 
     def _read_mtime(self, path):
