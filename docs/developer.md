@@ -105,9 +105,9 @@ $COV/bin/coverage-report
 | Btime (exFAT raw) | 3 integration | `test_exfat_raw_btime.py` |
 | Modification history | 7 unit | `test_history.py` |
 | GUI structure smoke | 20 smoke | `test_gui_structure.py` |
-| Auto calibration (real) | 3 integration | `test_auto_calibrate_integration.py` |
-| Full pipeline | 1 integration | `test_full_auto_integration.py` |
-| Timezone integration | 7 subprocess | `test_timezone_integration.py` |
+| Full pipeline (server) | 1 integration | `test_full_auto_integration.py` |
+| ExifTool server protocol | 15 tests | `test_exiftool_server.py` |
+| ExifTool PID election | 2 tests | `test_pid_election.py` |
 | Raw debug tests | 7 debug | `test_debug_raw_btime.py` |
 | Cluster coherence | 1 integration | `test_cluster_coherence.py` |
 | Ubuntu compatibility | 6 unit | `test_ubuntu_compat.py` |
@@ -122,7 +122,7 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 | `debug` | `test_debug_raw_btime` (7 tests) | 30s |
 | `unit` | `test.test_unit` (28 tests) | 5s |
 | `cluster` | `test_cluster_coherence` | 45s |
-| `full` | GUI correction + timezone integration | 3min |
+| `full` | exFAT raw + GUI + full pipeline integration | ~120s |
 
 ## Project structure
 
@@ -193,7 +193,6 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 │   ├── test_fuse_faketime.py
 │   ├── test_history.py
 │   ├── test_cluster_coherence.py
-│   ├── test_timezone_integration.py
 │   ├── test_ubuntu_compat.py
 │   ├── test_unit.py
 │   ├── test_analysis.py
@@ -203,8 +202,6 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 │   ├── test_img.py
 │   ├── test_btime.py
 │   ├── test_btime_gui_correction.py
-│   ├── test_auto_calibrate_integration.py
-│   ├── test_full_auto_integration.py
 │   ├── test_calibration_panel.py
 │   ├── test_editor.py
 │   ├── test_gps.py
@@ -213,7 +210,9 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 │   ├── test_datepicker.py
 │   ├── test_autocomplete.py
 │   ├── test_common_prefix.py
-│   └── test_proposals.py
+│   ├── test_proposals.py
+│   ├── test_exiftool_server.py
+│   └── test_pid_election.py
 └── docs/
     ├── btime-strategies/
     │   └── README.md

@@ -6,6 +6,7 @@
 # All deps via Nix flakes; no system Python packages needed.
 nix run .#gui          # launch GUI
 nix run . -- --help    # CLI
+nix run .#server            # start ExifTool TCP server (auto-spawned on demand)
 nix run .#test              # full test suite (parallel, coverage)
 nix run .#test -- test_datepicker  # single module (omit test. prefix)
 nix run .#test -- test_analysis test_gps  # multiple specific modules
@@ -22,7 +23,8 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
 | Layer | Directory | Entrypoint |
 |---|---|---|
 | CLI orchestrator | `src/` | `correct_timestamps.py` |
-| ExifTool session | `src/` | `exiftool_session.py` — persistent `-stay_open` wrapper via PyExifTool |
+| ExifTool session | `src/` | `exiftool_session.py` — delegates to shared TCP server by default |
+| ExifTool server | `src/` | `exiftool_server.py` — TCP server (the only direct PyExifTool user); `exiftool_client.py` — TCP client |
 | Plan / Planner | `src/` | `plan.py` — `Planner`, `CorrectionPlan`, `PlanBuilder`, `Instruction` |
 | GUI app | `src/gui/` | `app.py` |
 | GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
@@ -32,7 +34,7 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
 | Env check | `src/` | `env_check.py` — `check_env()`, `format_summary()`, CLI `--check` |
 | Tests | `test/` | one file per area |
 
-Key flow: `ExifToolSession()` → `analysis.analyze(session)` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer(session=session)` I/O.
+Key flow: `ExifToolSession()` (connects to shared server) → `analysis.analyze(session)` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer(session=session)` I/O.
 
 All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`.
 
@@ -60,15 +62,145 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
   `Planner` + `CorrectionPlan`.  `PlanBuilder.execute()` runs them
   sequentially with progress callbacks (`log_fn`, `progress_fn`).
 
+## ExifTool server / client
+
+`src/exiftool_server.py` provides a shared TCP server that wraps a single
+`ExifToolSession` and exposes its API via JSON-RPC over `127.0.0.1`.
+`src/exiftool_client.py` provides the client half; `ExifToolSession()` now
+defaults to `connect='auto'` and delegates to the client transparently.
+Only the server itself uses `ExifToolSession(connect=None)` for direct access.
+
+### Lifecycle
+
+- **Auto-spawn**: When `ExifToolSession()` is created (or
+  `ExifToolClient()` directly), it first tries to connect to an existing server.
+  If none is found, it spawns one as a background subprocess via
+  `exiftool_server.spawn_server()`.  The caller blocks up to 5 s waiting for
+  the server to become ready.
+- **Auto-shutdown**: The server tracks time since the last completed request.
+  A watchdog thread checks every `max(1s, timeout/4)` seconds.  If idle exceeds
+  the timeout (default 60 s), the server shuts down gracefully.
+- **Port file**: The server writes `{tempdir}/gopro-exiftool-server.json`
+  containing its TCP port and PID.  The client discovers the server by reading
+  this file.  On shutdown the file is deleted.
+
+### PID election (single instance guarantee)
+
+When a new server instance starts, it opens the port file and acquires an
+exclusive `fcntl.flock`.  Under the lock it reads the current winner and
+decides:
+
+| Condition | Result |
+|---|---|
+| No port file or stale | New server claims the file and starts |
+| Existing server alive, new PID > old PID | New server exits |
+| Existing server alive, new PID < old PID | New server sends `shutdown` to the old one, then takes over |
+
+Because the lock is held for the entire read-compare-write cycle, there is
+no race window (unlike the previous `O_CREAT | O_EXCL` retry loop).  Log
+messages include ``%H:%M:%S.%f`` timestamps via the module-level ``_log()``
+function.
+
+### Protocol
+
+Newline-delimited JSON over TCP (inspired by JSON-RPC 2.0):
+
+```json
+{"id": 1, "method": "read_tags_batch", "params": {"filepaths": [...]}}
+{"id": 1, "result": {"/path/GH010001.MP4": ["2026-05-14T14:52:00+00:00", null]}}
+```
+
+| Method | Server handler | Delegates to |
+|---|---|---|
+| `ping` | `_method_ping` | — returns `"pong"` |
+| `status` | `_method_status` | returns port, pid, uptime, timeout |
+| `available` | `_method_available` | `session.available()` |
+| `read_gps_time` | `_method_read_gps_time` | `session.read_gps_time()` |
+| `read_embedded` | `_method_read_embedded` | `session.read_embedded()` |
+| `read_tags_batch` | `_method_read_tags_batch` | `session.read_tags_batch()` |
+| `read_gps_accuracy_batch` | `_method_read_gps_accuracy_batch` | `session.read_gps_accuracy_batch()` |
+| `write_embedded` | `_method_write_embedded` | `session.write_embedded()` |
+| `write_embedded_batch` | `_method_write_embedded_batch` | `session.write_embedded_batch()` |
+| `dump_full_json` | `_method_dump_full_json` | `session.dump_full_json()` |
+| `dump_tags_json` | `_method_dump_tags_json` | `session.dump_tags_json()` |
+| `shutdown` | `_method_shutdown` | stops the server loop |
+
+### Single-server serialization
+
+All exiftool writes go through a **single server process** whose accept
+loop is single-threaded — each request is fully handled before the next
+is accepted.  This eliminates write concurrency entirely across all
+CLI/GUI invocations.  The old `fcntl.flock` cross-process lock has been
+removed as redundant.
+
+### Key files
+
+| File | Role |
+|---|---|---|
+| `src/exiftool_server.py` | `ExifToolServer` class, `spawn_server()`, `_takeover_or_exit()` |
+| `src/exiftool_client.py` | `ExifToolClient` with same API as `ExifToolSession` |
+| `src/exiftool_session.py` | `ExifToolSession()` delegation (defaults to `connect='auto'`) |
+| `src/options.py` | `EXIFTOOL_SERVER_PORT_FILE`, `EXIFTOOL_SERVER_IDLE_TIMEOUT` |
+| `test/test_exiftool_server.py` | 15 tests: protocol, auto-spawn, idle, client, session |
+| `test/test_pid_election.py` | 2 tests: sequential and concurrent PID election |
+
 ## exFAT raw block write & cache coherence
 
 ### `_fix_exfat_raw` (exfat_raw.py)
 
 - Writes **both** creation time AND modification time in one raw-block access.
-- Calls `sync()` after write to flush pending kernel writes.
+- **Does NOT call `sync()`** — the global ``sync()`` triggers the kernel exFAT driver's ``exfat_sync_fs()`` which incorrectly flushes dirty inodes from ALL mounts, causing cross-mount directory entry corruption on kernel 6.12.87. The ``os.fsync`` on the backing file (inside ``ExfatRawIO.write()``) is sufficient for data persistence.
+- **Does NOT call `os.utime()`** — the kernel exFAT driver has its own
+  in-memory directory-entry cache that is not invalidated by raw-block writes.
+  Calling `os.utime()` after a raw-block write causes the driver to read the
+  stale directory entry from its cache and overwrite the raw-block changes.
+  The following mechanisms were tested empirically (12 runs × 2 workers each,
+  24 worker attempts per strategy) and all **failed** to prevent the overwrite:
+  ``fsync`` (file & dir), ``stat``, ``open``/``read``/``pread``, ``sleep``,
+  ``sync``, ``subprocess touch -t``, double ``os.utime``, ``rewrite``.
+  The only reliable option is to skip ``os.utime()`` entirely after a
+  raw-block write.  The stale kernel cache is a cosmetic issue:
+  ``stat`` shows the old mtime, but the raw block data is correct.
 - **Does NOT call `drop_caches`** — on older kernels (<6.12), `drop_caches` with
   loop devices over sparse backing files causes `EIO` on subsequent reads.
   `sync` alone is sufficient for the raw block write to persist.
+
+### exFAT driver cross-mount DE corruption (kernel 6.12.87)
+
+The kernel exFAT driver has a bug where concurrent operations across
+independent mounts can corrupt directory entries.  This was extensively
+investigated via 23+ hypothesis tests in ``test/hypothesis/``:
+
+| Trigger | Corruptions | Source |
+|---|---|---|
+| ExifTool writes on 2 mounts (individual sessions) | **22/24** | H19, H22, H23 |
+| ExifTool writes on 2 mounts (shared session) | **0** | H20 |
+| Plain ``write()`` through mount on 2 mounts | **0** | H20 |
+| ``sync()`` on one mount + exiftool on another | **12/12** | H26 |
+| ``fix_exfat_raw`` alone on 2 mounts | **0** | H19 |
+
+**Root cause**: ExifTool's internal ``write()`` through the exFAT driver
+dirties inodes with ``mtime=now``.  Under concurrent load across multiple
+mounts, the driver's ``exfat_sync_fs()`` incorrectly flushes dirty inodes
+from one mount to another mount's directory entries.
+
+**Mitigations** (all in place):
+1. ``ExifToolSession()`` defaults to ``connect='auto'`` — all production
+   code routes through the shared server process, whose single-threaded
+   accept loop serialises all exiftool operations.
+2. ``sync()`` removed from ``fix_exfat_raw`` (the global sync was the
+   primary trigger for cross-mount writeback).
+3. ``os.fsync`` on the backing file (in ``ExfatRawIO.write()``) handles
+   data persistence without triggering the buggy driver writeback.
+
+### Server as primary path
+
+Since `ExifToolSession()` now defaults to `connect='auto'` (server mode),
+all production code (CLI, GUI) automatically routes exiftool operations
+through the single server process.  The `fcntl.flock` lock is no longer
+needed — the server serialises all requests in-process, eliminating
+write concurrency entirely even across multiple CLI/GUI invocations.
+See `ExifTool server / client` above.
 
 ### `Writer.close()` (writer.py)
 
@@ -109,8 +241,7 @@ output strings (e.g., `2026:05:14 14:52:00+09:00`) and converts to UTC, instead
 of stripping the offset and stamping the local time as UTC.  The old `_strip_tz()`
 function has been removed.
 
-This is critical for the timezone integration test (`test_timezone_integration.py`)
-which runs the full correction pipeline under 7 different system timezones.
+This is critical for timezone correctness.
 
 ## Test notes
 
@@ -125,6 +256,8 @@ which runs the full correction pipeline under 7 different system timezones.
 - `setup_loop_device(img_path)` / `teardown_loop_device(loop_dev, mount_point)`
   — loop device + mount lifecycle. Skips test on failure.
 - `write_sparse(gz_path, img_path)` — low-level streaming decompressor.
+
+
 
 ### `test_debug_raw_btime.py` (debug tests)
 
@@ -144,7 +277,7 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 | `debug` | `test_debug_raw_btime` (7 tests) | 30s |
 | `unit` | `test.test_unit` (28 tests) | 5s |
 | `cluster` | `test_cluster_coherence` | 45s |
-| `full` | GUI correction + timezone integration | 3min |
+| `full` | GUI correction + timezone integration | 90s |
 
 ## Mount strategy pattern
 
@@ -152,6 +285,11 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 
 - `ImageMountStrategy` — creates loop device from `.img` file and mounts it
   (tries `udisksctl` first, falls back to `sudo losetup + mount`)
+  - Mount-point collision detection via `_existing_mount_points()`: records
+    all mount paths occupied by loop devices **before** calling
+    `loop-setup`.  After mount succeeds (via udisksctl or auto-mount), if
+    the resulting path was already occupied, falls through to
+    `_via_sudo_with()` which mounts to a unique tempdir.
 - `AlreadyMountedStrategy` — for paths already mounted (no-op)
 - `detect_strategy(source)` — auto-selects strategy based on source type
 - `REGISTRY` — dict for lookup by name

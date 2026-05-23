@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -81,7 +79,8 @@ class Writer:
         except Exception:
             pass
         if fs in ('exfat', 'fuse', 'exfat_raw') and self._b_method != BTIME_EXFAT_RAW:
-            return ExfatRawMtimeStrategy()
+            from strategies.exfat_raw import exfat_ops
+            return ExfatRawMtimeStrategy(exfat_ops)
         return OsUtimeMtimeStrategy()
 
     @property

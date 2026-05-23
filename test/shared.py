@@ -45,11 +45,17 @@ def decompress_sparse_image(gz_path: Path, dest_path: Path) -> Path:
     Writes non-zero data blocks directly into a sparse file without
     ever creating a dense 8 GB intermediate file on disk.
 
+    Uses ``fcntl.flock`` on a sidecar lockfile so that concurrent
+    callers (e.g. parallel subprocesses) do not race on the cache.
+
     Returns *dest_path* (already exists or freshly decompressed).
     """
-    if dest_path.exists():
-        return dest_path
-    write_sparse(gz_path, dest_path)
+    import fcntl
+    lock_path = dest_path.with_suffix('.img.lock')
+    with open(lock_path, 'w') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        if not dest_path.exists():
+            write_sparse(gz_path, dest_path)
     return dest_path
 
 
@@ -76,9 +82,17 @@ def write_sparse(gz_path: Path, img_path: Path):
             offset += len(chunk)
 
 
+_SPARSE = os.environ.get('GOPRO_SPARSE_COPY', '1') != '0'
+
+
 def prepare_sparse_image(gz_path: Path, prefix: str = 'gopro_') -> tuple[Path, Path]:
     """Decompress *gz_path* to a cached location (if needed), then copy
-    via ``cp --sparse=always`` to an isolated temp working directory.
+    to an isolated temp working directory.
+
+    When ``GOPRO_SPARSE_COPY=0`` the copy is fully allocated
+    (``--sparse=never``) to avoid loop-device REQ_NOWAIT + qcow2 EIO.
+
+    Otherwise the copy uses ``--sparse=always``.
 
     Returns ``(temp_dir, image_copy_path)``.
     """
@@ -87,8 +101,9 @@ def prepare_sparse_image(gz_path: Path, prefix: str = 'gopro_') -> tuple[Path, P
 
     work_dir = Path(tempfile.mkdtemp(prefix=prefix))
     img_copy = work_dir / cached.name
+    flag = '--sparse=never' if not _SPARSE else '--sparse=always'
     subprocess.run(
-        ['cp', '--sparse=always', str(cached), str(img_copy)],
+        ['cp', flag, str(cached), str(img_copy)],
         check=True, capture_output=True,
     )
     return work_dir, img_copy

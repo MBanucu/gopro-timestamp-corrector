@@ -47,6 +47,8 @@ class TestBtimeGuiCorrection(unittest.TestCase):
                        check=True, capture_output=True)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
+        cls.addClassCleanup(teardown_loop_device, cls.loop_dev, cls.mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
 
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
@@ -67,18 +69,12 @@ class TestBtimeGuiCorrection(unittest.TestCase):
         except Exception:
             return False
 
-    @classmethod
-    def tearDownClass(cls):
-        teardown_loop_device(cls.loop_dev, cls.mount_point)
-        if cls._work_dir:
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
-
     @staticmethod
     def _read_btime(path):
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
-        from strategies.exfat_raw import read_exfat_btime_raw
-        val = read_exfat_btime_raw(str(path))
+        from strategies.exfat_raw import exfat_ops
+        val = exfat_ops.read_btime_raw(str(path))
         if val is not None:
             return val
         r = subprocess.run(['stat', '-c', '%W', str(path)],

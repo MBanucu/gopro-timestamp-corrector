@@ -72,7 +72,10 @@ class AlreadyMountedStrategy(MountStrategy):
 class ImageMountStrategy(MountStrategy):
     """Create a loop device from an image file and mount it.
 
-    Tries udisksctl first (no sudo), then sudo losetup + sudo mount.
+    Uses udisksctl for loop-setup and mount (no sudo needed).  On mount-
+    path collision (udisksctl returns an existing mount from a different
+    device with the same volume serial) falls through to ``sudo mount``
+    to a unique tempdir.  Falls back to ``sudo losetup + sudo mount``.
     """
 
     name = 'image'
@@ -94,7 +97,40 @@ class ImageMountStrategy(MountStrategy):
             return result
         raise MountError("Could not set up loop device (udisksctl+sudo failed)")
 
+    @classmethod
+    def _find_mount(cls, loop_dev: str) -> str | None:
+        """Return the mount point for *loop_dev* from mountinfo, or None."""
+        minor = loop_dev.lstrip('/dev/loop')
+        needle = f' 7:{minor} '
+        try:
+            with open('/proc/self/mountinfo') as f:
+                for line in f:
+                    if needle in line:
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            return parts[4]
+        except OSError:
+            pass
+        return None
+
+    @staticmethod
+    def _existing_mount_points() -> set[str]:
+        """Return mount paths currently occupied by loop devices."""
+        mps: set[str] = set()
+        try:
+            with open('/proc/self/mountinfo') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        major = parts[2].split(':')[0]
+                        if major == '7':
+                            mps.add(parts[4])
+        except OSError:
+            pass
+        return mps
+
     def _via_udisksctl(self) -> tuple[str, str] | None:
+        occupied_before = self._existing_mount_points()
         try:
             r = subprocess.run(
                 ['udisksctl', 'loop-setup', '-f', str(self._img_path),
@@ -106,19 +142,53 @@ class ImageMountStrategy(MountStrategy):
             if not m:
                 return None
             loop_dev = m.group(1)
+
             r = subprocess.run(
                 ['udisksctl', 'mount', '-b', loop_dev, '--no-user-interaction'],
                 capture_output=True, text=True)
-            if r.returncode != 0:
-                subprocess.run(['sudo', 'losetup', '-d', loop_dev], capture_output=True)
-                return None
-            m = re.search(r'at ([^ \n]+)', r.stdout)
-            if not m:
-                subprocess.run(['sudo', 'losetup', '-d', loop_dev], capture_output=True)
-                return None
-            return (loop_dev, m.group(1).rstrip('.'))
+            if r.returncode == 0:
+                m = re.search(r'at ([^ \n]+)', r.stdout)
+                if not m:
+                    subprocess.run(
+                        ['sudo', 'losetup', '-d', loop_dev], capture_output=True)
+                    return None
+                mount_point = m.group(1).rstrip('.')
+                if self._mount_has_device(mount_point, loop_dev) \
+                        and mount_point not in occupied_before:
+                    return (loop_dev, mount_point)
+                return self._via_sudo_with(loop_dev)
+
+            # mount failed — auto-mount may have already done it.
+            mount_point = self._find_mount(loop_dev)
+            if mount_point and self._mount_has_device(mount_point, loop_dev) \
+                    and mount_point not in occupied_before:
+                return (loop_dev, mount_point)
+            return self._via_sudo_with(loop_dev)
         except FileNotFoundError:
             return None
+        except OSError:
+            return None
+
+    @staticmethod
+    def _mount_has_device(mount_point: str, loop_dev: str) -> bool:
+        """Return True if *mount_point* is mounted exclusively from *loop_dev*.
+
+        Checks ALL mountinfo entries at the given mount point to detect
+        mount shadowing — a second device mounted at the same path would
+        mean our device does not exclusively own the mount.
+        """
+        minor = loop_dev.lstrip('/dev/loop')
+        our_dev = f'7:{minor}'
+        try:
+            with open('/proc/self/mountinfo') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 5 and parts[4] == mount_point.rstrip('/'):
+                        if parts[2] != our_dev:
+                            return False
+        except OSError:
+            return True
+        return True
 
     def _via_sudo(self) -> tuple[str, str] | None:
         try:
@@ -128,36 +198,72 @@ class ImageMountStrategy(MountStrategy):
             if r.returncode != 0:
                 return None
             loop_dev = r.stdout.strip()
-            mount_point = tempfile.mkdtemp(prefix='gopro_mnt_')
-            uid = os.getuid()
-            gid = os.getgid()
-            for fs_type in ('exfat', 'fuse.exfat', 'auto'):
+            # Verify the backing file matches our image (TOCTOU guard).
+            # Two parallel losetup -f calls could both get the same device;
+            # the last one wins.  If we lost the race, retry.
+            back = self._read_backing_file(loop_dev)
+            while back is not None and back != str(self._img_path):
                 r = subprocess.run(
-                    ['sudo', 'mount', '-t', fs_type,
-                     '-o', f'uid={uid},gid={gid}',
-                     loop_dev, mount_point],
+                    ['sudo', 'losetup', '-f', '--show', str(self._img_path)],
                     capture_output=True, text=True)
-                if r.returncode == 0:
-                    return (loop_dev, mount_point)
-            mount_exfat = shutil.which('mount.exfat-fuse')
-            if mount_exfat:
-                r = subprocess.run(
-                    ['sudo', 'env', f'PATH={os.environ["PATH"]}',
-                     mount_exfat, loop_dev, mount_point,
-                     '-o', f'uid={uid}', '-o', f'gid={gid}'],
-                    capture_output=True, text=True)
-                if r.returncode == 0:
-                    return (loop_dev, mount_point)
-            subprocess.run(['sudo', 'losetup', '-d', loop_dev], capture_output=True)
-            os.rmdir(mount_point)
-            return None
+                if r.returncode != 0:
+                    return None
+                loop_dev = r.stdout.strip()
+                back = self._read_backing_file(loop_dev)
+            return self._via_sudo_with(loop_dev)
         except FileNotFoundError:
             return None
 
+    @staticmethod
+    def _read_backing_file(loop_dev: str) -> str | None:
+        """Read the backing file path for *loop_dev* via sysfs."""
+        dev_name = loop_dev.lstrip('/dev/')
+        r = subprocess.run(
+            ['cat', f'/sys/block/{dev_name}/loop/backing_file'],
+            capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+        r2 = subprocess.run(
+            ['sudo', 'losetup', '-n', '-O', 'BACK-FILE', loop_dev],
+            capture_output=True, text=True, timeout=5)
+        return r2.stdout.strip() or None if r2.returncode == 0 else None
+
+    def _via_sudo_with(self, loop_dev: str) -> tuple[str, str] | None:
+        """Mount an already-allocated loop device via ``sudo mount``.
+
+        This avoids the TOCTOU race in ``_via_sudo`` where ``losetup -f``
+        can return a device that another process grabbed between the
+        ``udisksctl mount`` failure and the fallback ``losetup -f --show``.
+        """
+        import tempfile
+        mount_point = tempfile.mkdtemp(prefix='gopro_mnt_')
+        uid = os.getuid()
+        gid = os.getgid()
+        for fs_type in ('exfat', 'fuse.exfat', 'auto'):
+            r = subprocess.run(
+                ['sudo', 'mount', '-t', fs_type,
+                 '-o', f'uid={uid},gid={gid}',
+                 loop_dev, mount_point],
+                capture_output=True, text=True)
+            if r.returncode == 0:
+                return (loop_dev, mount_point)
+        mount_exfat = shutil.which('mount.exfat-fuse')
+        if mount_exfat:
+            r = subprocess.run(
+                ['sudo', 'env', f'PATH={os.environ["PATH"]}',
+                 mount_exfat, loop_dev, mount_point,
+                 '-o', f'uid={uid}', '-o', f'gid={gid}'],
+                capture_output=True, text=True)
+            if r.returncode == 0:
+                return (loop_dev, mount_point)
+        subprocess.run(['sudo', 'losetup', '-d', loop_dev], capture_output=True)
+        os.rmdir(mount_point)
+        return None
+
     def unmount(self):
         if self._loop_dev:
-            subprocess.run(['sudo', 'umount', self._loop_dev], capture_output=True)
-            subprocess.run(['sudo', 'losetup', '-d', self._loop_dev], capture_output=True)
+            from loop_device import teardown_loop_device
+            teardown_loop_device(self._loop_dev, self._mount_point)
             self._loop_dev = None
             self._mount_point = None
 

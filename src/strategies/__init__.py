@@ -1,6 +1,5 @@
 from strategies.base import BtimeStrategy
-from strategies.exfat_raw import ExfatRawStrategy
-from strategies.exfat_raw_read import ExfatRawReadStrategy
+from strategies.exfat_raw import ExfatRawStrategy, ExfatRawReadStrategy
 from strategies.debugfs import DebugfsStrategy
 from strategies.fuse import FuseStrategy
 from strategies.clock import ClockStrategy

@@ -10,10 +10,15 @@ from pathlib import Path
 # Use existing btime.py helpers for boot parsing
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
-from btime import (
-    _exfat_parse_boot, _exfat_find_in_dir, _exfat_read_device, _exfat_encode_time,
-    _fix_exfat_raw
-)
+from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+from strategies.exfat_raw._pure import _exfat_encode_time
+_io = ExfatRawIO()
+_fs = ExfatRawFilesystem(_io)
+_ops = ExfatRawOps(_io, _fs)
+_exfat_parse_boot = _io.parse_boot
+_exfat_find_in_dir = _fs.find_in_dir
+_exfat_read_device = _io.read
+_fix_exfat_raw = _ops.fix_exfat_raw
 
 tmp = Path(tempfile.mkdtemp(prefix='gopro_debug_'))
 img = tmp / 'sdcard.img'

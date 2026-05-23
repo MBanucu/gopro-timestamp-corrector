@@ -8,3 +8,7 @@ result
 *.THM
 .coverage
 test/sdcard.img
+test/sdcard.img.lock
+/sdcard.img
+/sdcard.img.lock
+.coverage.*

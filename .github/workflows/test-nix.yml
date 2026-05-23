@@ -14,15 +14,11 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v22
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-        with:
-          use-flakehub: false
-
       - name: Capability check
         run: nix develop --command bash -c 'PYTHONPATH=src python -m correct_timestamps --check .' || true
 
       - name: Run tests (via Nix)
-        run: nix run .#test
+        run: nix run .#test -- -j 1
 
   nixos-vm-test:
     runs-on: ubuntu-latest
@@ -32,18 +28,11 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v22
 
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
-        with:
-          use-flakehub: false
-
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger
           ls -la /dev/kvm
-
-      - name: Capability check
-        run: nix develop --command bash -c 'PYTHONPATH=src python -m correct_timestamps --check .' || true
 
       - name: Run NixOS VM test
         run: nix build .#checks.x86_64-linux.nixos-test --no-link -L

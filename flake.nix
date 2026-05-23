@@ -30,8 +30,15 @@
       nixosTest = nixosPkgs.testers.nixosTest {
         name = "gopro-timestamp-corrector";
         nodes.machine = { pkgs, lib, ... }: {
-          virtualisation.memorySize = 2048;
+          virtualisation.cores = 4;
+          virtualisation.memorySize = 4096;
+          # virtualisation.diskSize = 32768;  # default is sufficient; larger disk introduced regressions
           time.timeZone = "Europe/Berlin";
+
+          boot.kernelParams = [ "loglevel=3" ];
+          services.journald.extraConfig = ''
+            ForwardToConsole=no
+          '';
 
           environment.systemPackages = with pkgs; [
             exiftool e2fsprogs exfat libfaketime xvfb sudo
@@ -68,6 +75,9 @@
           bin_path = "${nixosPkgs.lib.makeBinPath nixosTestDeps}"
           python_bin = "${nixosTestPython}/bin/python3"
 
+          machine.succeed("echo '--- NixOS test: VM kernel ---'")
+          kernel = machine.succeed("uname -a")
+          machine.succeed(f"echo 'VM kernel: {kernel.strip()}'")
           machine.succeed("echo '--- NixOS test: copying source ---'")
           machine.succeed("echo '--- NixOS test: environment check ---'")
           machine.succeed(
@@ -83,7 +93,7 @@
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
               + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
-              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -j 2 -v 2>&1"
+              + f"DISPLAY=:99 {python_bin} -m test.run_parallel -v -j 1 2>&1"
           )
         '';
       };
@@ -150,12 +160,15 @@
           installPhase = ''
             python_test="${pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ])}/bin/python3"
             mkdir -p $out/bin
+            deps_bin="${pkgs.lib.makeBinPath deps}"
             cat > $out/bin/run-tests << WRAPPER
         #!${pkgs.bash}/bin/bash
-        export PYTHONPATH="\$PYTHONPATH:$src:$src/src:${pkgs.lib.makeBinPath deps}:$out/lib"
+        export PATH="$deps_bin:\$PATH"
+        export PYTHONPATH="\$PYTHONPATH:$src:$src/src:$out/lib"
         Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
         XVFB_PID=\$!
-        DISPLAY=:99 $python_test -m test.run_parallel -j 4 --coverage "\$@"
+        sleep 1
+        DISPLAY=:99 $python_test -m test.run_parallel --coverage "\$@"
         EXIT_CODE=\$?
         kill \$XVFB_PID 2>/dev/null
         exit \$EXIT_CODE
@@ -165,6 +178,25 @@
         exec $python_test -m coverage report -m --include="$src/src/*"
         WRAPPER
             chmod +x $out/bin/run-tests $out/bin/coverage-report
+          '';
+        };
+
+        packages.server = pkgs.stdenvNoCC.mkDerivation {
+          name = "gopro-time-correction-server";
+          inherit src;
+          dontBuild = true;
+          installPhase = ''
+            mkdir -p $out/bin $out/lib
+            cp src/*.py $out/lib/
+            python_lib="$out/lib"
+            python_bin="${python}/bin/python3"
+            cat > $out/bin/gopro-exiftool-server << WRAPPER
+        #!${pkgs.bash}/bin/bash
+        export PATH="${pkgs.lib.makeBinPath deps}:\$PATH"
+        export PYTHONPATH="$python_lib:\$PYTHONPATH"
+        exec $python_bin "$python_lib/exiftool_server.py" "\$@"
+        WRAPPER
+            chmod +x $out/bin/gopro-exiftool-server
           '';
         };
 
@@ -183,6 +215,11 @@
         apps.test = {
           type = "app";
           program = "${self.packages.${system}.test}/bin/run-tests";
+        };
+
+        apps.server = {
+          type = "app";
+          program = "${self.packages.${system}.server}/bin/gopro-exiftool-server";
         };
       })) // {
         checks.${nixosSystem}.nixos-test = nixosTest;

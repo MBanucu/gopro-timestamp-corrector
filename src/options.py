@@ -64,3 +64,12 @@ CAL_TIME_FORMAT = 'HH:MM:SS.mmm'
 # Human-readable labels for the GUI
 CAL_DATE_LABEL = '  ISO: YYYY-MM-DD'
 CAL_TIME_LABEL = '  HH:MM:SS.mmm (24h)'
+
+
+# ── ExifTool server ───────────────────────────────────────────────────
+
+EXIFTOOL_SERVER_PORT_FILE = 'gopro-exiftool-server.json'
+"""Filename (in ``tempfile.gettempdir()``) storing the server's TCP port and PID."""
+
+EXIFTOOL_SERVER_IDLE_TIMEOUT = 60
+"""Seconds of inactivity before the server auto-shuts down."""
