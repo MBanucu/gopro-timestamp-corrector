@@ -273,20 +273,20 @@ class TestFormatterRoundtrip(unittest.TestCase):
     """Test that datetime ISO formatting is symmetric."""
 
     def test_iso_roundtrip(self):
-        from exiftool_server import _iso, _from_iso
+        from exiftool_protocol import iso, from_iso
         from datetime import datetime, timezone
 
         now = datetime.now(timezone.utc)
-        s = _iso(now)
+        s = iso(now)
         self.assertIsNotNone(s)
-        back = _from_iso(s)
+        back = from_iso(s)
         self.assertEqual(now, back)
 
     def test_none(self):
-        from exiftool_server import _iso, _from_iso
-        self.assertIsNone(_iso(None))
-        self.assertIsNone(_from_iso(None))
-        self.assertIsNone(_from_iso(''))
+        from exiftool_protocol import iso, from_iso
+        self.assertIsNone(iso(None))
+        self.assertIsNone(from_iso(None))
+        self.assertIsNone(from_iso(''))
 
 
 if __name__ == '__main__':
