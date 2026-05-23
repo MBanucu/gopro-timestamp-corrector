@@ -192,39 +192,20 @@ class TestClientAutoSpawn(unittest.TestCase):
 
     def test_auto_spawn(self):
         from exiftool_client import ExifToolClient
-        # Patch ExifToolClient to use our isolated port file
-        import exiftool_client as ec
-        orig_port = ec._PORT_FILE
-        ec._PORT_FILE = _CLIENT_PORT_FILE
-        try:
-            client = ExifToolClient()
-            self.assertTrue(client.available())
-        finally:
-            ec._PORT_FILE = orig_port
+        client = ExifToolClient(port_file=_CLIENT_PORT_FILE)
+        self.assertTrue(client.available())
 
     def test_ping_after_connect(self):
         from exiftool_client import ExifToolClient
-        import exiftool_client as ec
-        orig_port = ec._PORT_FILE
-        ec._PORT_FILE = _CLIENT_PORT_FILE
-        try:
-            client = ExifToolClient()
-            resp = _send(client._port, 'ping')
-            self.assertEqual(resp.get('result'), 'pong')
-        finally:
-            ec._PORT_FILE = orig_port
+        client = ExifToolClient(port_file=_CLIENT_PORT_FILE)
+        resp = _send(client._port, 'ping')
+        self.assertEqual(resp.get('result'), 'pong')
 
     def test_read_gps_nonexistent_file(self):
         from exiftool_client import ExifToolClient
-        import exiftool_client as ec
-        orig_port = ec._PORT_FILE
-        ec._PORT_FILE = _CLIENT_PORT_FILE
-        try:
-            client = ExifToolClient()
-            result = client.read_gps_time('/nonexistent/file.mp4')
-            self.assertIsNone(result)
-        finally:
-            ec._PORT_FILE = orig_port
+        client = ExifToolClient(port_file=_CLIENT_PORT_FILE)
+        result = client.read_gps_time('/nonexistent/file.mp4')
+        self.assertIsNone(result)
 
 
 class TestSessionIntegration(unittest.TestCase):
@@ -248,28 +229,19 @@ class TestSessionIntegration(unittest.TestCase):
 
     def test_session_available(self):
         from exiftool_session import ExifToolSession
-        import exiftool_client as ec
-        orig = ec._PORT_FILE
-        ec._PORT_FILE = _SESSION_PORT_FILE
-        try:
-            with ExifToolSession(connect='auto') as session:
-                self.assertTrue(session.available())
-        finally:
-            ec._PORT_FILE = orig
+        with ExifToolSession(connect='auto',
+                             port_file=_SESSION_PORT_FILE) as session:
+            self.assertTrue(session.available())
 
     def test_session_reuses_server(self):
         """Two sessions should share the same server process."""
         from exiftool_session import ExifToolSession
-        import exiftool_client as ec
-        orig = ec._PORT_FILE
-        ec._PORT_FILE = _SESSION_PORT_FILE
-        try:
-            with ExifToolSession(connect='auto') as s1:
-                self.assertTrue(s1.available())
-                with ExifToolSession(connect='auto') as s2:
-                    self.assertTrue(s2.available())
-        finally:
-            ec._PORT_FILE = orig
+        with ExifToolSession(connect='auto',
+                             port_file=_SESSION_PORT_FILE) as s1:
+            self.assertTrue(s1.available())
+            with ExifToolSession(connect='auto',
+                                 port_file=_SESSION_PORT_FILE) as s2:
+                self.assertTrue(s2.available())
 
 
 class TestIdleShutdown(unittest.TestCase):

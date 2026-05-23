@@ -159,7 +159,7 @@ def spawn_server(timeout: float = 5.0,
     except OSError:
         pass
 
-    log_file = port_file.rsplit('.', 1)[0] + '.log'
+    log_file = port_file + '.log'
     proc = subprocess.Popen(
         [sys.executable, __file__, '--port-file', port_file,
          '--log-file', log_file],

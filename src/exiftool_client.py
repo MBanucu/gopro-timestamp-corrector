@@ -21,13 +21,10 @@ from datetime import datetime
 from pathlib import Path
 
 from exiftool_protocol import iso, from_iso
-from options import EXIFTOOL_SERVER_LOCK_FILE, EXIFTOOL_SERVER_PORT_FILE
+from options import EXIFTOOL_SERVER_PORT_FILE
 
 
 _PORT_FILE = os.path.join(tempfile.gettempdir(), EXIFTOOL_SERVER_PORT_FILE)
-
-# Lock file for serialising concurrent _ensure_server() callers.
-_LOCK_FILE = os.path.join(tempfile.gettempdir(), EXIFTOOL_SERVER_LOCK_FILE)
 
 
 def _send_request(port: int, method: str,
@@ -41,8 +38,6 @@ def _send_request(port: int, method: str,
     req = json.dumps({'id': 1, 'method': method, 'params': params})
     s = socket.create_connection(('127.0.0.1', port), timeout=10.0)
     try:
-        # Long timeout for response — batch writes (exiftool) can take
-        # 30-60s+ for many files through a single-threaded server.
         s.settimeout(120.0)
         s.sendall((req + '\n').encode())
         resp = s.makefile('r', encoding='utf-8').readline()
@@ -59,16 +54,18 @@ def _send_request(port: int, method: str,
         s.close()
 
 
-def _find_server() -> int:
-    """Read the port file and return the server port.
+def _find_server(port_file: str | None = None) -> int:
+    """Read *port_file* and return the server port.
 
-    Raises ``ConnectionError`` if the port file is missing or stale.
+    Raises ``ConnectionError`` if the file is missing or the server stale.
+    Defaults to ``_PORT_FILE``.
     """
+    if port_file is None:
+        port_file = _PORT_FILE
     try:
-        with open(_PORT_FILE) as f:
+        with open(port_file) as f:
             data = json.load(f)
         port = data['port']
-        # Quick health check
         _send_request(port, 'ping')
         return port
     except (OSError, json.JSONDecodeError, KeyError, ConnectionError,
@@ -77,32 +74,34 @@ def _find_server() -> int:
             f'Cannot reach exiftool server: {exc}')
 
 
-def _ensure_server() -> int:
+def _ensure_server(port_file: str | None = None) -> int:
     """Find or auto-spawn the server. Returns its port.
 
     Uses double-checked locking with an exclusive ``flock`` to prevent
     concurrent callers from both trying to spawn a server.
     """
-    # Fast path: no lock needed
+    if port_file is None:
+        port_file = _PORT_FILE
+    # Client-side lock.  Must NOT match the server's lock path
+    # (``port_file + '.lock'``) or the server's ``_takeover_or_exit``
+    # would deadlock while the client holds this lock.
+    lock_file = port_file + '.client.lock'
+
     try:
-        return _find_server()
+        return _find_server(port_file=port_file)
     except ConnectionError:
         pass
 
-    # Serialised path: acquire exclusive lock so only one caller spawns.
-    with open(_LOCK_FILE, 'w') as lock_fd:
+    with open(lock_file, 'w') as lock_fd:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
-        # Double-check: another caller may have spawned while we waited
-        # for the lock.
         try:
-            return _find_server()
+            return _find_server(port_file=port_file)
         except ConnectionError:
             pass
 
         from exiftool_server import spawn_server
-        return spawn_server(port_file=_PORT_FILE)
-    # flock released when lock_fd is closed on context-manager exit.
+        return spawn_server(port_file=port_file)
 
 
 class ExifToolClient:
@@ -110,10 +109,19 @@ class ExifToolClient:
 
     All methods match the signatures of ``ExifToolSession`` so this
     can be used as a drop-in replacement.
+
+    Args:
+        port_file: Path to the server's port file.  When set, the client
+            uses the server described by this file (or auto-spawns one
+            if the file doesn't exist).  Defaults to the global
+            ``_PORT_FILE``.
     """
 
-    def __init__(self):
-        self._port = _ensure_server()
+    def __init__(self, port_file: str | None = None):
+        if port_file is None:
+            port_file = _PORT_FILE
+        self._port_file = port_file
+        self._port = _ensure_server(port_file=port_file)
 
     # ── Compatibility with ExifToolSession's context manager ────────
 
