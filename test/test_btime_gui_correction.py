@@ -47,6 +47,8 @@ class TestBtimeGuiCorrection(unittest.TestCase):
                        check=True, capture_output=True)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
+        cls.addClassCleanup(teardown_loop_device, cls.loop_dev, cls.mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
 
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
@@ -54,24 +56,6 @@ class TestBtimeGuiCorrection(unittest.TestCase):
 
         # Probe kernel btime readback support on exFAT via a temp filesystem
         cls._btime_readable = cls._check_btime_readback_support()
-
-    @classmethod
-    def _check_btime_readback_support(cls):
-        """Probe exFAT btime readback via raw block access on a temp filesystem."""
-        try:
-            import sys
-            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
-            from probe import probe_exfat_btime as _probe_exfat_btime
-            result = _probe_exfat_btime()
-            return result.supported is True
-        except Exception:
-            return False
-
-    @classmethod
-    def tearDownClass(cls):
-        teardown_loop_device(cls.loop_dev, cls.mount_point)
-        if cls._work_dir:
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     @staticmethod
     def _read_btime(path):

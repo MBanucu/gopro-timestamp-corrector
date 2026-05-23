@@ -21,12 +21,8 @@ class TestImgIntegration(unittest.TestCase):
         cls._work_dir, cls.img_path = prepare_sparse_image(gz_path)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
-
-    @classmethod
-    def tearDownClass(cls):
-        teardown_loop_device(cls.loop_dev, cls.mount_point)
-        if cls._work_dir:
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
+        cls.addClassCleanup(teardown_loop_device, cls.loop_dev, cls.mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
 
     def test_gps_correction_on_img(self):
         target = Path(self.mount_point) / 'DCIM' / '100GOPRO'

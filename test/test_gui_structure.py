@@ -389,16 +389,12 @@ class TestPlanBtimeFsIntegration(unittest.TestCase):
         cls._work_dir, cls.img_path = prepare_sparse_image(gz_path)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
+        cls.addClassCleanup(teardown_loop_device, cls.loop_dev, cls.mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
 
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
             raise unittest.SkipTest(f'{cls.target} not found')
-
-    @classmethod
-    def tearDownClass(cls):
-        teardown_loop_device(cls.loop_dev, cls.mount_point)
-        if cls._work_dir:
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def setUp(self):
         self.root = tk.Tk()

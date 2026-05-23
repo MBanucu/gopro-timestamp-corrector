@@ -1,7 +1,7 @@
 """H9-12: Unit tests for specific parallel failure hypotheses.
 
 Each test verifies a focused hypothesis about WHY two parallel
-test_full_auto_integration pipelines fail (~50% of the time).
+correction pipelines fail (~50% of the time, with individual sessions).
 
 H9: decompress_sparse_image lock works across subprocesses
 H10: _backing_file resolves correctly for both loop devices in parallel
