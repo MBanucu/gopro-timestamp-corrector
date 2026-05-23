@@ -39,6 +39,7 @@ class DebugRawBtime(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import shutil
         gz_path = Path(__file__).parent / 'sdcard.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest(f'Compressed image not found at {gz_path}')
@@ -52,9 +53,10 @@ class DebugRawBtime(unittest.TestCase):
                        check=True, capture_output=True)
 
         cls._loop_dev, cls._mount_point = setup_loop_device(cls._img_path)
+        cls.addClassCleanup(teardown_loop_device, cls._loop_dev, cls._mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
         cls._target = Path(cls._mount_point) / 'DCIM' / '100GOPRO'
         if not cls._target.exists():
-            teardown_loop_device(cls._loop_dev, cls._mount_point)
             raise unittest.SkipTest(f'{cls._target} not found')
 
         # Write test pattern at known offset BEFORE any exFAT modifications,
@@ -69,13 +71,6 @@ class DebugRawBtime(unittest.TestCase):
              f'count={len(cls._test_05_pattern)}', 'status=none'],
             input=cls._test_05_pattern, capture_output=True)
         cls._test_05_available = r.returncode == 0
-
-    @classmethod
-    def tearDownClass(cls):
-        teardown_loop_device(cls._loop_dev, cls._mount_point)
-        if cls._work_dir:
-            import shutil
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def _first_file(self):
         files = sorted(self._target.glob('*.MP4')) or sorted(self._target.iterdir())

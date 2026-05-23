@@ -30,6 +30,7 @@ class LoopDeviceTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import shutil
         from test.shared import decompress_sparse_image, prepare_sparse_image, \
             setup_loop_device, teardown_loop_device
         if not GZ_PATH.exists():
@@ -37,29 +38,16 @@ class LoopDeviceTest(unittest.TestCase):
         cached = Path(__file__).parent.parent / 'sdcard.img'
         decompress_sparse_image(GZ_PATH, cached)
         cls._work, cls._img = prepare_sparse_image(GZ_PATH, prefix='hypo_')
-        try:
-            cls._loop, cls._mnt = setup_loop_device(str(cls._img))
-        except Exception:
-            teardown_loop_device(getattr(cls, '_loop', None))
-            import shutil
-            shutil.rmtree(cls._work, ignore_errors=True)
-            raise
+        cls._loop, cls._mnt = setup_loop_device(str(cls._img))
+        cls.addClassCleanup(teardown_loop_device, cls._loop, cls._mnt)
+        cls.addClassCleanup(shutil.rmtree, cls._work, ignore_errors=True)
         cls._target = Path(cls._mnt) / 'DCIM' / '100GOPRO'
         if not cls._target.exists():
-            teardown_loop_device(cls._loop, cls._mnt)
-            shutil.rmtree(cls._work, ignore_errors=True)
             raise unittest.SkipTest('100GOPRO not found')
         cls._files = sorted(cls._target.glob('*.MP4')) or sorted(cls._target.glob('*'))
         from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
         cls._io = ExfatRawIO()
         cls._ops = ExfatRawOps(cls._io, ExfatRawFilesystem(cls._io))
-
-    @classmethod
-    def tearDownClass(cls):
-        from test.shared import teardown_loop_device
-        teardown_loop_device(cls._loop, cls._mnt)
-        import shutil
-        shutil.rmtree(cls._work, ignore_errors=True)
 
     def raw_mtime(self, f=None):
         return self._ops.read_mtime_raw(str(f or self._files[0]))
@@ -185,6 +173,7 @@ class H7_FileLockPreventsTOCTOU(unittest.TestCase):
     def test_parallel_setup_gets_unique_devices(self):
         from test.shared import decompress_sparse_image, prepare_sparse_image, \
             setup_loop_device, teardown_loop_device
+        import shutil
         import tempfile
         if not GZ_PATH.exists():
             self.skipTest('sdcard.img.gz not found')
@@ -195,6 +184,8 @@ class H7_FileLockPreventsTOCTOU(unittest.TestCase):
             work, img = prepare_sparse_image(GZ_PATH, prefix=f'lock_{label}_')
             try:
                 loop, mnt = setup_loop_device(str(img))
+                self.addCleanup(teardown_loop_device, loop, mnt)
+                self.addCleanup(shutil.rmtree, work, ignore_errors=True)
                 results[label] = (loop, mnt, work)
             except Exception as e:
                 results[label] = (f'FAIL: {e}', work)
@@ -202,14 +193,6 @@ class H7_FileLockPreventsTOCTOU(unittest.TestCase):
                    for l in ('A', 'B')]
         for t in threads: t.start()
         for t in threads: t.join()
-        import shutil
-        for label in ('A', 'B'):
-            r = results[label]
-            if len(r) == 3:
-                teardown_loop_device(r[0], r[1])
-                shutil.rmtree(r[2], ignore_errors=True)
-            else:
-                shutil.rmtree(r[1], ignore_errors=True)
         self.assertEqual(len(results), 2)
         self.assertNotEqual(results['A'][0], results['B'][0],
                             'H7 FAILED: both got same loop device')

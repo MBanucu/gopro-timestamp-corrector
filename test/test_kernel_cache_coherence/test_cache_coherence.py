@@ -35,24 +35,13 @@ class TestCacheLayer(unittest.TestCase):
         if not gz.exists():
             raise unittest.SkipTest('sdcard.img.gz not found')
         cls._work, cls._img = prepare_sparse_image(gz, prefix='cache_coh_')
-        try:
-            cls._loop, cls._mnt = setup_loop_device(str(cls._img))
-        except Exception as e:
-            teardown_loop_device(getattr(cls, '_loop', None))
-            shutil.rmtree(cls._work, ignore_errors=True)
-            raise unittest.SkipTest(str(e))
+        cls._loop, cls._mnt = setup_loop_device(str(cls._img))
+        cls.addClassCleanup(teardown_loop_device, cls._loop, cls._mnt)
+        cls.addClassCleanup(shutil.rmtree, cls._work, ignore_errors=True)
         cls.target = Path(cls._mnt) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
-            teardown_loop_device(cls._loop, cls._mnt)
-            shutil.rmtree(cls._work, ignore_errors=True)
             raise unittest.SkipTest('100GOPRO not found')
         cls.files = sorted(cls.target.glob('*'))
-
-    @classmethod
-    def tearDownClass(cls):
-        from test.shared import teardown_loop_device
-        teardown_loop_device(cls._loop, cls._mnt)
-        shutil.rmtree(cls._work, ignore_errors=True)
 
 
 class TestRawBlockWrite(TestCacheLayer):

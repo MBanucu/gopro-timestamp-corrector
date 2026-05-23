@@ -21,6 +21,7 @@ class TestClusterCoherence(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import shutil
         gz_path = Path(__file__).parent / 'sdcard.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest('sdcard.img.gz not found')
@@ -31,21 +32,15 @@ class TestClusterCoherence(unittest.TestCase):
         subprocess.run(['cp', '--sparse=always', str(cached), str(cls._img_path)],
                        check=True, capture_output=True)
         cls._loop_dev, cls._mount_point = setup_loop_device(cls._img_path)
+        cls.addClassCleanup(teardown_loop_device, cls._loop_dev, cls._mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
         cls._target = Path(cls._mount_point) / 'DCIM' / '100GOPRO'
         if not cls._target.exists():
-            teardown_loop_device(cls._loop_dev, cls._mount_point)
             raise unittest.SkipTest(f'{cls._target} not found')
         from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
         cls._io = ExfatRawIO()
         cls._fs = ExfatRawFilesystem(cls._io)
         cls._ops = ExfatRawOps(cls._io, cls._fs)
-
-    @classmethod
-    def tearDownClass(cls):
-        teardown_loop_device(cls._loop_dev, cls._mount_point)
-        if cls._work_dir:
-            import shutil
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def _device(self):
         from btime import _resolve_device

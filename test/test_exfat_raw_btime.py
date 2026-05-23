@@ -17,12 +17,12 @@ class TestExfatRawBtime(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import shutil
         gz_path = Path(__file__).parent / 'sdcard.img.gz'
         if not gz_path.exists():
             raise unittest.SkipTest('sdcard.img.gz not found')
 
         from test.shared import decompress_sparse_image, setup_loop_device, teardown_loop_device
-        cls._teardown = teardown_loop_device
 
         cached = Path(__file__).parent / 'sdcard.img'
         decompress_sparse_image(gz_path, cached)
@@ -33,17 +33,11 @@ class TestExfatRawBtime(unittest.TestCase):
                        check=True, capture_output=True)
 
         cls.loop_dev, cls.mount_point = setup_loop_device(cls.img_path)
+        cls.addClassCleanup(teardown_loop_device, cls.loop_dev, cls.mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         if not cls.target.exists():
-            cls._teardown(cls.loop_dev, cls.mount_point)
             raise unittest.SkipTest(f'{cls.target} not found')
-
-    @classmethod
-    def tearDownClass(cls):
-        if hasattr(cls, '_teardown') and cls.loop_dev:
-            cls._teardown(cls.loop_dev, cls.mount_point)
-        if cls._work_dir:
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     def test_set_btime_on_existing_file(self):
         ops = _ops()

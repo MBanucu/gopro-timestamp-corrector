@@ -28,6 +28,7 @@ class TestReadExfatMtimeRaw(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import shutil
         gz = Path(__file__).parent / 'sdcard.img.gz'
         if not gz.exists():
             raise unittest.SkipTest('sdcard.img.gz not found')
@@ -38,22 +39,12 @@ class TestReadExfatMtimeRaw(unittest.TestCase):
         cls._img = cls._work / 'sdcard.img'
         subprocess.run(['cp', '--sparse=always', str(cached), str(cls._img)],
                        check=True, capture_output=True)
-        try:
-            cls._loop, cls._mnt = setup_loop_device(str(cls._img))
-        except Exception as e:
-            teardown_loop_device(getattr(cls, '_loop', None))
-            raise unittest.SkipTest(str(e))
+        cls._loop, cls._mnt = setup_loop_device(str(cls._img))
+        cls.addClassCleanup(teardown_loop_device, cls._loop, cls._mnt)
+        cls.addClassCleanup(shutil.rmtree, cls._work, ignore_errors=True)
         cls._target = Path(cls._mnt) / 'DCIM' / '100GOPRO'
         if not cls._target.exists():
-            teardown_loop_device(cls._loop, cls._mnt)
             raise unittest.SkipTest('100GOPRO not found')
-
-    @classmethod
-    def tearDownClass(cls):
-        from test.shared import teardown_loop_device
-        teardown_loop_device(cls._loop, cls._mnt)
-        import shutil
-        shutil.rmtree(cls._work, ignore_errors=True)
 
     def test_reads_mtime_from_directory_entry(self):
         ops = _ops()
@@ -92,6 +83,7 @@ class TestExfatRawBtimeDt(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import shutil
         gz = Path(__file__).parent / 'sdcard.img.gz'
         if not gz.exists():
             raise unittest.SkipTest('sdcard.img.gz not found')
@@ -102,22 +94,12 @@ class TestExfatRawBtimeDt(unittest.TestCase):
         cls._img = cls._work / 'sdcard.img'
         subprocess.run(['cp', '--sparse=always', str(cached), str(cls._img)],
                        check=True, capture_output=True)
-        try:
-            cls._loop, cls._mnt = setup_loop_device(str(cls._img))
-        except Exception as e:
-            teardown_loop_device(getattr(cls, '_loop', None))
-            raise unittest.SkipTest(str(e))
+        cls._loop, cls._mnt = setup_loop_device(str(cls._img))
+        cls.addClassCleanup(teardown_loop_device, cls._loop, cls._mnt)
+        cls.addClassCleanup(shutil.rmtree, cls._work, ignore_errors=True)
         cls._target = Path(cls._mnt) / 'DCIM' / '100GOPRO'
         if not cls._target.exists():
-            teardown_loop_device(cls._loop, cls._mnt)
             raise unittest.SkipTest('100GOPRO not found')
-
-    @classmethod
-    def tearDownClass(cls):
-        from test.shared import teardown_loop_device
-        teardown_loop_device(cls._loop, cls._mnt)
-        import shutil
-        shutil.rmtree(cls._work, ignore_errors=True)
 
     def test_btime_dt_preserves_creation_time(self):
         ops = _ops()
