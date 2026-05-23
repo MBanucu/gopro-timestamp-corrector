@@ -1,17 +1,17 @@
-"""Verify the exiftool write lock prevents cross-mount corruption.
+"""Verify the exiftool server serializes requests, preventing cross-mount corruption.
 
-H24a: lock serializes batch writes — two threads share one lock file.
-H24b: lock prevents subprocess corruption — two processes with individual
-      sessions each writing one batch should NOT corrupt DEs (with lock).
+H24a: server serializes writes — two threads sharing one server.
+H24b: server prevents subprocess corruption — two processes with individual
+      sessions each writing one batch should NOT corrupt DEs.
 H24c: Writer pipeline in parallel — two test_full_auto_integration
       pipelines run simultaneously should pass.
 """
-from exiftool_session import ExifToolSession, EXIFTOOL_WRITE_LOCK
+from exiftool_session import ExifToolSession
 from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
 from test.shared import decompress_sparse_image, prepare_sparse_image, \
     setup_loop_device, teardown_loop_device
 from datetime import datetime, timezone
-import fcntl, os, subprocess, sys, threading, unittest, json, tempfile
+import os, subprocess, sys, threading, unittest, json, tempfile
 from pathlib import Path
 
 _BD = str(Path(__file__).resolve().parent.parent.parent / 'src')
@@ -53,23 +53,6 @@ def _check(rec_a, files_a, rec_b, files_b):
 
 class H24_LockVerification(unittest.TestCase):
 
-    def test_lock_serializes_threads(self):
-        """Two threads sharing one lock file execute sequentially."""
-        import time
-        order = []
-        def worker(label):
-            with open(EXIFTOOL_WRITE_LOCK, 'w') as lk:
-                fcntl.flock(lk, fcntl.LOCK_EX)
-                order.append(label)
-                time.sleep(0.02)
-        threads = [threading.Thread(target=worker, args=(f't{i}',))
-                   for i in range(5)]
-        for t in threads: t.start()
-        for t in threads: t.join()
-        self.assertEqual(len(order), 5, 'All 5 workers must run')
-        self.assertEqual(order, sorted(order),
-                         f'Lock failed to serialize: order={order}')
-
     def test_batch_write_no_corruption(self):
         """Batch write on 2 mounts in threads — with lock, no corruption."""
         a = _setup('A'); b = _setup('B')
@@ -78,7 +61,7 @@ class H24_LockVerification(unittest.TestCase):
 
         def batch(label, files):
             pairs = [(f, datetime.now(timezone.utc)) for f in files]
-            with ExifToolSession(connect=None) as s:
+            with ExifToolSession() as s:
                 ok = s.write_embedded_batch(pairs)
             self.assertTrue(ok, f'{label} batch write failed')
 
@@ -113,7 +96,7 @@ class H24_LockVerification(unittest.TestCase):
             f.write('io = ExfatRawIO(); fs = ExfatRawFilesystem(io); ops = ExfatRawOps(io, fs)\n')
             f.write('before = {f.name: ops.read_mtime_raw(str(f)) for f in files}\n')
             f.write('pairs = [(f, datetime.now(timezone.utc)) for f in files]\n')
-            f.write('with ExifToolSession(connect=None) as s:\n')
+            f.write('with ExifToolSession() as s:\n')
             f.write('    ok = s.write_embedded_batch(pairs)\n')
             f.write('after = {f.name: ops.read_mtime_raw(str(f)) for f in files}\n')
             f.write('corrupted = {k: v for k, v in after.items() if v != before.get(k)}\n')

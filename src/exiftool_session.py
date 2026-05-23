@@ -16,7 +16,6 @@ Usage::
         ...
 """
 
-import fcntl
 import json as _json
 import os
 import re
@@ -24,16 +23,6 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from exiftool import ExifToolHelper
-
-
-EXIFTOOL_WRITE_LOCK = '/tmp/gopro_exiftool_write.lock'
-"""File lock serializing exiftool metadata writes across all processes.
-
-Without this lock, concurrent ``exiftool`` calls on 2+ independent
-exFAT mounts can trigger a kernel exFAT driver writeback bug that
-corrupts directory entries (cross-mount DE corruption).  The lock
-ensures only one exiftool write is in-flight at any time.
-"""
 
 
 def _parse_dt(val: str) -> datetime | None:
@@ -308,22 +297,20 @@ class ExifToolSession:
     def write_embedded_batch(
         self, pairs: list[tuple[Path, datetime]]
     ) -> bool:
-        """Write embedded times for all *pairs* via the persistent process.
+        """Write embedded times for all *pairs*.
 
-        Acquires a cross-process file lock (``EXIFTOOL_WRITE_LOCK``) for the
-        duration of the batch, serializing writes across all Python processes.
-        This prevents the kernel exFAT driver bug on kernel 6.12.87 where
-        concurrent ``write()`` calls across multiple exFAT mounts corrupt
-        directory entries.
+        When connected via the server, the request is sent over TCP and
+        serialized by the server's single-threaded accept loop.  In
+        direct mode (``connect=None``) — only used by the server itself
+        — we iterate over pairs without additional locking, since the
+        server already handles one request at a time.
         """
         if self._client is not None:
             return self._client.write_embedded_batch(pairs)
         ok = True
-        with open(EXIFTOOL_WRITE_LOCK, 'w') as _lk:
-            fcntl.flock(_lk, fcntl.LOCK_EX)
-            for path, dt in pairs:
-                if not self.write_embedded(path, dt):
-                    ok = False
+        for path, dt in pairs:
+            if not self.write_embedded(path, dt):
+                ok = False
         return ok
 
     # ── History dump ───────────────────────────────────────────────────────

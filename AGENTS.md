@@ -122,12 +122,13 @@ Newline-delimited JSON over TCP (inspired by JSON-RPC 2.0):
 | `dump_tags_json` | `_method_dump_tags_json` | `session.dump_tags_json()` |
 | `shutdown` | `_method_shutdown` | stops the server loop |
 
-### Cross-process serialization via ExifTool server
+### Single-server serialization
 
-Since all exiftool writes go through a **single server process**, the
-`fcntl.flock` write lock (`EXIFTOOL_WRITE_LOCK` in exiftool_session.py) is
-naturally bypassed — the server serialises all requests in-process,
-eliminating write concurrency entirely even across multiple CLI/GUI invocations.
+All exiftool writes go through a **single server process** whose accept
+loop is single-threaded — each request is fully handled before the next
+is accepted.  This eliminates write concurrency entirely across all
+CLI/GUI invocations.  The old `fcntl.flock` cross-process lock has been
+removed as redundant.
 
 ### Key files
 
@@ -180,22 +181,20 @@ mounts, the driver's ``exfat_sync_fs()`` incorrectly flushes dirty inodes
 from one mount to another mount's directory entries.
 
 **Mitigations** (all in place):
-1. ``threading.Lock`` in ``ExifToolSession`` serializes metadata writes
-   within each Python process.
+1. ``ExifToolSession()`` defaults to ``connect='auto'`` — all production
+   code routes through the shared server process, whose single-threaded
+   accept loop serialises all exiftool operations.
 2. ``sync()`` removed from ``fix_exfat_raw`` (the global sync was the
    primary trigger for cross-mount writeback).
 3. ``os.fsync`` on the backing file (in ``ExfatRawIO.write()``) handles
    data persistence without triggering the buggy driver writeback.
-4. ``ExifToolSession()`` defaults to ``connect='auto'`` — all production
-   code routes through the shared server process, eliminating the need
-   for the cross-process lock in practice.
 
 ### Server as primary path
 
 Since `ExifToolSession()` now defaults to `connect='auto'` (server mode),
 all production code (CLI, GUI) automatically routes exiftool operations
-through the single server process.  The `fcntl.flock` lock is naturally
-bypassed — the server serialises all requests in-process, eliminating
+through the single server process.  The `fcntl.flock` lock is no longer
+needed — the server serialises all requests in-process, eliminating
 write concurrency entirely even across multiple CLI/GUI invocations.
 See `ExifTool server / client` above.
 
