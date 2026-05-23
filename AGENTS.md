@@ -23,8 +23,8 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
 | Layer | Directory | Entrypoint |
 |---|---|---|
 | CLI orchestrator | `src/` | `correct_timestamps.py` |
-| ExifTool session | `src/` | `exiftool_session.py` — persistent `-stay_open` wrapper via PyExifTool |
-| ExifTool server | `src/` | `exiftool_server.py` — TCP server; `exiftool_client.py` — TCP client |
+| ExifTool session | `src/` | `exiftool_session.py` — delegates to shared TCP server by default |
+| ExifTool server | `src/` | `exiftool_server.py` — TCP server (the only direct PyExifTool user); `exiftool_client.py` — TCP client |
 | Plan / Planner | `src/` | `plan.py` — `Planner`, `CorrectionPlan`, `PlanBuilder`, `Instruction` |
 | GUI app | `src/gui/` | `app.py` |
 | GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
@@ -34,7 +34,7 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
 | Env check | `src/` | `env_check.py` — `check_env()`, `format_summary()`, CLI `--check` |
 | Tests | `test/` | one file per area |
 
-Key flow: `ExifToolSession()` → `analysis.analyze(session)` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer(session=session)` I/O.
+Key flow: `ExifToolSession()` (connects to shared server) → `analysis.analyze(session)` → `preview` calculator → `PlanBuilder.build()` (`Instruction` list) → `Writer(session=session)` I/O.
 
 All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`.
 
@@ -66,12 +66,13 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
 
 `src/exiftool_server.py` provides a shared TCP server that wraps a single
 `ExifToolSession` and exposes its API via JSON-RPC over `127.0.0.1`.
-`src/exiftool_client.py` provides the client half; `ExifToolSession(connect='auto')`
-delegates to the client transparently.
+`src/exiftool_client.py` provides the client half; `ExifToolSession()` now
+defaults to `connect='auto'` and delegates to the client transparently.
+Only the server itself uses `ExifToolSession(connect=None)` for direct access.
 
 ### Lifecycle
 
-- **Auto-spawn**: When `ExifToolSession(connect='auto')` is created (or
+- **Auto-spawn**: When `ExifToolSession()` is created (or
   `ExifToolClient()` directly), it first tries to connect to an existing server.
   If none is found, it spawns one as a background subprocess via
   `exiftool_server.spawn_server()`.  The caller blocks up to 5 s waiting for
@@ -121,11 +122,12 @@ Newline-delimited JSON over TCP (inspired by JSON-RPC 2.0):
 | `dump_tags_json` | `_method_dump_tags_json` | `session.dump_tags_json()` |
 | `shutdown` | `_method_shutdown` | stops the server loop |
 
-### Cross-process serialization
+### Cross-process serialization via ExifTool server
 
-Since all exiftool writes go through a single server process, the
+Since all exiftool writes go through a **single server process**, the
 `fcntl.flock` write lock (`EXIFTOOL_WRITE_LOCK` in exiftool_session.py) is
-naturally bypassed — the server serialises all requests in-process.
+naturally bypassed — the server serialises all requests in-process,
+eliminating write concurrency entirely even across multiple CLI/GUI invocations.
 
 ### Key files
 
@@ -133,7 +135,7 @@ naturally bypassed — the server serialises all requests in-process.
 |---|---|
 | `src/exiftool_server.py` | `ExifToolServer` class, `spawn_server()`, `_takeover_or_exit()` |
 | `src/exiftool_client.py` | `ExifToolClient` with same API as `ExifToolSession` |
-| `src/exiftool_session.py` | `ExifToolSession(connect='auto')` delegation |
+| `src/exiftool_session.py` | `ExifToolSession()` delegation (defaults to `connect='auto'`) |
 | `src/options.py` | `EXIFTOOL_SERVER_PORT_FILE`, `EXIFTOOL_SERVER_IDLE_TIMEOUT` |
 | `test/test_exiftool_server.py` | 15 tests: protocol, auto-spawn, idle, PID election |
 
@@ -184,14 +186,18 @@ from one mount to another mount's directory entries.
    primary trigger for cross-mount writeback).
 3. ``os.fsync`` on the backing file (in ``ExfatRawIO.write()``) handles
    data persistence without triggering the buggy driver writeback.
+4. ``ExifToolSession()`` defaults to ``connect='auto'`` — all production
+   code routes through the shared server process, eliminating the need
+   for the cross-process lock in practice.
 
-### Cross-process serialization via ExifTool server
+### Server as primary path
 
-The ``ExifToolServer`` (see `ExifTool server / client` above) provides a
-stronger guarantee: all exiftool writes go through a **single process**,
-so the ``fcntl.flock`` lock is naturally bypassed.  The server serialises
-all requests in-process, eliminating write concurrency entirely even across
-multiple CLI/GUI invocations.
+Since `ExifToolSession()` now defaults to `connect='auto'` (server mode),
+all production code (CLI, GUI) automatically routes exiftool operations
+through the single server process.  The `fcntl.flock` lock is naturally
+bypassed — the server serialises all requests in-process, eliminating
+write concurrency entirely even across multiple CLI/GUI invocations.
+See `ExifTool server / client` above.
 
 ### `Writer.close()` (writer.py)
 

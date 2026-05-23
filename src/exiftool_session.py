@@ -1,18 +1,18 @@
-"""Managed exiftool session via PyExifTool (persistent ``-stay_open`` process).
+"""Managed exiftool session.
 
-Writes are serialized across all processes via a file lock
-(``EXIFTOOL_WRITE_LOCK``) to prevent the kernel exFAT driver bug
-on kernel 6.12.87: concurrent exiftool ``write()`` calls across
-multiple exFAT mounts cause cross-mount directory entry corruption.
+Connects to the shared ``ExifToolServer`` by default
+(``connect='auto'``).  Only the server itself uses
+``ExifToolSession(connect=None)`` for direct PyExifTool access.
 
 Usage::
 
+    # Connects to shared server (auto-spawned if not running):
     with ExifToolSession() as session:
         embedded, gps = session.read_tags_batch(files)[path]
         ok = session.write_embedded_batch(pairs)
 
-    # Or connect to a shared server process:
-    with ExifToolSession(connect='auto') as session:
+    # Direct mode — only used inside the server process:
+    with ExifToolSession(connect=None) as session:
         ...
 """
 
