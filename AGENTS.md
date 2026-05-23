@@ -6,6 +6,7 @@
 # All deps via Nix flakes; no system Python packages needed.
 nix run .#gui          # launch GUI
 nix run . -- --help    # CLI
+nix run .#server            # start ExifTool TCP server (auto-spawned on demand)
 nix run .#test              # full test suite (parallel, coverage)
 nix run .#test -- test_datepicker  # single module (omit test. prefix)
 nix run .#test -- test_analysis test_gps  # multiple specific modules
@@ -23,6 +24,7 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
 |---|---|---|
 | CLI orchestrator | `src/` | `correct_timestamps.py` |
 | ExifTool session | `src/` | `exiftool_session.py` — persistent `-stay_open` wrapper via PyExifTool |
+| ExifTool server | `src/` | `exiftool_server.py` — TCP server; `exiftool_client.py` — TCP client |
 | Plan / Planner | `src/` | `plan.py` — `Planner`, `CorrectionPlan`, `PlanBuilder`, `Instruction` |
 | GUI app | `src/gui/` | `app.py` |
 | GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
@@ -59,6 +61,81 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
   `PlanBuilder.build()` produces a list of `Instruction` objects from the
   `Planner` + `CorrectionPlan`.  `PlanBuilder.execute()` runs them
   sequentially with progress callbacks (`log_fn`, `progress_fn`).
+
+## ExifTool server / client
+
+`src/exiftool_server.py` provides a shared TCP server that wraps a single
+`ExifToolSession` and exposes its API via JSON-RPC over `127.0.0.1`.
+`src/exiftool_client.py` provides the client half; `ExifToolSession(connect='auto')`
+delegates to the client transparently.
+
+### Lifecycle
+
+- **Auto-spawn**: When `ExifToolSession(connect='auto')` is created (or
+  `ExifToolClient()` directly), it first tries to connect to an existing server.
+  If none is found, it spawns one as a background subprocess via
+  `exiftool_server.spawn_server()`.  The caller blocks up to 5 s waiting for
+  the server to become ready.
+- **Auto-shutdown**: The server tracks time since the last completed request.
+  A watchdog thread checks every `max(1s, timeout/4)` seconds.  If idle exceeds
+  the timeout (default 60 s), the server shuts down gracefully.
+- **Port file**: The server writes `{tempdir}/gopro-exiftool-server.json`
+  containing its TCP port and PID.  The client discovers the server by reading
+  this file.  On shutdown the file is deleted.
+
+### PID election (single instance guarantee)
+
+When a new server instance starts, it reads the port file and pings the
+existing server:
+
+| Condition | Result |
+|---|---|
+| No port file or stale | New server claims the file and starts |
+| Existing server alive, new PID > old PID | New server exits |
+| Existing server alive, new PID < old PID | New server sends `shutdown` to the old one, then takes over |
+
+The port file is created atomically (`O_CREAT | O_EXCL`), so concurrent
+startup races are resolved deterministically after at most 5 retries.
+
+### Protocol
+
+Newline-delimited JSON over TCP (inspired by JSON-RPC 2.0):
+
+```json
+{"id": 1, "method": "read_tags_batch", "params": {"filepaths": [...]}}
+{"id": 1, "result": {"/path/GH010001.MP4": ["2026-05-14T14:52:00+00:00", null]}}
+```
+
+| Method | Server handler | Delegates to |
+|---|---|---|
+| `ping` | `_method_ping` | — returns `"pong"` |
+| `status` | `_method_status` | returns port, pid, uptime, timeout |
+| `available` | `_method_available` | `session.available()` |
+| `read_gps_time` | `_method_read_gps_time` | `session.read_gps_time()` |
+| `read_embedded` | `_method_read_embedded` | `session.read_embedded()` |
+| `read_tags_batch` | `_method_read_tags_batch` | `session.read_tags_batch()` |
+| `read_gps_accuracy_batch` | `_method_read_gps_accuracy_batch` | `session.read_gps_accuracy_batch()` |
+| `write_embedded` | `_method_write_embedded` | `session.write_embedded()` |
+| `write_embedded_batch` | `_method_write_embedded_batch` | `session.write_embedded_batch()` |
+| `dump_full_json` | `_method_dump_full_json` | `session.dump_full_json()` |
+| `dump_tags_json` | `_method_dump_tags_json` | `session.dump_tags_json()` |
+| `shutdown` | `_method_shutdown` | stops the server loop |
+
+### Cross-process serialization
+
+Since all exiftool writes go through a single server process, the
+`fcntl.flock` write lock (`EXIFTOOL_WRITE_LOCK` in exiftool_session.py) is
+naturally bypassed — the server serialises all requests in-process.
+
+### Key files
+
+| File | Role |
+|---|---|
+| `src/exiftool_server.py` | `ExifToolServer` class, `spawn_server()`, `_takeover_or_exit()` |
+| `src/exiftool_client.py` | `ExifToolClient` with same API as `ExifToolSession` |
+| `src/exiftool_session.py` | `ExifToolSession(connect='auto')` delegation |
+| `src/options.py` | `EXIFTOOL_SERVER_PORT_FILE`, `EXIFTOOL_SERVER_IDLE_TIMEOUT` |
+| `test/test_exiftool_server.py` | 15 tests: protocol, auto-spawn, idle, PID election |
 
 ## exFAT raw block write & cache coherence
 
@@ -107,6 +184,14 @@ from one mount to another mount's directory entries.
    primary trigger for cross-mount writeback).
 3. ``os.fsync`` on the backing file (in ``ExfatRawIO.write()``) handles
    data persistence without triggering the buggy driver writeback.
+
+### Cross-process serialization via ExifTool server
+
+The ``ExifToolServer`` (see `ExifTool server / client` above) provides a
+stronger guarantee: all exiftool writes go through a **single process**,
+so the ``fcntl.flock`` lock is naturally bypassed.  The server serialises
+all requests in-process, eliminating write concurrency entirely even across
+multiple CLI/GUI invocations.
 
 ### `Writer.close()` (writer.py)
 
