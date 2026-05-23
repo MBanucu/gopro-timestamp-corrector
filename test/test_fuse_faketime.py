@@ -175,6 +175,8 @@ class TestFuseFaketimeBtime(unittest.TestCase):
         if not cls.loop_dev:
             raise unittest.SkipTest('Could not parse loop device')
 
+        cls.addClassCleanup(cls._teardown_kernel)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
         cls._mount_kernel()
 
     @classmethod
@@ -192,12 +194,6 @@ class TestFuseFaketimeBtime(unittest.TestCase):
             raise unittest.SkipTest('Could not mount via udisksctl')
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         cls.target.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls._teardown_kernel()
-        if cls._work_dir:
-            shutil.rmtree(cls._work_dir, ignore_errors=True)
 
     @classmethod
     def _teardown_kernel(cls):

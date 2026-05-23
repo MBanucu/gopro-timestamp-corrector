@@ -31,6 +31,7 @@ FIXED_TS = 1712345678
 
 def _setup(test_case):
     """Create + mount one image copy. Returns (ops, loop, mnt, path_to_file, work_dir)."""
+    import shutil
     from test.shared import decompress_sparse_image, prepare_sparse_image, \
         setup_loop_device, teardown_loop_device
     gz = Path(__file__).parent.parent / 'sdcard.img.gz'
@@ -39,17 +40,11 @@ def _setup(test_case):
     cached = Path(__file__).parent.parent / 'sdcard.img'
     decompress_sparse_image(gz, cached)
     work, img = prepare_sparse_image(gz, prefix='h8_unit_')
-    try:
-        loop, mnt = setup_loop_device(str(img))
-    except Exception:
-        teardown_loop_device(getattr(test_case, '_loop', None))
-        import shutil
-        shutil.rmtree(work, ignore_errors=True)
-        raise
+    loop, mnt = setup_loop_device(str(img))
+    test_case.addCleanup(teardown_loop_device, loop, mnt)
+    test_case.addCleanup(shutil.rmtree, work, ignore_errors=True)
     target = Path(mnt) / 'DCIM' / '100GOPRO'
     if not target.exists():
-        teardown_loop_device(loop, mnt)
-        shutil.rmtree(work, ignore_errors=True)
         test_case.skipTest('100GOPRO not found')
     files = sorted(target.glob('*.MP4')) or sorted(target.glob('*'))
     from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
@@ -57,16 +52,6 @@ def _setup(test_case):
     fs = ExfatRawFilesystem(io)
     ops = ExfatRawOps(io, fs)
     return ops, loop, mnt, files[0], work
-
-
-def _teardown(loop, mnt, work):
-    from test.shared import teardown_loop_device
-    try:
-        teardown_loop_device(loop, mnt)
-    except Exception:
-        pass
-    import shutil
-    shutil.rmtree(work, ignore_errors=True)
 
 
 def _raw_mtime(ops, path):
@@ -82,58 +67,53 @@ class H8_Unit_TwoParallelMounts(unittest.TestCase):
     """Two parallel exFAT mounts: each raw mtime stays corrected."""
 
     def test_two_mounts_parallel_fix(self):
-        # Set up two mounts
+        # Set up two mounts (auto-cleaned via addCleanup in _setup)
         a = _setup(self)
         b = _setup(self)
-        try:
-            ops_a, loop_a, mnt_a, file_a, work_a = a
-            ops_b, loop_b, mnt_b, file_b, work_b = b
+        ops_a, loop_a, mnt_a, file_a, work_a = a
+        ops_b, loop_b, mnt_b, file_b, work_b = b
 
-            # Different loop devices?
-            self.assertNotEqual(loop_a, loop_b,
-                                'Both mounts got the same loop device')
+        # Different loop devices?
+        self.assertNotEqual(loop_a, loop_b,
+                            'Both mounts got the same loop device')
 
-            # Dirty inodes on both mounts
-            subprocess.run(['touch', '-c', str(file_a)], capture_output=True)
-            subprocess.run(['touch', '-c', str(file_b)], capture_output=True)
+        # Dirty inodes on both mounts
+        subprocess.run(['touch', '-c', str(file_a)], capture_output=True)
+        subprocess.run(['touch', '-c', str(file_b)], capture_output=True)
 
-            # Fix both in parallel (simulating two concurrent pipelines)
-            results = {}
-            def fix_and_check(label, ops, f):
-                _fix_mtime(ops, f)
-                raw = _raw_mtime(ops, f)
-                results[label] = raw
+        # Fix both in parallel (simulating two concurrent pipelines)
+        results = {}
+        def fix_and_check(label, ops, f):
+            _fix_mtime(ops, f)
+            raw = _raw_mtime(ops, f)
+            results[label] = raw
 
-            threads = [
-                threading.Thread(target=fix_and_check,
-                                 args=('A', ops_a, file_a)),
-                threading.Thread(target=fix_and_check,
-                                 args=('B', ops_b, file_b)),
-            ]
-            for t in threads: t.start()
-            for t in threads: t.join()
+        threads = [
+            threading.Thread(target=fix_and_check,
+                             args=('A', ops_a, file_a)),
+            threading.Thread(target=fix_and_check,
+                             args=('B', ops_b, file_b)),
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
 
-            # Verify each file's raw mtime is correct
-            for label in ('A', 'B'):
-                self.assertEqual(
-                    results[label], FIXED_TS,
-                    f'Mount {label}: raw mtime was overwritten after '
-                    f'parallel fix_exfat_raw')
+        # Verify each file's raw mtime is correct
+        for label in ('A', 'B'):
+            self.assertEqual(
+                results[label], FIXED_TS,
+                f'Mount {label}: raw mtime was overwritten after '
+                f'parallel fix_exfat_raw')
 
-            # Now simulate verification step: read stat on each
-            _ = os.path.getmtime(file_a)
-            _ = os.path.getmtime(file_b)
-            _ = os.stat(file_a)
-            _ = os.stat(file_b)
+        # Now simulate verification step: read stat on each
+        _ = os.path.getmtime(file_a)
+        _ = os.path.getmtime(file_b)
+        _ = os.stat(file_a)
+        _ = os.stat(file_b)
 
-            # Check again — should still be corrected
-            for label, ops, f in [('A', ops_a, file_a), ('B', ops_b, file_b)]:
-                raw = _raw_mtime(ops, f)
-                self.assertEqual(
-                    raw, FIXED_TS,
-                    f'Mount {label}: raw mtime changed after stat() — '
-                    f'writeback on the OTHER mount may have overwritten it')
-
-        finally:
-            for s in (a, b):
-                _teardown(s[1], s[2], s[4])
+        # Check again — should still be corrected
+        for label, ops, f in [('A', ops_a, file_a), ('B', ops_b, file_b)]:
+            raw = _raw_mtime(ops, f)
+            self.assertEqual(
+                raw, FIXED_TS,
+                f'Mount {label}: raw mtime changed after stat() — '
+                f'writeback on the OTHER mount may have overwritten it')

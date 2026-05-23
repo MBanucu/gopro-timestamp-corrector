@@ -65,17 +65,19 @@ class H10_BackingFileResolution(unittest.TestCase):
     their OWN backing file path, never the other's.
     """
     def test_parallel_backing_resolution(self):
+        import shutil
         _decompress()
         from test.shared import prepare_sparse_image, setup_loop_device, \
             teardown_loop_device
         from strategies.exfat_raw import ExfatRawIO
-        import tempfile, shutil
 
         results = {}
         def setup_and_resolve(label):
             work, img = prepare_sparse_image(GZ_PATH, prefix=f'h10_{label}_')
             try:
                 loop, mnt = setup_loop_device(str(img))
+                self.addCleanup(teardown_loop_device, loop, mnt)
+                self.addCleanup(shutil.rmtree, work, ignore_errors=True)
                 io = ExfatRawIO()
                 backing = io._backing_file(loop)
                 results[label] = (loop, mnt, backing, str(img), work)
@@ -90,7 +92,6 @@ class H10_BackingFileResolution(unittest.TestCase):
         for label in ('A', 'B'):
             r = results[label]
             if r[0] == 'error':
-                shutil.rmtree(r[2], ignore_errors=True)
                 self.fail(f'{label}: setup failed: {r[1]}')
             loop, mnt, backing, img_path, work = r
             # Different loop devices?
@@ -103,9 +104,6 @@ class H10_BackingFileResolution(unittest.TestCase):
             self.assertEqual(
                 backing, img_path,
                 f'{label}: backing_file ({backing}) != our image ({img_path})')
-            # Cleanup
-            teardown_loop_device(loop, mnt)
-            shutil.rmtree(work, ignore_errors=True)
 
 
 class H11_MountPointUniqueness(unittest.TestCase):
@@ -114,16 +112,18 @@ class H11_MountPointUniqueness(unittest.TestCase):
     If both mount to the same path, they'd share the same filesystem.
     """
     def test_parallel_mount_points_differ(self):
+        import shutil
         _decompress()
         from test.shared import prepare_sparse_image, setup_loop_device, \
             teardown_loop_device
-        import shutil
 
         results = {}
         def mount_it(label):
             work, img = prepare_sparse_image(GZ_PATH, prefix=f'h11_{label}_')
             try:
                 loop, mnt = setup_loop_device(str(img))
+                self.addCleanup(teardown_loop_device, loop, mnt)
+                self.addCleanup(shutil.rmtree, work, ignore_errors=True)
                 results[label] = (loop, mnt, work)
             except Exception as e:
                 results[label] = ('error', str(e), work)
@@ -144,11 +144,6 @@ class H11_MountPointUniqueness(unittest.TestCase):
             'Both processes mounted at the SAME path!\n'
             f'  A: {results["A"][1]}\n  B: {results["B"][1]}')
 
-        for label in ('A', 'B'):
-            loop, mnt, work = results[label]
-            teardown_loop_device(loop, mnt)
-            shutil.rmtree(work, ignore_errors=True)
-
 
 class H12_RawMtimeDuringParallel(unittest.TestCase):
     """H12: read_mtime_raw returns the correct value during parallel
@@ -164,19 +159,21 @@ class H12_RawMtimeDuringParallel(unittest.TestCase):
     interference hypothesis is confirmed.
     """
     def test_parallel_raw_read_after_fix(self):
+        import shutil
         _decompress()
         from test.shared import prepare_sparse_image, setup_loop_device, \
             teardown_loop_device
         from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, \
             ExfatRawOps
         from datetime import datetime, timezone
-        import shutil
 
         results = {}
         def run_pipeline(label):
             work, img = prepare_sparse_image(GZ_PATH, prefix=f'h12_{label}_')
             try:
                 loop, mnt = setup_loop_device(str(img))
+                self.addCleanup(teardown_loop_device, loop, mnt)
+                self.addCleanup(shutil.rmtree, work, ignore_errors=True)
                 target = Path(mnt) / 'DCIM' / '100GOPRO'
                 files = sorted(target.glob('*.MP4')) or sorted(target.glob('*'))
                 f = files[0]
@@ -207,10 +204,8 @@ class H12_RawMtimeDuringParallel(unittest.TestCase):
             r = results[label]
             status = r[0]
             if status == 'error':
-                shutil.rmtree(r[5], ignore_errors=True)
                 self.fail(f'{label}: pipeline error: {r[1]}')
             raw, expected = r[1], r[2]
-            loop, mnt = r[3], r[4]
             self.assertIsNotNone(
                 raw,
                 f'{label}: read_mtime_raw returned None after fix!')
@@ -218,5 +213,3 @@ class H12_RawMtimeDuringParallel(unittest.TestCase):
                 raw, expected,
                 f'{label}: read_mtime_raw returned {raw}, '
                 f'expected {expected}')
-            teardown_loop_device(loop, mnt)
-            shutil.rmtree(r[5], ignore_errors=True)
