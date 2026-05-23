@@ -78,7 +78,7 @@ class H24_LockVerification(unittest.TestCase):
 
         def batch(label, files):
             pairs = [(f, datetime.now(timezone.utc)) for f in files]
-            with ExifToolSession() as s:
+            with ExifToolSession(connect=None) as s:
                 ok = s.write_embedded_batch(pairs)
             self.assertTrue(ok, f'{label} batch write failed')
 
@@ -113,7 +113,7 @@ class H24_LockVerification(unittest.TestCase):
             f.write('io = ExfatRawIO(); fs = ExfatRawFilesystem(io); ops = ExfatRawOps(io, fs)\n')
             f.write('before = {f.name: ops.read_mtime_raw(str(f)) for f in files}\n')
             f.write('pairs = [(f, datetime.now(timezone.utc)) for f in files]\n')
-            f.write('with ExifToolSession() as s:\n')
+            f.write('with ExifToolSession(connect=None) as s:\n')
             f.write('    ok = s.write_embedded_batch(pairs)\n')
             f.write('after = {f.name: ops.read_mtime_raw(str(f)) for f in files}\n')
             f.write('corrupted = {k: v for k, v in after.items() if v != before.get(k)}\n')

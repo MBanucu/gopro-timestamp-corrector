@@ -57,7 +57,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
             accuracy = session.read_gps_accuracy_batch(files)
         else:
             from exiftool_session import ExifToolSession
-            with ExifToolSession() as s:
+            with ExifToolSession(connect=None) as s:
                 batch = s.read_tags_batch(files)
                 accuracy = s.read_gps_accuracy_batch(files)
         pairs = []
@@ -138,7 +138,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
     def test_auto_calibrate_editors_populated(self):
         """The calendar editors show the representative file's GPS and embedded times."""
         from exiftool_session import ExifToolSession
-        with ExifToolSession() as session:
+        with ExifToolSession(connect=None) as session:
             panel, logged, delta_result = self._make_panel(session=session)
             pairs, median = self._collect_gps_pairs(session)
 
@@ -156,7 +156,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
     def test_auto_calibrate_respects_timezone(self):
         """With a timezone configured, the actual editor shows GPS time in that zone."""
         from exiftool_session import ExifToolSession
-        with ExifToolSession() as session:
+        with ExifToolSession(connect=None) as session:
             panel, logged, delta_result = self._make_panel(session=session)
 
             panel.actual_editor.tz_var.set('Europe/Berlin')
@@ -202,7 +202,7 @@ class TestAutoCalibrateIntegration(unittest.TestCase):
         timezone offset.
         """
         from exiftool_session import ExifToolSession
-        with ExifToolSession() as session:
+        with ExifToolSession(connect=None) as session:
             panel, logged, delta_result = self._make_panel(session=session)
             pairs, median = self._collect_gps_pairs(session)
 

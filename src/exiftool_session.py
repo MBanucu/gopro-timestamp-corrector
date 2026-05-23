@@ -86,14 +86,17 @@ class ExifToolSession:
     """
 
     def __init__(self, helper: ExifToolHelper | None = None,
-                 *, connect: str | None = None):
-        if connect == 'auto':
+                 *, connect: str | None = 'auto'):
+        if helper is not None:
+            self._client = None
+            self._et = helper
+        elif connect == 'auto':
             from exiftool_client import ExifToolClient
             self._client = ExifToolClient()
             self._et = None
         else:
             self._client = None
-            self._et = helper or ExifToolHelper()
+            self._et = ExifToolHelper()
 
     def __enter__(self):
         if self._et is not None:

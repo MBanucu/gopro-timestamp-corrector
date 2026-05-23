@@ -110,7 +110,7 @@ class H19_RawTrigger(unittest.TestCase):
             pass  # write to backing file at safe offset (not DE)
         def b(ops, files):
             for f in files:
-                with ExifToolSession() as s:
+                with ExifToolSession(connect=None) as s:
                     s.write_embedded(f, datetime.now(timezone.utc))
         self._run(a, b, set(), set())
 
@@ -126,13 +126,13 @@ class H19_RawTrigger(unittest.TestCase):
     def test_p4_control(self):
         def a(ops, files):
             for f in files:
-                with ExifToolSession() as s:
+                with ExifToolSession(connect=None) as s:
                     s.write_embedded(f, datetime.now(timezone.utc))
                 dt = datetime.fromtimestamp(FIXED_TS, tz=timezone.utc)
                 ops.fix_exfat_raw(str(f), dt, dry_run=False)
         def b(ops, files):
             for f in files:
-                with ExifToolSession() as s:
+                with ExifToolSession(connect=None) as s:
                     s.write_embedded(f, datetime.now(timezone.utc))
                 dt = datetime.fromtimestamp(FIXED_TS, tz=timezone.utc)
                 ops.fix_exfat_raw(str(f), dt, dry_run=False)
@@ -154,10 +154,10 @@ class H19_RawTrigger(unittest.TestCase):
     def test_p6_exif_only(self):
         def a(ops, files):
             for f in files:
-                with ExifToolSession() as s:
+                with ExifToolSession(connect=None) as s:
                     s.write_embedded(f, datetime.now(timezone.utc))
         def b(ops, files):
             for f in files:
-                with ExifToolSession() as s:
+                with ExifToolSession(connect=None) as s:
                     s.write_embedded(f, datetime.now(timezone.utc))
         self._run(a, b, set(), set())

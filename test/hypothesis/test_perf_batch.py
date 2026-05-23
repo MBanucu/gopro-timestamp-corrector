@@ -44,7 +44,7 @@ class TestBatchPerf(unittest.TestCase):
         from exiftool_session import ExifToolSession
         pairs = [(f, datetime.now(timezone.utc)) for f in self._files]
         t0 = time.perf_counter()
-        with ExifToolSession() as s:
+        with ExifToolSession(connect=None) as s:
             ok = s.write_embedded_batch(pairs)
         elapsed = time.perf_counter() - t0
         print(f'  {len(pairs)} files in batch: {elapsed:.2f}s')

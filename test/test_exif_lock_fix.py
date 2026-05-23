@@ -70,7 +70,7 @@ class TestExifLockFix(unittest.TestCase):
         def batch(label, files):
             pairs = [(f, datetime.now(timezone.utc)) for f in files]
             with _BATCH_LOCK:
-                with ExifToolSession() as s:
+                with ExifToolSession(connect=None) as s:
                     self.assertTrue(s.write_embedded_batch(pairs),
                                     f'{label} batch failed')
         threads = [threading.Thread(target=batch, args=('A', files_a)),
@@ -95,7 +95,7 @@ class TestExifLockFix(unittest.TestCase):
         a = _mount('A')
         ops, rec, files, loop, mnt, work = a
         from writer import Writer, WriteJob
-        with ExifToolSession() as session:
+        with ExifToolSession(connect=None) as session:
             jobs = [WriteJob(path=f, target_embedded=datetime.now(timezone.utc),
                              target_mtime=datetime.now(timezone.utc))
                     for f in files]

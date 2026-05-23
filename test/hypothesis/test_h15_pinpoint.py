@@ -79,7 +79,7 @@ class H15_Pinpoint(unittest.TestCase):
             ops_b, files_b, loop_b, mnt_b, work_b = b
 
             # Exif write on just ONE file (mount A only)
-            with ExifToolSession() as session:
+            with ExifToolSession(connect=None) as session:
                 session.write_embedded(files_a[0], datetime.now(timezone.utc))
 
             # Parallel fix on ALL files on both mounts
@@ -113,7 +113,7 @@ class H15_Pinpoint(unittest.TestCase):
 
             # Exif writes sequential on each mount (but mounts in parallel)
             def exif_all(files, label):
-                with ExifToolSession() as session:
+                with ExifToolSession(connect=None) as session:
                     for f in files:
                         session.write_embedded(f, datetime.now(timezone.utc))
 
@@ -156,7 +156,7 @@ class H15_Pinpoint(unittest.TestCase):
             failures = []
             def full_pipeline(ops_list, files, label):
                 for i, (ops, f) in enumerate(zip(ops_list, files)):
-                    with ExifToolSession() as session:
+                    with ExifToolSession(connect=None) as session:
                         session.write_embedded(f, datetime.now(timezone.utc))
                     dt = datetime.fromtimestamp(FIXED_TS, tz=timezone.utc)
                     ops.fix_exfat_raw(str(f), dt, dry_run=False)
@@ -193,7 +193,7 @@ class H15_Pinpoint(unittest.TestCase):
 
             # Exif writes parallel
             def exif_all(files):
-                with ExifToolSession() as session:
+                with ExifToolSession(connect=None) as session:
                     for f in files:
                         session.write_embedded(f, datetime.now(timezone.utc))
 

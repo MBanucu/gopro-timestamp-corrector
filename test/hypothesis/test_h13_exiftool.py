@@ -70,7 +70,7 @@ class H13_ParallelWithExifTool(unittest.TestCase):
             def pipeline(label, ops, f):
                 try:
                     # Step 1: Write embedded metadata via exiftool (dirties inode)
-                    with ExifToolSession() as session:
+                    with ExifToolSession(connect=None) as session:
                         session.write_embedded(f, datetime.now(timezone.utc))
 
                     # Step 2: Fix mtime via raw block

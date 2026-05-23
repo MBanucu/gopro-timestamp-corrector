@@ -93,7 +93,7 @@ class H14_HighLoadParallel(unittest.TestCase):
                 try:
                     # Step 1: Write metadata via exiftool (dirties inode)
                     from exiftool_session import ExifToolSession
-                    with ExifToolSession() as session:
+                    with ExifToolSession(connect=None) as session:
                         session.write_embedded(f, datetime.now(timezone.utc))
 
                     # Step 2: Fix mtime via raw block

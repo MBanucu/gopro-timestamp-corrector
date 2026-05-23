@@ -77,7 +77,7 @@ class H16_IsolateTrigger(unittest.TestCase):
 
             # Phase 1: Exif write ALL files on both mounts
             def exif_all(files):
-                with ExifToolSession() as session:
+                with ExifToolSession(connect=None) as session:
                     for f in files:
                         session.write_embedded(f, datetime.now(timezone.utc))
             threads = [
@@ -110,14 +110,14 @@ class H16_IsolateTrigger(unittest.TestCase):
     def test_trigger_B_exif_write(self):
         """Mount B does exif write on one file while A fixes."""
         def op(ops, files, mnt):
-            with ExifToolSession() as session:
-                session.write_embedded(files[0], datetime.now(timezone.utc))
+                with ExifToolSession(connect=None) as session:
+                    session.write_embedded(files[0], datetime.now(timezone.utc))
         self._run(op)
 
     def test_trigger_B_exif_write_all(self):
         """Mount B does exif write on ALL files while A fixes."""
         def op(ops, files, mnt):
-            with ExifToolSession() as session:
+            with ExifToolSession(connect=None) as session:
                 for f in files:
                     session.write_embedded(f, datetime.now(timezone.utc))
         self._run(op)

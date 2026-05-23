@@ -35,7 +35,7 @@ before = {{f.name: ops.read_mtime_raw(str(f)) for f in files}}
 
 # Individual ExifToolSession per file (the trigger pattern)
 for f in files:
-    with ExifToolSession() as sess:
+    with ExifToolSession(connect=None) as sess:
         sess.write_embedded(f, datetime.now(timezone.utc))
 
 after = {{f.name: ops.read_mtime_raw(str(f)) for f in files}}

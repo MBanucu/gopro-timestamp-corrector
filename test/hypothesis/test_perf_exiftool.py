@@ -50,14 +50,14 @@ class TestExifToolPerf(unittest.TestCase):
         # First run — starts the daemon
         t0 = time.perf_counter()
         for f in self._files:
-            with ExifToolSession() as s:
+            with ExifToolSession(connect=None) as s:
                 s.write_embedded(f, datetime.now(timezone.utc))
         t1 = time.perf_counter()
 
         # Second run — reuses the daemon
         t2 = time.perf_counter()
         for f in self._files:
-            with ExifToolSession() as s:
+            with ExifToolSession(connect=None) as s:
                 s.write_embedded(f, datetime.now(timezone.utc))
         t3 = time.perf_counter()
 

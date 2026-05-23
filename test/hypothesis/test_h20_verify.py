@@ -37,7 +37,7 @@ def teardown_mount(loop, mnt, work):
 
 
 def exif_all(files):
-    with ExifToolSession() as s:
+    with ExifToolSession(connect=None) as s:
         for f in files:
             s.write_embedded(f, datetime.now(timezone.utc))
 
@@ -127,7 +127,7 @@ target = Path(mnt) / "DCIM" / "100GOPRO"
 files = sorted(target.glob("*"))
 io = ExfatRawIO(); fs = ExfatRawFilesystem(io); ops = ExfatRawOps(io, fs)
 rec_before = {f.name: ops.read_mtime_raw(str(f)) for f in files}
-with ExifToolSession() as s:
+with ExifToolSession(connect=None) as s:
     for f in files:
         s.write_embedded(f, datetime.now(timezone.utc))
 rec_after = {f.name: ops.read_mtime_raw(str(f)) for f in files}

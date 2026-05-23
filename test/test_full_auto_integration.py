@@ -70,7 +70,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         if not paths:
             return {}
         from exiftool_session import ExifToolSession
-        with ExifToolSession() as session:
+        with ExifToolSession(connect=None) as session:
             batch = session.read_tags_batch(paths)
         out: dict[Path, datetime | None] = {}
         for path, (embedded, _gps) in batch.items():
@@ -125,7 +125,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         all_files = media.collect(self.target)
         t_total = time.perf_counter()
 
-        with ExifToolSession() as session:
+        with ExifToolSession(connect=None) as session:
             # ── 1. Record original metadata ────────────────────────
             t0 = time.perf_counter()
             orig = self._record_metadata(all_files)

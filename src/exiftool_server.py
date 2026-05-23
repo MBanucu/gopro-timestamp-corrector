@@ -195,7 +195,7 @@ class ExifToolServer:
     """
 
     def __init__(self, idle_timeout: int = _IDLE_TIMEOUT):
-        self.session = ExifToolSession()
+        self.session = ExifToolSession(connect=None)
         self.idle_timeout = idle_timeout
         self._last_request_time = time.monotonic()
         self._server: socket.socket | None = None

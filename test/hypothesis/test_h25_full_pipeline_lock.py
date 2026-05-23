@@ -58,7 +58,7 @@ class H25_FullPipelineLock(unittest.TestCase):
                 fcntl.flock(lk, fcntl.LOCK_EX)
                 try:
                     # Batch write
-                    with ExifToolSession() as s:
+                    with ExifToolSession(connect=None) as s:
                         pairs = [(f, datetime.now(timezone.utc)) for f in files]
                         s.write_embedded_batch(pairs)
 

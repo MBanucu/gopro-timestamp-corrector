@@ -40,7 +40,7 @@ class H21_IndividualSessions(unittest.TestCase):
     def _individual_exif(self, files):
         """ONE ExifToolSession per file (the trigger pattern)."""
         for f in files:
-            with ExifToolSession() as s:
+            with ExifToolSession(connect=None) as s:
                 s.write_embedded(f, datetime.now(timezone.utc))
 
     def test_threads_individual_sessions(self):
@@ -88,7 +88,7 @@ class H21_IndividualSessions(unittest.TestCase):
             f.write('io = ExfatRawIO(); fs = ExfatRawFilesystem(io); ops = ExfatRawOps(io, fs)\n')
             f.write('rec_before = {f.name: ops.read_mtime_raw(str(f)) for f in files}\n')
             f.write('for f in files:\n')
-            f.write('    with ExifToolSession() as s:\n')
+            f.write('    with ExifToolSession(connect=None) as s:\n')
             f.write('        s.write_embedded(f, datetime.now(timezone.utc))\n')
             f.write('rec_after = {f.name: ops.read_mtime_raw(str(f)) for f in files}\n')
             f.write('corrupted = {k: v for k, v in rec_after.items() if v != rec_before.get(k)}\n')

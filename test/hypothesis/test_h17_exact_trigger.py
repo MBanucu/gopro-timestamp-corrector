@@ -59,7 +59,7 @@ class H17_ExactPhaseC(unittest.TestCase):
             def per_file_pipeline(ops_list, files, label):
                 for i, (ops, f) in enumerate(zip(ops_list, files)):
                     # INDIVIDUAL ExifTool session per file
-                    with ExifToolSession() as session:
+                    with ExifToolSession(connect=None) as session:
                         session.write_embedded(f, datetime.now(timezone.utc))
                     dt = datetime.fromtimestamp(FIXED_TS, tz=timezone.utc)
                     ops.fix_exfat_raw(str(f), dt, dry_run=False)
