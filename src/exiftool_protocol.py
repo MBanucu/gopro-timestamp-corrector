@@ -35,15 +35,17 @@ def ping_server(port: int, timeout: float = 2.0) -> bool:
     """Check if a server at *port* is alive by sending ping."""
     try:
         s = socket.create_connection(('127.0.0.1', port), timeout=timeout)
+        s.settimeout(timeout)
         req = json.dumps({'id': 1, 'method': 'ping', 'params': {}})
         s.sendall((req + '\n').encode())
         resp = s.makefile('r', encoding='utf-8').readline()
         s.close()
         if resp:
             data = json.loads(resp.strip())
-            return data.get('result') == 'pong'
+            ok = data.get('result') == 'pong'
+            return ok
         return False
-    except (ConnectionRefusedError, OSError, json.JSONDecodeError, socket.timeout):
+    except (ConnectionRefusedError, OSError, json.JSONDecodeError, socket.timeout) as exc:
         return False
 
 

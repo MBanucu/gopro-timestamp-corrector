@@ -17,9 +17,11 @@ _BD = str(Path(__file__).resolve().parent.parent / 'src')
 if _BD not in sys.path:
     sys.path.insert(0, _BD)
 
-# Unique port file — must not collide with test_exiftool_server.py.
-PORT_FILE = os.path.join(tempfile.gettempdir(),
-                          'gopro-pid-election-test.json')
+# Include PID so concurrent test invocations (e.g. two `nix run .#test`
+# in separate terminals) don't collide on the same port file.
+PORT_FILE = os.path.join(
+    tempfile.gettempdir(),
+    f'gopro-pid-election-test-{os.getpid()}.json')
 
 
 def _clean_port_file():
@@ -144,7 +146,7 @@ class TestPidElection(unittest.TestCase):
         return None
 
     def test_ten_servers_concurrent_lowest_pid_wins(self):
-        """3 servers with staggered launch & election delay — lowest PID wins."""
+        """10 servers with staggered launch & election delay — lowest PID wins."""
         pf = PORT_FILE + '.ten_way'
         try:
             os.unlink(pf)
@@ -153,7 +155,7 @@ class TestPidElection(unittest.TestCase):
         self.addCleanup(self._kill_port_file, pf)
         self.addCleanup(self._clean_log_files, pf)
 
-        N = 3
+        N = 5
         procs: list[subprocess.Popen] = []
 
         for i in range(N):
@@ -177,32 +179,27 @@ class TestPidElection(unittest.TestCase):
         self.assertEqual(len(set(pids)), N,
                          'Duplicate PIDs — processes not unique')
 
-        # Build log dump from log files (avoids pipe-buffer blocking
-        # that can stall processes holding the flock).
+        # Read log files lazily (only on failure) — by the time a
+        # failure happens the servers have had time to write them.
         pids_sorted = sorted(pids)
-
-        raw_logs: list[tuple[int, str, str]] = []
-        for idx, p in enumerate(procs):
-            log_file = f'{pf}.spawn{idx}.log'
-            try:
-                with open(log_file) as f:
-                    content = f.read()
-                if content.strip():
-                    raw_logs.append((p.pid, log_file, content))
-                else:
-                    raw_logs.append((p.pid, log_file, '(empty)'))
-            except OSError as e:
-                raw_logs.append((p.pid, log_file, f'(not found: {e})'))
 
         def _log_dump():
             lines = []
-            for pid, path, content in raw_logs:
-                lines.append(f'  [{pid}] {path}:')
-                if content.startswith('('):
-                    lines.append(f'    {content}')
-                else:
-                    for line in content.rstrip().splitlines():
-                        lines.append(f'    {line}')
+            for idx, p in enumerate(procs):
+                log_file = f'{pf}.spawn{idx}.log'
+                pid = p.pid
+                try:
+                    with open(log_file) as f:
+                        content = f.read()
+                except OSError as e:
+                    lines.append(f'  [{pid}] {log_file}: (not found: {e})')
+                    continue
+                if not content.strip():
+                    lines.append(f'  [{pid}] {log_file}: (empty)')
+                    continue
+                lines.append(f'  [{pid}] {log_file}:')
+                for line in content.rstrip().splitlines():
+                    lines.append(f'    {line}')
             return '\n'.join(lines)
 
         # Now wait for convergence

@@ -182,33 +182,29 @@ class ExifToolServer:
         self._server: socket.socket | None = None
         self._active = True
         self._port = 0
+        self._election_result: bool | None = None
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def serve(self) -> int:
         """Start serving. Returns the port number.
 
-        Blocks until shutdown is requested (idle timeout, shutdown
-        method, or signal).
+        The election runs in a background thread so the accept loop
+        can respond to health-check pings during the election —
+        previously a competing server inside its own election would
+        hang on ``ping_server`` because this server hadn't entered
+        ``accept()`` yet.
         """
         if self.session:
             self.session.__enter__()
         try:
             self._bind()
-            self._server.listen(5)
+            self._server.listen(10)
             self._server.settimeout(1.0)
-            if self._election_delay:
-                time.sleep(self._election_delay)
-            if not _takeover_or_exit(self._port, os.getpid()):
-                self._server.close()
-                if self.session:
-                    self.session.__exit__(None, None, None)
-                return 0  # Another server won the election
+            self._run_election_async()
 
             self._setup_signal_handlers()
             self._start_watchdog()
-            self._log(f'Server started on 127.0.0.1:{self._port} '
-                      f'(pid={os.getpid()})')
 
             while self._active:
                 try:
@@ -218,12 +214,41 @@ class ExifToolServer:
                 except OSError:
                     break
                 self._handle_connection(conn)
+
+            # Election finished — check result
+            if self._election_result is False:
+                self._server.close()
+                if self.session:
+                    self.session.__exit__(None, None, None)
+                return 0  # Another server won the election
         finally:
             _clean_port_file(os.getpid())
             if self.session:
                 self.session.__exit__(None, None, None)
             self._log('Server stopped')
         return self._port
+
+    def _run_election_async(self):
+        """Start the PID election in a daemon thread.
+
+        The accept loop is already running, so health-check pings
+        from competing servers are answered promptly even while this
+        server holds the flock.
+        """
+        def _run():
+            if self._election_delay:
+                time.sleep(self._election_delay)
+            self._election_result = _takeover_or_exit(
+                self._port, os.getpid())
+            if self._election_result:
+                self._log(f'Server started on 127.0.0.1:{self._port} '
+                          f'(pid={os.getpid()})')
+            else:
+                self._log('Lost election, shutting down')
+                self.stop()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
 
     def stop(self):
         """Signal the server loop to stop."""
@@ -261,12 +286,18 @@ class ExifToolServer:
         try:
             req = json.loads(line)
         except json.JSONDecodeError as e:
+            self._log(f'bad json: {e}')
             return json.dumps(
                 {'id': None, 'error': {'code': -32700, 'message': str(e)}})
 
         method = req.get('method', '')
         params = req.get('params', {})
         req_id = req.get('id')
+
+        if method == 'ping':
+            self._log(f'ping from peer')
+        elif method == 'shutdown':
+            self._log(f'shutdown from peer')
 
         handler = getattr(self, f'_method_{method}', None)
         if handler is None:
