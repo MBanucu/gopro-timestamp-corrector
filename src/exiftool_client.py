@@ -16,32 +16,14 @@ import socket
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
+from exiftool_protocol import iso, from_iso
 from options import EXIFTOOL_SERVER_PORT_FILE
 
 
 _PORT_FILE = os.path.join(tempfile.gettempdir(), EXIFTOOL_SERVER_PORT_FILE)
-
-
-def _iso(dt: datetime | None) -> str | None:
-    if dt is None:
-        return None
-    s = dt.isoformat()
-    return s
-
-
-def _from_iso(s: str | None) -> datetime | None:
-    if not s:
-        return None
-    try:
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-    except (ValueError, TypeError):
-        return None
 
 
 def _send_request(port: int, method: str,
@@ -134,14 +116,14 @@ class ExifToolClient:
     def read_gps_time(self, filepath: str | Path) -> datetime | None:
         result = _send_request(self._port, 'read_gps_time',
                                 {'filepath': str(filepath)})
-        return _from_iso(result)
+        return from_iso(result)
 
     def read_embedded(self, filepath: str | Path,
                       use_qt_utc: bool = True) -> datetime | None:
         result = _send_request(self._port, 'read_embedded',
                                 {'filepath': str(filepath),
                                  'use_qt_utc': use_qt_utc})
-        return _from_iso(result)
+        return from_iso(result)
 
     # ── Batch reads ──────────────────────────────────────────────────
 
@@ -153,7 +135,7 @@ class ExifToolClient:
                                 {'filepaths': paths_str})
         out: dict[Path, tuple[datetime | None, datetime | None]] = {}
         for k, v in result.items():
-            out[Path(k)] = (_from_iso(v[0]), _from_iso(v[1]))
+            out[Path(k)] = (from_iso(v[0]), from_iso(v[1]))
         return out
 
     def read_gps_accuracy_batch(
@@ -168,12 +150,12 @@ class ExifToolClient:
 
     def write_embedded(self, path: Path, dt: datetime) -> bool:
         return _send_request(self._port, 'write_embedded',
-                              {'path': str(path), 'dt': _iso(dt)})
+                              {'path': str(path), 'dt': iso(dt)})
 
     def write_embedded_batch(
         self, pairs: list[tuple[Path, datetime]]
     ) -> bool:
-        serialized = [[str(p), _iso(d)] for p, d in pairs]
+        serialized = [[str(p), iso(d)] for p, d in pairs]
         return _send_request(self._port, 'write_embedded_batch',
                               {'pairs': serialized})
 

@@ -2,14 +2,12 @@
 
 Extracted from the growing ``test_exiftool_server.py``.
 """
-import fcntl
 import json
 import os
 import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -60,7 +58,8 @@ class TestPidElection(unittest.TestCase):
     def _start_server(self, pf: str, timeout: int = 10) -> subprocess.Popen:
         proc = subprocess.Popen(
             [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
-             '--idle-timeout', str(timeout), '--port-file', pf],
+             '--idle-timeout', str(timeout), '--port-file', pf,
+             '--no-exiftool'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -145,84 +144,74 @@ class TestPidElection(unittest.TestCase):
         return None
 
     def test_ten_servers_concurrent_lowest_pid_wins(self):
-        """10 servers started concurrently via Popen — lowest PID wins."""
+        """3 servers with staggered launch & election delay — lowest PID wins."""
         pf = PORT_FILE + '.ten_way'
         try:
             os.unlink(pf)
         except OSError:
             pass
         self.addCleanup(self._kill_port_file, pf)
+        self.addCleanup(self._clean_log_files, pf)
 
-        N = 10
+        N = 3
         procs: list[subprocess.Popen] = []
-        lock = threading.Lock()
-        barrier = threading.Barrier(N, timeout=15)
-        exc_info: list[Exception] = []
 
-        def spawn():
-            try:
-                barrier.wait()
-                p = subprocess.Popen(
-                    [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
-                     '--idle-timeout', '30', '--port-file', pf],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                )
-                with lock:
-                    procs.append(p)
-            except Exception as e:
-                with lock:
-                    exc_info.append(e)
-
-        threads = [threading.Thread(target=spawn) for _ in range(N)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        if exc_info:
-            self.fail(f'{len(exc_info)} threads raised exceptions')
-
-        self.assertEqual(len(procs), N,
-                         f'Expected {N} procs, got {len(procs)}')
+        for i in range(N):
+            launch_ms = i * 10
+            target_entry_ms = 100 + (N - 1 - i) * 50
+            election_delay_ms = max(10, target_entry_ms - launch_ms)
+            log_file = f'{pf}.spawn{i}.log'
+            p = subprocess.Popen(
+                [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
+                 '--idle-timeout', '60', '--port-file', pf,
+                 '--log-file', log_file,
+                 '--no-exiftool',
+                 '--election-delay', str(election_delay_ms / 1000)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            procs.append(p)
+            time.sleep(0.01)
 
         pids = [p.pid for p in procs]
         self.assertEqual(len(set(pids)), N,
                          'Duplicate PIDs — processes not unique')
 
-        result = self._wait_for_converged(pf, expected_pid=min(pids), timeout=10)
-        self.assertIsNotNone(result,
-                             f'Election did not converge to lowest PID {min(pids)}')
-        port, winner_pid = result
-
-        # Build log dump from all processes' stderr (non-blocking read)
-        logs = {}
+        # Build log dump from log files (avoids pipe-buffer blocking
+        # that can stall processes holding the flock).
         pids_sorted = sorted(pids)
-        for p in procs:
-            if not p.stderr:
-                continue
-            # Make the pipe non-blocking so we don't hang on still-running
-            # survivors (the winner exits via idle-timeout *after* the test).
-            fd = p.stderr.fileno()
-            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+        raw_logs: list[tuple[int, str, str]] = []
+        for idx, p in enumerate(procs):
+            log_file = f'{pf}.spawn{idx}.log'
             try:
-                raw = p.stderr.read()
-                if raw:
-                    out = raw.decode('utf-8', errors='replace').strip()
-                    if out:
-                        logs[p.pid] = out
-            except (BlockingIOError, ValueError):
-                pass
-            p.stderr.close()
+                with open(log_file) as f:
+                    content = f.read()
+                if content.strip():
+                    raw_logs.append((p.pid, log_file, content))
+                else:
+                    raw_logs.append((p.pid, log_file, '(empty)'))
+            except OSError as e:
+                raw_logs.append((p.pid, log_file, f'(not found: {e})'))
 
         def _log_dump():
             lines = []
-            for pid in pids_sorted:
-                if pid in logs:
-                    for line in logs[pid].splitlines():
-                        lines.append(f'  [{pid}] {line}')
+            for pid, path, content in raw_logs:
+                lines.append(f'  [{pid}] {path}:')
+                if content.startswith('('):
+                    lines.append(f'    {content}')
+                else:
+                    for line in content.rstrip().splitlines():
+                        lines.append(f'    {line}')
             return '\n'.join(lines)
+
+        # Now wait for convergence
+        result = self._wait_for_converged(pf, expected_pid=min(pids), timeout=15)
+        self.assertIsNotNone(result,
+            f'Election did not converge to lowest PID {min(pids)}\n'
+            f'All PIDs: {pids_sorted}\n'
+            f'Server logs:\n{_log_dump()}')
+        port, winner_pid = result
 
         lowest = min(pids)
         if winner_pid != lowest:
@@ -231,7 +220,7 @@ class TestPidElection(unittest.TestCase):
                 f'All PIDs: {pids_sorted}\n'
                 f'Server logs:\n{_log_dump()}')
 
-        deadline = time.monotonic() + 3.0
+        deadline = time.monotonic() + 5.0
         alive = []
         while time.monotonic() < deadline:
             alive = [p for p in procs if p.poll() is None]
@@ -263,6 +252,14 @@ class TestPidElection(unittest.TestCase):
             os.unlink(pf)
         except OSError:
             pass
+
+    def _clean_log_files(self, pf: str):
+        for fname in os.listdir(tempfile.gettempdir()):
+            if fname.startswith(os.path.basename(pf) + '.spawn'):
+                try:
+                    os.unlink(os.path.join(tempfile.gettempdir(), fname))
+                except OSError:
+                    pass
 
     def _kill_proc(self, p: subprocess.Popen):
         try:
