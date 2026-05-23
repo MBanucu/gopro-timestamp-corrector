@@ -86,8 +86,9 @@ Only the server itself uses `ExifToolSession(connect=None)` for direct access.
 
 ### PID election (single instance guarantee)
 
-When a new server instance starts, it reads the port file and pings the
-existing server:
+When a new server instance starts, it opens the port file and acquires an
+exclusive `fcntl.flock`.  Under the lock it reads the current winner and
+decides:
 
 | Condition | Result |
 |---|---|
@@ -95,8 +96,10 @@ existing server:
 | Existing server alive, new PID > old PID | New server exits |
 | Existing server alive, new PID < old PID | New server sends `shutdown` to the old one, then takes over |
 
-The port file is created atomically (`O_CREAT | O_EXCL`), so concurrent
-startup races are resolved deterministically after at most 5 retries.
+Because the lock is held for the entire read-compare-write cycle, there is
+no race window (unlike the previous `O_CREAT | O_EXCL` retry loop).  Log
+messages include ``%H:%M:%S.%f`` timestamps via the module-level ``_log()``
+function.
 
 ### Protocol
 
@@ -133,12 +136,13 @@ removed as redundant.
 ### Key files
 
 | File | Role |
-|---|---|
+|---|---|---|
 | `src/exiftool_server.py` | `ExifToolServer` class, `spawn_server()`, `_takeover_or_exit()` |
 | `src/exiftool_client.py` | `ExifToolClient` with same API as `ExifToolSession` |
 | `src/exiftool_session.py` | `ExifToolSession()` delegation (defaults to `connect='auto'`) |
 | `src/options.py` | `EXIFTOOL_SERVER_PORT_FILE`, `EXIFTOOL_SERVER_IDLE_TIMEOUT` |
-| `test/test_exiftool_server.py` | 15 tests: protocol, auto-spawn, idle, PID election |
+| `test/test_exiftool_server.py` | 15 tests: protocol, auto-spawn, idle, client, session |
+| `test/test_pid_election.py` | 2 tests: sequential and concurrent PID election |
 
 ## exFAT raw block write & cache coherence
 

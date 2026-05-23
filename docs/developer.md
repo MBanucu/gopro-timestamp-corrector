@@ -106,6 +106,8 @@ $COV/bin/coverage-report
 | Modification history | 7 unit | `test_history.py` |
 | GUI structure smoke | 20 smoke | `test_gui_structure.py` |
 | Full pipeline (server) | 1 integration | `test_full_auto_integration.py` |
+| ExifTool server protocol | 15 tests | `test_exiftool_server.py` |
+| ExifTool PID election | 2 tests | `test_pid_election.py` |
 | Raw debug tests | 7 debug | `test_debug_raw_btime.py` |
 | Cluster coherence | 1 integration | `test_cluster_coherence.py` |
 | Ubuntu compatibility | 6 unit | `test_ubuntu_compat.py` |
@@ -208,7 +210,9 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 │   ├── test_datepicker.py
 │   ├── test_autocomplete.py
 │   ├── test_common_prefix.py
-│   └── test_proposals.py
+│   ├── test_proposals.py
+│   ├── test_exiftool_server.py
+│   └── test_pid_election.py
 └── docs/
     ├── btime-strategies/
     │   └── README.md
