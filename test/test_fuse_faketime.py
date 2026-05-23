@@ -9,7 +9,6 @@ import ctypes
 import ctypes.util
 import gzip
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -166,46 +165,16 @@ class TestFuseFaketimeBtime(unittest.TestCase):
         cls.img_path = cls._work_dir / 'sdcard.img'
         run(['cp', '--sparse=always', str(cached), str(cls.img_path)], check=True)
 
-        r = run(['udisksctl', 'loop-setup', '-f', str(cls.img_path),
-                  '--no-user-interaction'])
-        if r.returncode != 0:
-            raise unittest.SkipTest('udisksctl loop-setup failed')
-        m = re.search(r'as (/dev/loop\d+)', r.stdout)
-        cls.loop_dev = m.group(1) if m else None
-        if not cls.loop_dev:
-            raise unittest.SkipTest('Could not parse loop device')
-
-        cls.addClassCleanup(cls._teardown_kernel)
-        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
-        cls._mount_kernel()
-
-    @classmethod
-    def _mount_kernel(cls):
-        """Mount via udisksctl (kernel exfat driver) and record the mount point."""
-        r = run(['udisksctl', 'mount', '-b', cls.loop_dev,
-                  '--no-user-interaction'])
-        if r.returncode == 0:
-            m = re.search(r'at ([^ \n]+)', r.stdout)
-            cls.mount_point = m.group(1).rstrip('.') if m else None
-        elif 'AlreadyMounted' in (r.stderr or ''):
-            m = re.search(r"at `([^`]+)'", r.stderr)
-            cls.mount_point = m.group(1) if m else None
-        if not cls.mount_point:
-            raise unittest.SkipTest('Could not mount via udisksctl')
+        from loop_device import setup_loop_device, teardown_loop_device
+        from strategies.mount import MountError
+        try:
+            cls.loop_dev, cls.mount_point = setup_loop_device(str(cls.img_path))
+        except MountError as e:
+            raise unittest.SkipTest(str(e))
         cls.target = Path(cls.mount_point) / 'DCIM' / '100GOPRO'
         cls.target.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def _teardown_kernel(cls):
-        if cls.loop_dev:
-            for _ in range(3):
-                r = run(['udisksctl', 'unmount', '-b', cls.loop_dev,
-                          '--no-user-interaction'])
-                if r.returncode == 0 or 'NotMounted' in (r.stderr or ''):
-                    break
-                time.sleep(1)
-            run(['sudo', 'losetup', '-d', cls.loop_dev])
-            cls.loop_dev = None
+        cls.addClassCleanup(teardown_loop_device, cls.loop_dev, cls.mount_point)
+        cls.addClassCleanup(shutil.rmtree, cls._work_dir, ignore_errors=True)
 
     # ── per-test helpers: FUSE mount cycle ──────────────────────────
 
