@@ -355,7 +355,7 @@ loaded directly from the compiled TZif v2+ binary files on disk.
 ## Birth time (btime) support
 
 | Filesystem | Method | Sudo | Dependencies checked | Notes |
-|---|---|---|---|---|---|
+|---|---|---|---|---|
 | ext4 | `debugfs` | required | `debugfs`, `sync` | Sets inode crtime directly |
 | exFAT | raw block (`exfat_raw`) | required | `dd`, `findmnt`, `sync`, `mount`, `umount` | Direct block device manipulation; works on existing files (recommended) |
 | exFAT | FUSE + `faketime` | for mount | `faketime`, `mount.exfat-fuse`, `findmnt` | Unmounts kernel driver, remounts FUSE exFAT under faked time; new files only |
