@@ -31,11 +31,20 @@ PORT_FILE = os.path.join(
 IDLE_TIMEOUT = 3  # short timeout for tests
 
 
-def _clean_port_file():
+def _clean_port_file(path: str | None = None):
+    if path is None:
+        path = PORT_FILE
     try:
-        os.unlink(PORT_FILE)
+        os.unlink(path)
     except OSError:
         pass
+
+
+# Isolated port files per test class so no class interferes with another's server.
+_PROTOCOL_PORT_FILE = PORT_FILE + '.protocol_test'
+_CLIENT_PORT_FILE = PORT_FILE + '.client_test'
+_SESSION_PORT_FILE = PORT_FILE + '.session_test'
+_IDLE_PORT_FILE = PORT_FILE + '.idle_test'
 
 
 def _send(port: int, method: str, params: dict = None,
@@ -56,15 +65,19 @@ def _send(port: int, method: str, params: dict = None,
 
 
 class TestServerProtocol(unittest.TestCase):
-    """Test the raw TCP protocol against a server subprocess."""
+    """Test the raw TCP protocol against a server subprocess.
+
+    Uses an isolated port file (``_PROTOCOL_PORT_FILE``) so its server
+    doesn't interfere with other test classes or the production default.
+    """
 
     @classmethod
     def setUpClass(cls):
-        _clean_port_file()
+        _clean_port_file(_PROTOCOL_PORT_FILE)
         cls._proc = subprocess.Popen(
             [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
              '--idle-timeout', str(IDLE_TIMEOUT),
-             '--port-file', PORT_FILE],
+             '--port-file', _PROTOCOL_PORT_FILE],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -73,7 +86,7 @@ class TestServerProtocol(unittest.TestCase):
         cls._port = None
         while time.monotonic() < deadline:
             try:
-                with open(PORT_FILE) as f:
+                with open(_PROTOCOL_PORT_FILE) as f:
                     data = json.load(f)
                 cls._port = data['port']
                 break
@@ -89,7 +102,7 @@ class TestServerProtocol(unittest.TestCase):
             cls._proc.wait(timeout=3)
         except Exception:
             cls._proc.kill()
-        _clean_port_file()
+        _clean_port_file(_PROTOCOL_PORT_FILE)
 
     def test_ping(self):
         resp = _send(self._port, 'ping')
@@ -125,12 +138,8 @@ class TestServerProtocol(unittest.TestCase):
         self.assertIsInstance(resp.get('result'), bool)
 
     def test_shutdown(self):
-        # Spawn a fresh server to test shutdown on
-        pf = PORT_FILE + '.shutdown_test'
-        try:
-            os.unlink(pf)
-        except OSError:
-            pass
+        pf = _PROTOCOL_PORT_FILE + '.shutdown_test'
+        _clean_port_file(pf)
         proc = subprocess.Popen(
             [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
              '--idle-timeout', '10', '--port-file', pf],
@@ -163,67 +172,75 @@ class TestServerProtocol(unittest.TestCase):
 
 
 class TestClientAutoSpawn(unittest.TestCase):
-    """Test the client auto-spawn feature."""
+    """Test the client auto-spawn feature.
+
+    Uses an isolated port file (``_CLIENT_PORT_FILE``) so auto-spawned
+    servers don't leak into other test classes.
+    """
 
     def setUp(self):
-        _clean_port_file()
+        _clean_port_file(_CLIENT_PORT_FILE)
 
     def tearDown(self):
-        # Shut down any running server
         try:
-            with open(PORT_FILE) as f:
+            with open(_CLIENT_PORT_FILE) as f:
                 data = json.load(f)
             _send(data['port'], 'shutdown')
         except (OSError, json.JSONDecodeError, KeyError, ConnectionError):
             pass
-        _clean_port_file()
+        _clean_port_file(_CLIENT_PORT_FILE)
 
     def test_auto_spawn(self):
         from exiftool_client import ExifToolClient
-        client = ExifToolClient()
+        client = ExifToolClient(port_file=_CLIENT_PORT_FILE)
         self.assertTrue(client.available())
 
     def test_ping_after_connect(self):
         from exiftool_client import ExifToolClient
-        client = ExifToolClient()
+        client = ExifToolClient(port_file=_CLIENT_PORT_FILE)
         resp = _send(client._port, 'ping')
         self.assertEqual(resp.get('result'), 'pong')
 
     def test_read_gps_nonexistent_file(self):
         from exiftool_client import ExifToolClient
-        client = ExifToolClient()
+        client = ExifToolClient(port_file=_CLIENT_PORT_FILE)
         result = client.read_gps_time('/nonexistent/file.mp4')
-        # Should return None for nonexistent file (graceful error)
         self.assertIsNone(result)
 
 
 class TestSessionIntegration(unittest.TestCase):
-    """Test ExifToolSession(connect='auto') delegation."""
+    """Test ExifToolSession(connect='auto') delegation.
+
+    Uses an isolated port file (``_SESSION_PORT_FILE``) so auto-spawned
+    servers don't leak into other test classes.
+    """
 
     def setUp(self):
-        _clean_port_file()
+        _clean_port_file(_SESSION_PORT_FILE)
 
     def tearDown(self):
         try:
-            with open(PORT_FILE) as f:
+            with open(_SESSION_PORT_FILE) as f:
                 data = json.load(f)
             _send(data['port'], 'shutdown')
         except (OSError, json.JSONDecodeError, KeyError, ConnectionError):
             pass
-        _clean_port_file()
+        _clean_port_file(_SESSION_PORT_FILE)
 
     def test_session_available(self):
         from exiftool_session import ExifToolSession
-        with ExifToolSession(connect='auto') as session:
+        with ExifToolSession(connect='auto',
+                             port_file=_SESSION_PORT_FILE) as session:
             self.assertTrue(session.available())
 
     def test_session_reuses_server(self):
         """Two sessions should share the same server process."""
         from exiftool_session import ExifToolSession
-
-        with ExifToolSession(connect='auto') as s1:
+        with ExifToolSession(connect='auto',
+                             port_file=_SESSION_PORT_FILE) as s1:
             self.assertTrue(s1.available())
-            with ExifToolSession(connect='auto') as s2:
+            with ExifToolSession(connect='auto',
+                                 port_file=_SESSION_PORT_FILE) as s2:
                 self.assertTrue(s2.available())
 
 
@@ -231,16 +248,10 @@ class TestIdleShutdown(unittest.TestCase):
     """Test that the server shuts down after idle timeout."""
 
     def test_idle_timeout(self):
-        _clean_port_file()
-        pf = PORT_FILE + '.idle_test'
-        try:
-            os.unlink(pf)
-        except OSError:
-            pass
-
+        _clean_port_file(_IDLE_PORT_FILE)
         proc = subprocess.Popen(
             [sys.executable, os.path.join(_BD, 'exiftool_server.py'),
-             '--idle-timeout', '2', '--port-file', pf],
+             '--idle-timeout', '2', '--port-file', _IDLE_PORT_FILE],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -249,7 +260,7 @@ class TestIdleShutdown(unittest.TestCase):
         port = None
         while time.monotonic() < deadline:
             try:
-                with open(pf) as f:
+                with open(_IDLE_PORT_FILE) as f:
                     data = json.load(f)
                 port = data['port']
                 break
@@ -257,17 +268,13 @@ class TestIdleShutdown(unittest.TestCase):
                 time.sleep(0.05)
         self.assertIsNotNone(port)
 
-        # Server should auto-shutdown after ~2s idle
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
             self.fail('Server did not auto-shutdown within idle timeout')
 
-        try:
-            os.unlink(pf)
-        except OSError:
-            pass
+        _clean_port_file(_IDLE_PORT_FILE)
 
 class TestFormatterRoundtrip(unittest.TestCase):
     """Test that datetime ISO formatting is symmetric."""
