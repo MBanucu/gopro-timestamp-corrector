@@ -10,20 +10,18 @@ import from here instead of hardcoding strings, ensuring CLI and GUI stay in syn
 BTIME_OFF = 'off'
 BTIME_AUTO = 'auto'
 BTIME_DEBUGFS = 'debugfs'
-BTIME_FUSE = 'fuse'
 BTIME_EXFAT_RAW = 'exfat_raw'
 BTIME_EXFAT_RAW_READ = 'exfat_raw_read'
 # All valid btime method identifiers (including internal-only values).
 ALL_BTIME_METHODS = frozenset({
     BTIME_OFF, BTIME_AUTO, BTIME_DEBUGFS,
-    BTIME_FUSE, BTIME_EXFAT_RAW, BTIME_EXFAT_RAW_READ,
+    BTIME_EXFAT_RAW, BTIME_EXFAT_RAW_READ,
 })
 
 # User-facing choices for CLI argparse (excludes sentinel 'off').
 BTIME_CLI_CHOICES = (
     BTIME_AUTO,
     BTIME_DEBUGFS,
-    BTIME_FUSE,
     BTIME_EXFAT_RAW,
 )
 
@@ -31,13 +29,7 @@ BTIME_CLI_CHOICES = (
 BTIME_GUI_CHOICES = (BTIME_OFF,) + BTIME_CLI_CHOICES
 
 # Default ordered priority list for btime fallback chain.
-# At runtime the system tries each method in order; the first one
-# that succeeds is used for all files.
-BTIME_PRIORITY_ORDERED = (BTIME_AUTO, BTIME_EXFAT_RAW, BTIME_DEBUGFS,
-                          BTIME_FUSE)
-
-# Methods that need setup before writes (e.g. FUSE remount).
-BTIME_PROCESSING_BEFORE = frozenset({BTIME_FUSE})
+BTIME_PRIORITY_ORDERED = (BTIME_AUTO, BTIME_EXFAT_RAW, BTIME_DEBUGFS)
 
 # Methods that need per-file processing after mtime (e.g. raw block write).
 BTIME_PROCESSING_AFTER = frozenset({BTIME_DEBUGFS, BTIME_EXFAT_RAW})

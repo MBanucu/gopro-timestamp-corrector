@@ -90,16 +90,14 @@ def viable_methods(
 # ── Public API (unchanged signatures) ───────────────────────────
 
 def resolve_method(method: str, fs_type: str | None) -> str | None:
-    # Explicit method names pass through directly
+    if method == BTIME_AUTO:
+        if fs_type in ('ext2', 'ext3', 'ext4'):
+            return 'debugfs'
+        if fs_type == 'exfat':
+            return 'exfat_raw'
+        return None
     if method in REGISTRY:
         return method
-    # 'auto' resolves to the best concrete method for the filesystem
-    if fs_type in ('ext2', 'ext3', 'ext4'):
-        return 'debugfs'
-    if fs_type == 'exfat':
-        return 'exfat_raw'
-    if fs_type in ('vfat', 'msdos'):
-        return 'fuse'
     return None
 
 
@@ -115,7 +113,7 @@ def compatible_methods(fs_type: str | None) -> tuple[str, ...]:
 
 
 def needs_processing_before(method: str) -> bool:
-    return method == 'fuse'
+    return False
 
 
 def needs_processing_after(method: str) -> bool:
@@ -167,8 +165,6 @@ def chain_setup(methods, target_path, fs_type, delta, dry_run):
 
         if s.needs_setup():
             ctx = s.setup(target_path, delta, dry_run) or {}
-            if not ctx and resolved == 'fuse':
-                continue
             return resolved, ctx
 
         if resolved == 'exfat_raw':

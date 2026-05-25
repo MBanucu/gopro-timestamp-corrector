@@ -116,7 +116,7 @@ class TestMtimeStrategySelection(unittest.TestCase):
         strategy = writer._resolve_mtime_strategy()
         # '.' is ext4 (or whatever the root fs is), not exfat
         fs = btime.detect_fs('.')
-        if fs not in ('exfat', 'fuse', 'exfat_raw'):
+        if fs not in ('exfat', 'exfat_raw'):
             self.assertIsInstance(strategy, OsUtimeMtimeStrategy)
 
     def test_btime_handles_mtime_method(self):
@@ -125,7 +125,7 @@ class TestMtimeStrategySelection(unittest.TestCase):
         w = Writer.__new__(Writer)
         w._b_method = 'exfat_raw'
         self.assertTrue(w._btime_handles_mtime())
-        w._b_method = 'fuse'
+        w._b_method = 'debugfs'
         self.assertFalse(w._btime_handles_mtime())
         w._b_method = 'debugfs'
         self.assertFalse(w._btime_handles_mtime())
@@ -147,7 +147,7 @@ class TestNormalizeBtime(unittest.TestCase):
         self.assertEqual(self._norm('exfat_raw'), ['exfat_raw'])
 
     def test_list(self):
-        self.assertEqual(self._norm(['exfat_raw', 'fuse']), ['exfat_raw', 'fuse'])
+        self.assertEqual(self._norm(['exfat_raw', 'debugfs']), ['exfat_raw', 'debugfs'])
 
     def test_tuple(self):
         self.assertEqual(self._norm(('exfat_raw',)), ['exfat_raw'])

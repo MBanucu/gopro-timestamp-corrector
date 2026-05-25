@@ -14,7 +14,7 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
 ```
 
 - GUI tests run headlessly via Xvfb (no display required).
-- Integration tests (`test_exfat_raw_btime.py`, `test_fuse_faketime.py`, `test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`.
+- Integration tests (`test_exfat_raw_btime.py`, `test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`.
 - `test/test_strategy.py` writes temp files, must be run from repo root.
 - Large fixture: `test/sdcard.img.gz` (~14 MB, decompressed on first test run).
 

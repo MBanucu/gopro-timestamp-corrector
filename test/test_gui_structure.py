@@ -154,7 +154,8 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         s.fix_btime_var.set(True)
         s._toggle_btime()
-        s.set_filesystem('exfat')  # populate with 3 items
+        s._btime_methods = ['exfat_raw', 'debugfs']
+        s._rebuild_listbox()
         original = list(s._btime_methods)
         # Select last item and move it up
         s._btime_list.selection_clear(0)
@@ -168,7 +169,8 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         s.fix_btime_var.set(True)
         s._toggle_btime()
-        s.set_filesystem('exfat')  # populate with 3 items
+        s._btime_methods = ['exfat_raw', 'debugfs']
+        s._rebuild_listbox()
         original = list(s._btime_methods)
         s._btime_list.selection_set(0)
         s._move_down()
@@ -193,7 +195,6 @@ class TestStepPanels(unittest.TestCase):
         s.set_filesystem('ext4')
         self.assertIn('debugfs', s._btime_methods)
         self.assertNotIn('exfat_raw', s._btime_methods)
-        self.assertNotIn('fuse', s._btime_methods)
 
     def test_step3_set_filesystem_none_keeps_empty_list(self):
         s = StepPlan(self.root)
@@ -214,7 +215,6 @@ class TestStepPanels(unittest.TestCase):
         self.assertNotIn('debugfs', s._btime_methods,
                           'debugfs must not appear on exFAT filesystems')
         self.assertIn('exfat_raw', s._btime_methods)
-        self.assertIn('fuse', s._btime_methods)
 
     def test_step3_unknown_fs_does_not_include_fs_specific(self):
         """When detect_fs fails (returns None), no methods are safe."""
@@ -231,8 +231,8 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         s.set_filesystem('exfat')
         self.assertEqual(s._btime_methods,
-                         ['exfat_raw', 'fuse'],
-                         'exFAT must show exfat_raw, fuse')
+                         ['exfat_raw'],
+                         'exFAT must show exfat_raw')
 
     def test_step3_set_filesystem_replaces_prior_default(self):
         """Previous pre‑fs default is replaced by compatible order."""
@@ -265,16 +265,14 @@ class TestStepPanels(unittest.TestCase):
         methods = s._btime_methods
         self.assertIn('exfat_raw', methods,
                       'exfat_raw must be stored even when btime disabled')
-        self.assertIn('fuse', methods,
-                      'fuse must be stored even when btime disabled')
         self.assertNotIn('debugfs', methods,
                          'debugfs must be filtered out')
 
         # Listbox items must reflect _btime_methods (even when disabled)
         items_before = [s._btime_list.get(i)
                         for i in range(s._btime_list.size())]
-        self.assertEqual(len(items_before), 2,
-                         f'Listbox must have 2 items after set_filesystem, '
+        self.assertEqual(len(items_before), 1,
+                         f'Listbox must have 1 item after set_filesystem, '
                          f'got {len(items_before)}: {items_before}')
 
         # After enabling btime the items must still be there
@@ -283,8 +281,8 @@ class TestStepPanels(unittest.TestCase):
         self.root.update_idletasks()
         items_after = [s._btime_list.get(i)
                        for i in range(s._btime_list.size())]
-        self.assertEqual(len(items_after), 2,
-                         f'Listbox must still have 2 items after enabling '
+        self.assertEqual(len(items_after), 1,
+                         f'Listbox must still have 1 item after enabling '
                          f'btime, got {len(items_after)}: {items_after}')
         self.assertTrue(
             any('exFAT' in label for label in items_after),
@@ -403,7 +401,7 @@ class TestPlanBtimeFsIntegration(unittest.TestCase):
 
     def test_step3_plan_shows_exfat_methods_after_advance(self):
         """Full flow: GUI advances to plan step on exFAT — must show
-        exfat_raw and fuse, must NOT show debugfs."""
+        exfat_raw, must NOT show debugfs."""
         gui = ToolGUI(self.root)
         gui.step1.dir_var.set(str(self.target))
         self.root.update_idletasks()
@@ -414,8 +412,6 @@ class TestPlanBtimeFsIntegration(unittest.TestCase):
         methods = gui.step3._btime_methods
         self.assertIn('exfat_raw', methods,
                       'exfat_raw must be available on exFAT')
-        self.assertIn('fuse', methods,
-                      'fuse must be available on exFAT')
         self.assertNotIn('debugfs', methods,
                          'debugfs must NOT appear on exFAT filesystems')
 
