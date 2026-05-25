@@ -39,7 +39,7 @@ class OsUtimeMtimeStrategy(MtimeStrategy):
 
     @classmethod
     def compatible_filesystems(cls) -> tuple[str, ...]:
-        return ('exfat', 'ext4', 'fuse', 'exfat_raw', 'debugfs', 'clock')
+        return ('exfat', 'ext4', 'fuse', 'exfat_raw', 'debugfs')
 
     @classmethod
     def requires_utime(cls) -> bool:
@@ -64,7 +64,7 @@ class ExfatRawMtimeStrategy(MtimeStrategy):
 
     @classmethod
     def compatible_filesystems(cls) -> tuple[str, ...]:
-        return ('exfat_raw', 'fuse', 'clock')
+        return ('exfat_raw', 'fuse')
 
     @classmethod
     def requires_utime(cls) -> bool:

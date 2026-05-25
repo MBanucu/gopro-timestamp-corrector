@@ -30,19 +30,19 @@ class FuseStrategy(BtimeStrategy):
         from btime import _resolve_device, _resolve_mount_point
 
         if not shutil.which('faketime'):
-            print("  ! faketime not found. Install libfaketime or use --fix-btime clock.")
+            print("  ! faketime not found. Install libfaketime to use FUSE + faketime.")
             return None
         if not shutil.which('mount.exfat-fuse'):
-            print("  ! mount.exfat-fuse not found. Install exfat or use --fix-btime clock.")
+            print("  ! mount.exfat-fuse not found. Install exfat-fuse to use FUSE + faketime.")
             return None
 
         if not os.path.exists(target_path):
-            print("  ! Path does not exist. Falling back to clock method.")
+            print("  ! Path does not exist.")
             return None
 
         device = _resolve_device(target_path)
         if not device:
-            print("  ! Could not resolve device. Falling back to clock method.")
+            print("  ! Could not resolve device.")
             return None
 
         mount_point = _resolve_mount_point(target_path)

@@ -154,7 +154,7 @@ class Writer:
         return summary
 
     def close(self):
-        if self._b_method and (btime.needs_processing_before(self._b_method) or self._b_method == 'clock'):
+        if self._b_method and btime.needs_processing_before(self._b_method):
             btime.teardown(self._b_method, self._b_ctx, self.dry_run)
 
     def __enter__(self):

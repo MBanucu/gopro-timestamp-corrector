@@ -171,8 +171,7 @@ class StepPlan(ttk.Frame):
         """
         if fs_type is None:
             self._compatible_methods = list(_BTIME_METHODS)
-            self._btime_methods = [m for m in ('clock',)
-                                   if m in self._btime_methods] or ['clock']
+            self._btime_methods = []
         else:
             self._compatible_methods = list(btime.viable_methods(fs_type))
             self._btime_methods = list(self._compatible_methods)
