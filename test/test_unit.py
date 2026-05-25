@@ -111,7 +111,7 @@ class TestMtimeStrategySelection(unittest.TestCase):
         from strategies.mtime import OsUtimeMtimeStrategy
         import btime
         writer = Writer.__new__(Writer)
-        writer._b_method = 'clock'
+        writer._b_method = 'debugfs'
         writer.target_dir = Path('.')
         strategy = writer._resolve_mtime_strategy()
         # '.' is ext4 (or whatever the root fs is), not exfat
@@ -127,7 +127,7 @@ class TestMtimeStrategySelection(unittest.TestCase):
         self.assertTrue(w._btime_handles_mtime())
         w._b_method = 'fuse'
         self.assertFalse(w._btime_handles_mtime())
-        w._b_method = 'clock'
+        w._b_method = 'debugfs'
         self.assertFalse(w._btime_handles_mtime())
 
 

@@ -79,14 +79,11 @@ def viable_methods(
     methods: list[str] = []
     if fs_type:
         for name, cls in REGISTRY.items():
-            if name == 'clock' or cls.is_internal():
+            if cls.is_internal():
                 continue
             if fs_type in cls.compatible_filesystems() \
                and cls.check_capabilities(tools_available, sudo_available):
                 methods.append(name)
-    from strategies.clock import ClockStrategy
-    if ClockStrategy.check_capabilities(tools_available, sudo_available):
-        methods.append('clock')
     return tuple(methods)
 
 
@@ -103,7 +100,7 @@ def resolve_method(method: str, fs_type: str | None) -> str | None:
         return 'exfat_raw'
     if fs_type in ('vfat', 'msdos'):
         return 'fuse'
-    return 'clock'
+    return None
 
 
 def compatible_methods(fs_type: str | None) -> tuple[str, ...]:
@@ -114,7 +111,6 @@ def compatible_methods(fs_type: str | None) -> tuple[str, ...]:
                 continue
             if fs_type in cls.compatible_filesystems():
                 methods.append(name)
-    methods.append('clock')
     return tuple(methods)
 
 
@@ -173,10 +169,6 @@ def chain_setup(methods, target_path, fs_type, delta, dry_run):
             ctx = s.setup(target_path, delta, dry_run) or {}
             if not ctx and resolved == 'fuse':
                 continue
-            return resolved, ctx
-
-        if resolved == 'clock':
-            ctx = s.setup(target_path, delta, dry_run) or {}
             return resolved, ctx
 
         if resolved == 'exfat_raw':

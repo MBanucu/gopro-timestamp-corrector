@@ -37,7 +37,7 @@ class Planner:
     fix_embedded: bool = True
     fix_mtime: bool = True
     fix_btime: bool = False
-    btime_methods: list[str] = field(default_factory=lambda: ['clock'])
+    btime_methods: list[str] = field(default_factory=list)
     dry_run: bool = True
     force: bool = False
 

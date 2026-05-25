@@ -6,8 +6,7 @@ class BtimeStrategy(ABC):
     """Abstract base for a btime correction strategy.
 
     Each concrete strategy knows how to set up, fix files, and tear down
-    for a specific btime method (exFAT raw block, debugfs, FUSE+faketime,
-    system clock).
+    for a specific btime method (exFAT raw block, debugfs, FUSE+faketime).
     """
 
     name: str
