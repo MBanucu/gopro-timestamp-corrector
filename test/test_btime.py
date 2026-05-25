@@ -37,17 +37,6 @@ class TestBtimeFsDetection(unittest.TestCase):
         self.assertIsNotNone(dev)
         self.assertTrue(dev.startswith('/dev/'))
 
-    def test_setup_dry_run_fuse(self):
-        if not shutil.which('mount.exfat-fuse'):
-            self.skipTest("mount.exfat-fuse not available")
-        if not shutil.which('faketime'):
-            self.skipTest("faketime not available")
-        ctx = btime.setup('fuse', self.test_path, timedelta(hours=-2), dry_run=True)
-        self.assertIsNotNone(ctx)
-        self.assertIn('device', ctx)
-        self.assertIn('offset', ctx)
-
-
 class TestBtimePureFunctions(unittest.TestCase):
     def test_resolve_method_auto_ext4(self):
         self.assertEqual(btime.resolve_method('auto', 'ext4'), 'debugfs')
@@ -56,15 +45,15 @@ class TestBtimePureFunctions(unittest.TestCase):
         self.assertEqual(btime.resolve_method('auto', 'exfat'), 'exfat_raw')
 
     def test_resolve_method_auto_vfat(self):
-        self.assertEqual(btime.resolve_method('auto', 'vfat'), 'fuse')
+        self.assertIsNone(btime.resolve_method('auto', 'vfat'))
 
     def test_resolve_method_explicit(self):
         self.assertEqual(btime.resolve_method('debugfs', 'exfat'), 'debugfs')
-        self.assertEqual(btime.resolve_method('fuse', 'ext4'), 'fuse')
+        self.assertIsNone(btime.resolve_method('fuse', 'ext4'))
         self.assertIsNone(btime.resolve_method('nonexistent', 'unknown'))
 
     def test_needs_processing_before(self):
-        self.assertTrue(btime.needs_processing_before('fuse'))
+        self.assertFalse(btime.needs_processing_before('fuse'))
         self.assertFalse(btime.needs_processing_before('debugfs'))
 
     def test_needs_processing_after(self):
@@ -76,17 +65,12 @@ class TestBtimePureFunctions(unittest.TestCase):
         self.assertEqual(ctx, {})
 
     def test_teardown_dry_run(self):
-        for method in ('fuse', 'debugfs'):
-            with self.subTest(method=method):
-                btime.teardown(method, {}, dry_run=True)
+        btime.teardown('debugfs', {}, dry_run=True)
 
     def test_fix_file_dry_run_debugfs(self):
         import tempfile
         with tempfile.NamedTemporaryFile() as f:
             btime.fix_file('debugfs', f.name, datetime.now(timezone.utc), {}, dry_run=True)
-
-    def test_fix_file_dry_run_fuse(self):
-        btime.fix_file('fuse', '/nonexistent/file', datetime.now(timezone.utc), {}, dry_run=True)
 
     # ── compatible_methods ────────────────────────────────────────
 
@@ -97,29 +81,25 @@ class TestBtimePureFunctions(unittest.TestCase):
                 self.assertIn('debugfs', methods)
                 self.assertEqual(len(methods), 1)
                 self.assertNotIn('exfat_raw', methods)
-                self.assertNotIn('fuse', methods)
 
     def test_compatible_methods_exfat(self):
         methods = btime.compatible_methods('exfat')
         self.assertIn('exfat_raw', methods)
-        self.assertIn('fuse', methods)
-        self.assertEqual(len(methods), 2)
+        self.assertEqual(len(methods), 1)
         self.assertNotIn('debugfs', methods)
         self.assertNotIn('exfat_raw_read', methods)
 
     def test_compatible_methods_vfat(self):
         methods = btime.compatible_methods('vfat')
         self.assertIn('exfat_raw', methods)
-        self.assertIn('fuse', methods)
-        self.assertEqual(len(methods), 2)
+        self.assertEqual(len(methods), 1)
         self.assertNotIn('debugfs', methods)
         self.assertNotIn('exfat_raw_read', methods)
 
     def test_compatible_methods_fuseblk(self):
         methods = btime.compatible_methods('fuseblk')
         self.assertIn('exfat_raw', methods)
-        self.assertIn('fuse', methods)
-        self.assertEqual(len(methods), 2)
+        self.assertEqual(len(methods), 1)
         self.assertNotIn('debugfs', methods)
         self.assertNotIn('exfat_raw_read', methods)
 
@@ -156,7 +136,7 @@ class TestBtimePureFunctions(unittest.TestCase):
         self.assertEqual(method, 'debugfs')
 
     def test_chain_setup_auto_expands_to_full_chain_on_exfat(self):
-        """``auto`` on exFAT must expand to exfat_raw → fuse."""
+        """``auto`` on exFAT must expand to exfat_raw."""
         method, ctx = btime.chain_setup(
             ['auto'], '/some/path', 'exfat',
             timedelta(), dry_run=True)

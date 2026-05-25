@@ -167,8 +167,7 @@ def check_env(target_path: str | Path | None = None) -> EnvReport:
 
     btime_methods: list[BtimeMethodCapability] = []
     for method in (options.BTIME_EXFAT_RAW, options.BTIME_EXFAT_RAW_READ,
-                   options.BTIME_DEBUGFS,
-                   options.BTIME_FUSE):
+                   options.BTIME_DEBUGFS):
         deps = [_tool(d) for d in _btime_method_deps(method)]
         all_met = all(d.available for d in deps) and sudo_ok
 

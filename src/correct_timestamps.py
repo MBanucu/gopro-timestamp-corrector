@@ -63,7 +63,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
     parser.add_argument('--fix-btime', nargs='?', const='auto',
                         choices=BTIME_CLI_CHOICES,
-                        help='Fix creation time: auto (best for FS), debugfs, exfat_raw, fuse')
+                        help='Fix creation time: auto (best for FS), debugfs, exfat_raw')
     parser.add_argument('--gps', action='store_true', help='Use GPS time from the first file to determine delta')
     parser.add_argument('--timezone', help='Timezone for GPS correction (e.g. Europe/Berlin)')
     parser.add_argument('--force', action='store_true', help='Re-process all files ignoring manifest')

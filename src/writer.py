@@ -78,7 +78,7 @@ class Writer:
             fs = btime.detect_fs(self.target_dir)
         except Exception:
             pass
-        if fs in ('exfat', 'fuse', 'exfat_raw') and self._b_method != BTIME_EXFAT_RAW:
+        if fs in ('exfat', 'exfat_raw') and self._b_method != BTIME_EXFAT_RAW:
             from strategies.exfat_raw import exfat_ops
             return ExfatRawMtimeStrategy(exfat_ops)
         return OsUtimeMtimeStrategy()
