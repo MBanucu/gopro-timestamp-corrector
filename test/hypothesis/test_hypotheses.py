@@ -45,7 +45,7 @@ class LoopDeviceTest(unittest.TestCase):
         if not cls._target.exists():
             raise unittest.SkipTest('100GOPRO not found')
         cls._files = sorted(cls._target.glob('*.MP4')) or sorted(cls._target.glob('*'))
-        from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+        from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
         cls._io = ExfatRawIO()
         cls._ops = ExfatRawOps(cls._io, ExfatRawFilesystem(cls._io))
 

@@ -3,7 +3,7 @@
 If a file on mount A changes when only mount B did operations = corruption.
 If a file's mtime changes to a value other than what the operation set = corruption.
 """
-from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
 from test.shared import decompress_sparse_image, prepare_sparse_image, \
     setup_loop_device, teardown_loop_device
 from datetime import datetime, timezone

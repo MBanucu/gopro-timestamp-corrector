@@ -1,23 +1,13 @@
-"""Raw exFAT block-read/write operations.
+"""Re-exports from the external ``exfat-raw`` package plus project-specific adapters.
 
-Layers (one file per layer):
-  ``_pure``       — CRC, time encoding/decoding (stateless)
-  ``_io``         — ``ExfatRawIO`` (backing-file cache + low-level read/write + boot parse)
-  ``_fs``         — ``ExfatRawFilesystem`` (FAT, clusters, directory traversal)
-  ``_ops``        — ``ExfatRawOps`` (high-level read/write of btime/mtime)
-  ``_strategy``   — ``ExfatRawStrategy`` / ``ExfatRawReadStrategy`` (BtimeStrategy adapters)
-
-Singletons
-==========
-``exfat_io`` — default ``ExfatRawIO`` instance
-``exfat_ops`` — default ``ExfatRawOps`` instance composed from ``exfat_io`` + ``ExfatRawFilesystem``
-
-Tests should create their own ``ExfatRawIO()`` / ``ExfatRawOps()`` instances for cache isolation.
+The actual raw-block I/O implementation lives in the standalone
+``exfat-raw`` package (https://github.com/MBanucu/exfat-raw).
+This module re-exports its classes and adds the project-specific
+``ExfatRawStrategy`` / ``ExfatRawReadStrategy`` adapters.
 """
 
-from strategies.exfat_raw._io import ExfatRawIO
-from strategies.exfat_raw._fs import ExfatRawFilesystem
-from strategies.exfat_raw._ops import ExfatRawOps
+from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+
 from strategies.exfat_raw._strategy import ExfatRawStrategy, ExfatRawReadStrategy
 
 exfat_io: ExfatRawIO = ExfatRawIO()

@@ -13,10 +13,16 @@ nix run .#test -- test_analysis test_gps  # multiple specific modules
 nix develop            # dev shell with exiftool, e2fsprogs, etc.
 ```
 
+- **Tests are NOT thread-safe**: always use `-j 1` when running against real
+  (or loop) mounted filesystems to avoid cross-mount I/O races
+  (see kernel exFAT bug below).  Higher `-j` values are safe for pure-unit
+  tests that don't touch block devices.
 - GUI tests run headlessly via Xvfb (no display required).
 - Integration tests (`test_exfat_raw_btime.py`, `test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`.
 - `test/test_strategy.py` writes temp files, must be run from repo root.
 - Large fixture: `test/sdcard.img.gz` (~14 MB, decompressed on first test run).
+- Shortcut names for subdirectories: `nix run .#test -- hypothesis` runs
+  all modules under `test/hypothesis/`.
 
 ## Architecture
 
@@ -148,7 +154,7 @@ removed as redundant.
 
 ## exFAT raw block write & cache coherence
 
-### `_fix_exfat_raw` (exfat_raw.py)
+### `_fix_exfat_raw` (exfat-raw package, ``exfat_raw._ops``)
 
 - Writes **both** creation time AND modification time in one raw-block access.
 - **Does NOT call `sync()`** — the global ``sync()`` triggers the kernel exFAT driver's ``exfat_sync_fs()`` which incorrectly flushes dirty inodes from ALL mounts, causing cross-mount directory entry corruption on kernel 6.12.87. The ``os.fsync`` on the backing file (inside ``ExfatRawIO.write()``) is sufficient for data persistence.
@@ -335,3 +341,11 @@ exFAT btime probe (temp filesystem):
   blockdev --flushbufs         ✓   # works on loop devices
   overall:                   ✓    # at least one method works
 ```
+
+## TODO
+
+- **Thread safety**: Tests are not thread-safe against mounted filesystems.
+  Make the test framework (loop device lifecycle, mount point collision detection,
+  shared resource locking) and the production code (ExifTool session, raw block
+  write serialisation) robust enough to tolerate parallel test execution,
+  so that ``-j 1`` is no longer required.

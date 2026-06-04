@@ -4,13 +4,22 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    exfat-raw = {
+      url = "github:MBanucu/exfat-raw/v0.1.2";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, exfat-raw }:
     let
       eachSystem = flake-utils.lib.eachDefaultSystem;
       nixosSystem = "x86_64-linux";
       nixosPkgs = nixpkgs.legacyPackages.${nixosSystem};
+
+      # Build exfat-raw for the NixOS test
+      nixosTestErPkgs = nixosPkgs.extend exfat-raw.overlays.default;
+      nixosTestExfatRaw = nixosTestErPkgs.exfat-raw;
 
       # Bundle the source tree for NixOS test VM access
       nixosTestSrc = nixosPkgs.stdenvNoCC.mkDerivation {
@@ -26,6 +35,7 @@
 
       nixosTestDeps = with nixosPkgs; [ exiftool e2fsprogs exfat libfaketime xvfb sudo ];
       nixosTestPython = nixosPkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
+      nixosTestErSp = "${nixosTestExfatRaw}/${nixosTestExfatRaw.pythonModule.sitePackages}";
 
       nixosTest = nixosPkgs.testers.nixosTest {
         name = "gopro-timestamp-corrector";
@@ -42,7 +52,6 @@
 
           environment.systemPackages = with pkgs; [
             exiftool e2fsprogs exfat libfaketime xvfb sudo
-            (python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]))
             bashInteractive coreutils gnutar gzip
           ];
 
@@ -80,10 +89,12 @@
           machine.succeed(f"echo 'VM kernel: {kernel.strip()}'")
           machine.succeed("echo '--- NixOS test: copying source ---'")
           machine.succeed("echo '--- NixOS test: environment check ---'")
+          er_sp = "${nixosTestErSp}"
+
           machine.succeed(
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
-              + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
+              + f"export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test:{er_sp} && "
               + f"DISPLAY=:99 {python_bin} -m env_check /tmp/gopro-test/test 2>&1"
           )
           machine.succeed("echo '--- NixOS test: starting Xvfb ---'")
@@ -92,21 +103,29 @@
           machine.succeed(
               "cd /tmp/gopro-test && "
               + f"export PATH={bin_path}:$PATH && "
-              + "export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test && "
+              + f"export PYTHONPATH=/tmp/gopro-test/src:/tmp/gopro-test/test:{er_sp} && "
               + f"DISPLAY=:99 {python_bin} -m test.run_parallel -v -j 1 2>&1"
           )
         '';
       };
     in (eachSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
-        deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime xvfb ];
-        python = pkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
+        # Build exfat-raw from the flake input
+        er-pkgs = nixpkgs.legacyPackages.${system}.extend exfat-raw.overlays.default;
+        exfat-raw-pkg = er-pkgs.exfat-raw;
+        # Regular nixpkgs without overlay for everything else
+        base-pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = base-pkgs;
+        deps = with base-pkgs; [ exiftool e2fsprogs exfat libfaketime xvfb ];
+        python = base-pkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
+        test-python = base-pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ]);
         src = pkgs.lib.cleanSource ./.;
+        er_sp = "${exfat-raw-pkg}/${exfat-raw-pkg.pythonModule.sitePackages}";
       in {
         devShells.default = pkgs.mkShell {
-          packages = deps ++ [ python pkgs.bashInteractive ];
+          packages = deps ++ [ python exfat-raw-pkg pkgs.bashInteractive ];
           shellHook = ''
+            export PYTHONPATH="${er_sp}:$PYTHONPATH"
             export PYTHONPATH="${src}/src:$PYTHONPATH:${src}/test"
           '';
         };
@@ -125,7 +144,7 @@
             cat > $out/bin/correct-gopro-timestamps << WRAPPER
         #!${pkgs.bash}/bin/bash
         export PATH="${pkgs.lib.makeBinPath deps}:\$PATH"
-        export PYTHONPATH="$python_lib:\$PYTHONPATH"
+        export PYTHONPATH="$python_lib:${er_sp}:\$PYTHONPATH"
         exec $python_bin "$python_lib/correct_timestamps.py" "\$@"
         WRAPPER
             chmod +x $out/bin/correct-gopro-timestamps
@@ -146,7 +165,7 @@
             cat > $out/bin/gopro-timestamp-gui << WRAPPER
         #!${pkgs.bash}/bin/bash
         export PATH="${pkgs.lib.makeBinPath deps}:\$PATH"
-        export PYTHONPATH="$python_lib:\$PYTHONPATH"
+        export PYTHONPATH="$python_lib:${er_sp}:\$PYTHONPATH"
         exec $python_bin "$python_lib/gui/app.py" "\$@"
         WRAPPER
             chmod +x $out/bin/gopro-timestamp-gui
@@ -158,13 +177,13 @@
           inherit src;
           dontBuild = true;
           installPhase = ''
-            python_test="${pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ])}/bin/python3"
+            python_test="${test-python}/bin/python3"
             mkdir -p $out/bin
             deps_bin="${pkgs.lib.makeBinPath deps}"
             cat > $out/bin/run-tests << WRAPPER
         #!${pkgs.bash}/bin/bash
         export PATH="$deps_bin:\$PATH"
-        export PYTHONPATH="\$PYTHONPATH:$src:$src/src:$out/lib"
+        export PYTHONPATH="\$PYTHONPATH:$src:$src/src:$out/lib:${er_sp}"
         Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
         XVFB_PID=\$!
         sleep 1
@@ -193,7 +212,7 @@
             cat > $out/bin/gopro-exiftool-server << WRAPPER
         #!${pkgs.bash}/bin/bash
         export PATH="${pkgs.lib.makeBinPath deps}:\$PATH"
-        export PYTHONPATH="$python_lib:\$PYTHONPATH"
+        export PYTHONPATH="$python_lib:${er_sp}:\$PYTHONPATH"
         exec $python_bin "$python_lib/exiftool_server.py" "\$@"
         WRAPPER
             chmod +x $out/bin/gopro-exiftool-server

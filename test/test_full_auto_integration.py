@@ -45,7 +45,7 @@ class TestFullAutoIntegration(unittest.TestCase):
         import analysis as an_mod
         from plan import CorrectionPlan, Planner, PlanBuilder
         from resolve import weighted_median_delta
-        from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+        from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
 
         files = media.collect(self.target)
         self.assertGreater(len(files), 0, 'Should find video files on the image')

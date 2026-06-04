@@ -73,7 +73,7 @@ class TestBtimeGuiCorrection(unittest.TestCase):
     def _read_btime(path):
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
-        from strategies.exfat_raw import exfat_ops
+        from exfat_raw import exfat_ops
         val = exfat_ops.read_btime_raw(str(path))
         if val is not None:
             return val

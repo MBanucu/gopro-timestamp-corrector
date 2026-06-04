@@ -47,7 +47,7 @@ def _setup(test_case):
     if not target.exists():
         test_case.skipTest('100GOPRO not found')
     files = sorted(target.glob('*.MP4')) or sorted(target.glob('*'))
-    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
     io = ExfatRawIO()
     fs = ExfatRawFilesystem(io)
     ops = ExfatRawOps(io, fs)

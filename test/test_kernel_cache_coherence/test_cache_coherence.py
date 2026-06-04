@@ -27,7 +27,7 @@ class TestCacheLayer(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from strategies.exfat_raw import ExfatRawIO
+        from exfat_raw import ExfatRawIO
         cls._io = ExfatRawIO()
         from test.shared import decompress_sparse_image, prepare_sparse_image, \
             setup_loop_device, teardown_loop_device
@@ -48,7 +48,7 @@ class TestRawBlockWrite(TestCacheLayer):
     """Layer 1: ExfatRawOps.fix_exfat_raw writes raw block + optionally updates cache."""
 
     def _ops(self):
-        from strategies.exfat_raw import ExfatRawFilesystem, ExfatRawOps
+        from exfat_raw import ExfatRawFilesystem, ExfatRawOps
         return ExfatRawOps(self._io, ExfatRawFilesystem(self._io))
 
     def test_writes_mtime_correctly_with_update_cache_false(self):
@@ -113,7 +113,8 @@ class TestExfatRawStrategy(TestCacheLayer):
     """Layer 2a: ExfatRawStrategy.fix_file updates both raw + cache."""
 
     def test_fix_file_updates_mtime(self):
-        from strategies.exfat_raw import ExfatRawFilesystem, ExfatRawOps, ExfatRawStrategy
+        from exfat_raw import ExfatRawFilesystem, ExfatRawOps
+        from strategies.exfat_raw import ExfatRawStrategy
         ops = ExfatRawOps(self._io, ExfatRawFilesystem(self._io))
         strategy = ExfatRawStrategy(ops)
         ts = 1778770800.0
@@ -128,7 +129,7 @@ class TestExfatRawMtimeStrategy(TestCacheLayer):
     """Layer 2b: ExfatRawMtimeStrategy.write_mtime updates both raw + cache."""
 
     def test_write_mtime_updates_mtime(self):
-        from strategies.exfat_raw import ExfatRawFilesystem, ExfatRawOps
+        from exfat_raw import ExfatRawFilesystem, ExfatRawOps
         from strategies.mtime import ExfatRawMtimeStrategy
         ops = ExfatRawOps(self._io, ExfatRawFilesystem(self._io))
         strategy = ExfatRawMtimeStrategy(ops)

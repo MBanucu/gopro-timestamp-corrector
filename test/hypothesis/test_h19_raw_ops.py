@@ -50,7 +50,7 @@ def _backing(loop):
 
 
 def _record(files):
-    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
     io = ExfatRawIO(); fs = ExfatRawFilesystem(io); ops = ExfatRawOps(io, fs)
     return {f.name: ops.read_mtime_raw(str(f)) for f in files}, ops
 
