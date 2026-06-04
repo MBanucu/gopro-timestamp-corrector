@@ -10,8 +10,8 @@ from pathlib import Path
 # Use existing btime.py helpers for boot parsing
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
-from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
-from strategies.exfat_raw._pure import _exfat_encode_time
+from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+from exfat_raw._pure import _exfat_encode_time
 _io = ExfatRawIO()
 _fs = ExfatRawFilesystem(_io)
 _ops = ExfatRawOps(_io, _fs)

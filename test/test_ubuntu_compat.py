@@ -92,7 +92,7 @@ class TestLoopDevice(unittest.TestCase):
 
     def test_backing_file_resolution(self):
         """ExfatRawIO._backing_file must resolve the backing file for loop devices."""
-        from strategies.exfat_raw import ExfatRawIO
+        from exfat_raw._strategies import BackingFileStrategy
         import tempfile
         img = tempfile.NamedTemporaryFile(suffix='.img', delete=False)
         img.close()
@@ -105,8 +105,8 @@ class TestLoopDevice(unittest.TestCase):
                 self.skipTest('losetup failed')
             loop_dev = r.stdout.strip()
             try:
-                io = ExfatRawIO()
-                backing = io._backing_file(loop_dev)
+                strategy = BackingFileStrategy()
+                backing = strategy._resolve(loop_dev)
                 self.assertIsNotNone(backing,
                                      f'No backing file for {loop_dev}')
                 self.assertEqual(backing, img.name,

@@ -118,7 +118,7 @@ def teardown_loop_device(loop_dev: str, mount_point: str | None = None):
     _detach_loop(loop_dev)
 
     # 5 — clear backing-file cache
-    from strategies.exfat_raw import exfat_io
+    from exfat_raw import exfat_io
     exfat_io.clear_cache(loop_dev)
 
 

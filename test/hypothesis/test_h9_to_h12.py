@@ -4,7 +4,7 @@ Each test verifies a focused hypothesis about WHY two parallel
 correction pipelines fail (~50% of the time, with individual sessions).
 
 H9: decompress_sparse_image lock works across subprocesses
-H10: _backing_file resolves correctly for both loop devices in parallel
+    H10: BackingFileStrategy resolves correctly for both loop devices in parallel
 H11: Both processes mount to different mount points
 H12: read_mtime_raw returns None or wrong value during parallel execution
 """
@@ -59,7 +59,7 @@ class H9_DecompressLockWorks(unittest.TestCase):
 
 
 class H10_BackingFileResolution(unittest.TestCase):
-    """H10: _backing_file resolves correctly for parallel loop devices.
+    """H10: BackingFileStrategy resolves correctly for parallel loop devices.
 
     Two parallel setup_loop_device calls should each resolve to
     their OWN backing file path, never the other's.
@@ -69,7 +69,8 @@ class H10_BackingFileResolution(unittest.TestCase):
         _decompress()
         from test.shared import prepare_sparse_image, setup_loop_device, \
             teardown_loop_device
-        from strategies.exfat_raw import ExfatRawIO
+        from exfat_raw import ExfatRawIO
+        from exfat_raw._strategies import BackingFileStrategy
 
         results = {}
         def setup_and_resolve(label):
@@ -79,7 +80,8 @@ class H10_BackingFileResolution(unittest.TestCase):
                 self.addCleanup(teardown_loop_device, loop, mnt)
                 self.addCleanup(shutil.rmtree, work, ignore_errors=True)
                 io = ExfatRawIO()
-                backing = io._backing_file(loop)
+                bfs = BackingFileStrategy()
+                backing = bfs._resolve(loop)
                 results[label] = (loop, mnt, backing, str(img), work)
             except Exception as e:
                 results[label] = ('error', str(e), work)
@@ -163,7 +165,7 @@ class H12_RawMtimeDuringParallel(unittest.TestCase):
         _decompress()
         from test.shared import prepare_sparse_image, setup_loop_device, \
             teardown_loop_device
-        from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, \
+        from exfat_raw import ExfatRawIO, ExfatRawFilesystem, \
             ExfatRawOps
         from datetime import datetime, timezone
 

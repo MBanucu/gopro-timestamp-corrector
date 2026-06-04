@@ -31,7 +31,7 @@ if _BD not in sys.path:
 
 
 def _ops():
-    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
     io = ExfatRawIO()
     return ExfatRawOps(io, ExfatRawFilesystem(io))
 

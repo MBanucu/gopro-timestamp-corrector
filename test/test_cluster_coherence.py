@@ -38,10 +38,12 @@ class TestClusterCoherence(unittest.TestCase):
         cls._target = Path(cls._mount_point) / 'DCIM' / '100GOPRO'
         if not cls._target.exists():
             raise unittest.SkipTest(f'{cls._target} not found')
-        from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+        from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+        from exfat_raw._strategies import BackingFileStrategy
         cls._io = ExfatRawIO()
         cls._fs = ExfatRawFilesystem(cls._io)
         cls._ops = ExfatRawOps(cls._io, cls._fs)
+        cls._bfs = BackingFileStrategy()
 
     def _device(self):
         from btime import _resolve_device
@@ -51,7 +53,7 @@ class TestClusterCoherence(unittest.TestCase):
         return self._io.parse_boot(self._device())
 
     def _read_raw(self, device, offset, size):
-        backing = self._io._backing_file(device) or device
+        backing = self._bfs._resolve(device) or device
         r = subprocess.run(
             ['sudo', 'dd', f'if={backing}', 'bs=1', f'skip={offset}',
              f'count={size}', 'status=none'],
@@ -74,7 +76,7 @@ class TestClusterCoherence(unittest.TestCase):
         dev = self._device()
         dev_str = str(dev)
         cs = boot['cluster_size']
-        back_dev = self._io._backing_file(dev_str) or dev_str
+        back_dev = self._bfs._resolve(dev_str) or dev_str
 
         dcim_cluster = self._find_dir_cluster(boot, dev_str, 'DCIM', boot['root_cluster'])
         self.assertIsNotNone(dcim_cluster, 'DCIM directory not found')

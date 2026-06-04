@@ -6,7 +6,7 @@ all requests routed through the shared server — no corruption expected.
 Each mount uses a distinct timestamp so cross-mount corruption is detectable.
 """
 from exiftool_session import ExifToolSession
-from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
 from test.shared import decompress_sparse_image, prepare_sparse_image, \
     setup_loop_device, teardown_loop_device
 from datetime import datetime, timezone

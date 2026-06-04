@@ -22,7 +22,7 @@ if _BD not in sys.path:
 
 
 def _raw_io():
-    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
     io = ExfatRawIO()
     fs = ExfatRawFilesystem(io)
     ops = ExfatRawOps(io, fs)
@@ -175,7 +175,7 @@ class DebugRawBtime(unittest.TestCase):
             diff = abs(after_btime - target_ts)
             sys.stderr.write(f'[dbg] {first.name}: diff={diff}s (target_ts={target_ts} after_raw={after_btime})\n')
             if diff > 2:
-                from strategies.exfat_raw._pure import _exfat_decode_time
+                from exfat_raw._pure import _exfat_decode_time
                 dev = self._resolve_device()
                 boot = self._io.parse_boot(str(dev))
                 post_entry = self._fs.find_file_entry(boot, str(dev), str(first))
@@ -215,7 +215,7 @@ class DebugRawBtime(unittest.TestCase):
         time_word = struct.unpack_from('<H', entry, 0x08)[0]
         date_word = struct.unpack_from('<H', entry, 0x0A)[0]
         time_ms = entry[0x14]
-        from strategies.exfat_raw._pure import _exfat_decode_time
+        from exfat_raw._pure import _exfat_decode_time
         raw_mtime = _exfat_decode_time(time_word, date_word, time_ms)
 
         via_raw_api = self._ops.read_mtime_raw(str(first))

@@ -79,7 +79,7 @@ class Writer:
         except Exception:
             pass
         if fs in ('exfat', 'exfat_raw') and self._b_method != BTIME_EXFAT_RAW:
-            from strategies.exfat_raw import exfat_ops
+            from exfat_raw import exfat_ops
             return ExfatRawMtimeStrategy(exfat_ops)
         return OsUtimeMtimeStrategy()
 

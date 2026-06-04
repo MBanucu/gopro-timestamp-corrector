@@ -61,10 +61,10 @@ persistence without triggering the buggy driver writeback.
 | Mitigation | File | What it does |
 |---|---|---|
 | `threading.Lock` | `exiftool_session.py` | Serializes ExifTool batch writes within one Python process |
-| No `sync()` | `strategies/exfat_raw/_ops.py` | Removed — `os.fsync` on backing file is sufficient |
-| No `os.utime()` | `strategies/exfat_raw/_ops.py` | Removed — driver reads stale DE cache on utime |
+| No `sync()` | `exfat_raw._ops` (external) | `os.fsync` on backing file is sufficient |
+| No `os.utime()` | `exfat_raw._ops` (external) | Removed — driver reads stale DE cache on utime |
 | Loop setup lock | `strategies/mount.py` | `fcntl.flock` on `/tmp/gopro_loop_setup.lock` prevents TOCTOU race |
-| Backing-file I/O | `strategies/exfat_raw/_io.py` | `os.pread`/`os.pwrite` via backing file (loop device has separate page cache) |
+| Backing-file I/O | `exfat_raw._strategies` (external) | `os.pread`/`os.pwrite` via backing file (loop device has separate page cache) |
 
 ## Production Safety
 

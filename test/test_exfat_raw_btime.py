@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def _ops():
-    from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
+    from exfat_raw import ExfatRawIO, ExfatRawFilesystem, ExfatRawOps
     io = ExfatRawIO()
     return ExfatRawOps(io, ExfatRawFilesystem(io))
 
@@ -105,13 +105,14 @@ class TestExfatRawBtime(unittest.TestCase):
             f'got {raw_bt}')
 
     def test_read_exfat_btime_raw_returns_none_on_bad_path(self):
-        from strategies.exfat_raw import exfat_ops
+        from exfat_raw import exfat_ops
         result = exfat_ops.read_btime_raw('/nonexistent/file.mp4')
         self.assertIsNone(result)
 
     def test_exfat_raw_read_strategy_read_btime_raw(self):
-        from strategies.exfat_raw import ExfatRawIO, ExfatRawFilesystem, \
-            ExfatRawOps, ExfatRawReadStrategy, exfat_ops
+        from exfat_raw import ExfatRawIO, ExfatRawFilesystem, \
+            ExfatRawOps, exfat_ops
+        from strategies.exfat_raw import ExfatRawReadStrategy
 
         files = sorted(self.target.iterdir())
         self.assertGreater(len(files), 0)

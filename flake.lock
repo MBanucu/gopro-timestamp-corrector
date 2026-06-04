@@ -1,5 +1,29 @@
 {
   "nodes": {
+    "exfat-raw": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779885572,
+        "narHash": "sha256-KcmLSjVMQd7UdUzWp1iWe0Tvf89l5VvSiLWvg9CZVjA=",
+        "owner": "MBanucu",
+        "repo": "exfat-raw",
+        "rev": "c490a88a151be084cdab3543e93ab2ae116bc435",
+        "type": "github"
+      },
+      "original": {
+        "owner": "MBanucu",
+        "ref": "v0.1.2",
+        "repo": "exfat-raw",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -36,6 +60,7 @@
     },
     "root": {
       "inputs": {
+        "exfat-raw": "exfat-raw",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs"
       }

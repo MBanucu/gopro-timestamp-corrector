@@ -8,7 +8,7 @@ class ExfatRawStrategy(BtimeStrategy):
     label = 'exFAT raw block'
 
     def __init__(self, ops=None):
-        from strategies.exfat_raw import exfat_ops
+        from exfat_raw import exfat_ops
         self._ops = ops or exfat_ops
 
     @classmethod
