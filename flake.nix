@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     exfat-raw = {
-      url = "github:MBanucu/exfat-raw/v0.1.2";
+      url = "github:MBanucu/exfat-raw/main";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
@@ -16,10 +16,6 @@
       eachSystem = flake-utils.lib.eachDefaultSystem;
       nixosSystem = "x86_64-linux";
       nixosPkgs = nixpkgs.legacyPackages.${nixosSystem};
-
-      # Build exfat-raw for the NixOS test
-      nixosTestErPkgs = nixosPkgs.extend exfat-raw.overlays.default;
-      nixosTestExfatRaw = nixosTestErPkgs.exfat-raw;
 
       # Bundle the source tree for NixOS test VM access
       nixosTestSrc = nixosPkgs.stdenvNoCC.mkDerivation {
@@ -35,7 +31,7 @@
 
       nixosTestDeps = with nixosPkgs; [ exiftool e2fsprogs exfat libfaketime xvfb sudo ];
       nixosTestPython = nixosPkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
-      nixosTestErSp = "${nixosTestExfatRaw}/${nixosTestExfatRaw.pythonModule.sitePackages}";
+      nixosTestErSp = exfat-raw.lib.sitePackages nixosSystem;
 
       nixosTest = nixosPkgs.testers.nixosTest {
         name = "gopro-timestamp-corrector";
@@ -110,20 +106,15 @@
       };
     in (eachSystem (system:
       let
-        # Build exfat-raw from the flake input
-        er-pkgs = nixpkgs.legacyPackages.${system}.extend exfat-raw.overlays.default;
-        exfat-raw-pkg = er-pkgs.exfat-raw;
-        # Regular nixpkgs without overlay for everything else
-        base-pkgs = nixpkgs.legacyPackages.${system};
-        pkgs = base-pkgs;
-        deps = with base-pkgs; [ exiftool e2fsprogs exfat libfaketime xvfb ];
-        python = base-pkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
-        test-python = base-pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ]);
+        pkgs = nixpkgs.legacyPackages.${system};
+        deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime xvfb ];
+        python = pkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
+        test-python = pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ]);
         src = pkgs.lib.cleanSource ./.;
-        er_sp = "${exfat-raw-pkg}/${exfat-raw-pkg.pythonModule.sitePackages}";
+        er_sp = exfat-raw.lib.sitePackages system;
       in {
         devShells.default = pkgs.mkShell {
-          packages = deps ++ [ python exfat-raw-pkg pkgs.bashInteractive ];
+          packages = deps ++ [ python exfat-raw.packages.${system}.default pkgs.bashInteractive ];
           shellHook = ''
             export PYTHONPATH="${er_sp}:$PYTHONPATH"
             export PYTHONPATH="${src}/src:$PYTHONPATH:${src}/test"
