@@ -10,16 +10,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1779885572,
-        "narHash": "sha256-KcmLSjVMQd7UdUzWp1iWe0Tvf89l5VvSiLWvg9CZVjA=",
+        "lastModified": 1780675832,
+        "narHash": "sha256-rCXSnxVAfH0f0MMWIRx1UWd3ZyEybjS5WBuijcBwY3Y=",
         "owner": "MBanucu",
         "repo": "exfat-raw",
-        "rev": "c490a88a151be084cdab3543e93ab2ae116bc435",
+        "rev": "17a4b0e82fa84886fd3300a01ab493677f59f6a2",
         "type": "github"
       },
       "original": {
         "owner": "MBanucu",
-        "ref": "v0.1.2",
+        "ref": "main",
         "repo": "exfat-raw",
         "type": "github"
       }
