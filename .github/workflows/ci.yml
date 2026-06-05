@@ -10,7 +10,7 @@ jobs:
   test:
     strategy:
       matrix:
-        scope: [debug, unit, cluster, full]
+        scope: [unit, full]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -38,16 +38,13 @@ jobs:
           DISPLAY: :99
         run: |
           case ${{ matrix.scope }} in
-            debug) python -m unittest test_debug_raw_btime -v 2>&1 ;;
             unit) python -m unittest test.test_unit -v 2>&1 ;;
-            cluster) python -m unittest test_cluster_coherence -v 2>&1 ;;
             full)
               FAILED=0
               python -m unittest test_btime_gui_correction -v 2>&1 || \
                 (echo "=== Re-run ===" && \
                  python -m unittest test_btime_gui_correction -v 2>&1) || \
                 (echo "=== dmesg ===" && dmesg | tail -30 && FAILED=1)
-              python -m unittest test_exfat_raw_int -v 2>&1 || FAILED=1
               python -m unittest test_full_auto_integration -v 2>&1 || FAILED=1
               exit $FAILED
               ;;

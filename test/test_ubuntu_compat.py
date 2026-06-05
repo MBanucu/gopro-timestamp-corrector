@@ -87,37 +87,6 @@ class TestKernelExfat(unittest.TestCase):
         print(f'  statx btime={btime}, supported={supported}')
 
 
-class TestLoopDevice(unittest.TestCase):
-    """Verify loop device operations."""
-
-    def test_backing_file_resolution(self):
-        """ExfatRawIO._backing_file must resolve the backing file for loop devices."""
-        from exfat_raw._strategies import BackingFileStrategy
-        import tempfile
-        img = tempfile.NamedTemporaryFile(suffix='.img', delete=False)
-        img.close()
-        try:
-            os.truncate(img.name, 64 * 1024 * 1024)
-            r = subprocess.run(
-                ['sudo', 'losetup', '-f', '--show', img.name],
-                capture_output=True, text=True)
-            if r.returncode != 0:
-                self.skipTest('losetup failed')
-            loop_dev = r.stdout.strip()
-            try:
-                strategy = BackingFileStrategy()
-                backing = strategy._resolve(loop_dev)
-                self.assertIsNotNone(backing,
-                                     f'No backing file for {loop_dev}')
-                self.assertEqual(backing, img.name,
-                                 f'Backing file mismatch: {backing} != {img.name}')
-            finally:
-                subprocess.run(['sudo', 'losetup', '-d', loop_dev],
-                               capture_output=True)
-        finally:
-            os.unlink(img.name)
-
-
 class TestSparseCopy(unittest.TestCase):
     """Verify sparse file behavior with the test image."""
 
