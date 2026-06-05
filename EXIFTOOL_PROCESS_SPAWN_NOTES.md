@@ -30,7 +30,6 @@ Two notable variants:
 | **test_multiple_instances.py** | **0** | **Up to 5 at once, 10 total** across 2 test methods | `ExifToolSession(connect=None)` → direct `ExifToolHelper()` |
 | **test_pid_election.py** | **Up to 22** (2 in test_lower_pid_wins, 20 in test_ten_servers_concurrent_lowest_pid_wins) | **0** (all use `--no-exiftool` flag) | `subprocess.Popen(exiftool_server.py)` |
 | **test_full_auto_integration.py** | **1** (auto-spawned) | **1** | `ExifToolSession()` → auto-spawn |
-| **test_h25_full_pipeline_lock.py** | **1** (auto-spawned, shared across 2 threads) | **1** | `ExifToolSession()` → auto-spawn |
 
 ### Test files that do NOT spawn exiftool processes
 
@@ -43,10 +42,6 @@ Two notable variants:
 | test_unit.py | Only imports `_parse_dt`; `env_check` probes binary path (no spawn) |
 | test_btime.py | No exiftool usage |
 | test_btime_gui_correction.py | No exiftool usage |
-| test_exfat_raw_btime.py | No exiftool usage |
-| test_exfat_raw_int.py | No exiftool usage |
-| test_debug_raw_btime.py | No exiftool usage |
-| test_cluster_coherence.py | No exiftool usage |
 | test_parallel_loop_race.py | No exiftool usage |
 | test_strategy.py | No exiftool usage |
 | test_img.py | No exiftool usage |
@@ -62,25 +57,18 @@ Two notable variants:
 | test_editor.py | No exiftool usage |
 | test_preview.py | No exiftool usage |
 | test_kernel_cache_coherence/test_cache_coherence.py | No exiftool usage |
-| hypothesis/test_h1_cache_separation.py | Empty file |
-| hypothesis/test_hypotheses.py | No exiftool usage |
-| hypothesis/test_h8_unit.py | No exiftool usage |
 | hypothesis/test_h9_to_h12.py | No exiftool usage |
-| hypothesis/test_h18c_kernel_trigger.py | No exiftool usage |
-| hypothesis/test_h19_raw_ops.py | Imports `ExifToolSession` but never instantiates it |
 
 ---
 
 ## CI scope summary
 
 | CI scope | Tests included | Max exiftool binaries spawned |
-|---|---|---|
-| `debug` | test_debug_raw_btime | 0 |
+|---|---|---|---|
 | `unit` | test.test_unit | 0 (env_check probes binary, no spawn) |
-| `cluster` | test_cluster_coherence | 0 |
-| `full` | test_btime_gui_correction, test_exfat_raw_int, test_full_auto_integration | 1 (from test_full_auto_integration) |
+| `full` | test_btime_gui_correction, test_full_auto_integration | 1 (from test_full_auto_integration) |
 
-Tests that DO spawn exiftool (`test_exiftool_server.py`, `test_multiple_instances.py`, `test_pid_election.py`, hypothesis tests) are **not in the CI matrix** — they are run manually via `nix run .#test`.
+Tests that DO spawn exiftool (`test_exiftool_server.py`, `test_multiple_instances.py`, `test_pid_election.py`) are **not in the CI matrix** — they are run manually via `nix run .#test`.
 
 ---
 
@@ -92,4 +80,3 @@ Tests that DO spawn exiftool (`test_exiftool_server.py`, `test_multiple_instance
 | **test_multiple_instances.py** | **5** | `test_independent_sessions`: 5 direct-mode sessions sequentially created. `test_concurrent_available`: 5 threads each with their own direct-mode session |
 | **test_pid_election.py** | **0** (--no-exiftool) | Only server wrappers, no actual exiftool binary |
 | **test_full_auto_integration.py** | 1 | Via shared server |
-| **test_h25_full_pipeline_lock.py** | 1 | Both threads share the same auto-spawned server |

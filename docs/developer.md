@@ -108,21 +108,18 @@ $COV/bin/coverage-report
 | Full pipeline (server) | 1 integration | `test_full_auto_integration.py` |
 | ExifTool server protocol | 15 tests | `test_exiftool_server.py` |
 | ExifTool PID election | 2 tests | `test_pid_election.py` |
-| Raw debug tests | 7 debug | `test_debug_raw_btime.py` |
-| Cluster coherence | 1 integration | `test_cluster_coherence.py` |
+| exFAT raw btime (project strategies) | 2 unit | `test_exfat_raw_btime.py` |
 | Ubuntu compatibility | 6 unit | `test_ubuntu_compat.py` |
 | Unit tests | 28 unit | `test_unit.py` |
 
 ### CI workflows
 
-Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
+Single `ci` workflow with a job matrix (`unit`, `full`):
 
 | Scope | What it runs | ~Duration |
 |---|---|---|
-| `debug` | `test_debug_raw_btime` (7 tests) | 30s |
 | `unit` | `test.test_unit` (28 tests) | 5s |
-| `cluster` | `test_cluster_coherence` | 45s |
-| `full` | exFAT raw + GUI + full pipeline integration | ~120s |
+| `full` | GUI correction + timezone integration | 90s |
 
 ## Project structure
 
@@ -189,10 +186,8 @@ Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 │   ├── run_parallel.py
 │   ├── debug_exfat.py
 │   ├── test_exfat_raw_btime.py
-│   ├── test_debug_raw_btime.py
 │   ├── test_fuse_faketime.py
 │   ├── test_history.py
-│   ├── test_cluster_coherence.py
 │   ├── test_ubuntu_compat.py
 │   ├── test_unit.py
 │   ├── test_analysis.py

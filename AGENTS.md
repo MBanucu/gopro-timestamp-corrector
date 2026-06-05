@@ -18,11 +18,12 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
   (see kernel exFAT bug below).  Higher `-j` values are safe for pure-unit
   tests that don't touch block devices.
 - GUI tests run headlessly via Xvfb (no display required).
-- Integration tests (`test_exfat_raw_btime.py`, `test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`.
+- Integration tests (`test_full_auto_integration.py`) need `sudo`/FUSE and are **not** run by `nix run .#test`. (exFAT raw-block tests moved to `exfat-raw` external package — see that repo.)
 - `test/test_strategy.py` writes temp files, must be run from repo root.
 - Large fixture: `test/sdcard.img.gz` (~14 MB, decompressed on first test run).
 - Shortcut names for subdirectories: `nix run .#test -- hypothesis` runs
-  all modules under `test/hypothesis/`.
+  all modules under `test/hypothesis/` (H9 and H11 only — other hypothesis
+  tests moved to `exfat-raw` package).
 
 ## Architecture
 
@@ -177,7 +178,7 @@ removed as redundant.
 
 The kernel exFAT driver has a bug where concurrent operations across
 independent mounts can corrupt directory entries.  This was extensively
-investigated via 23+ hypothesis tests in ``test/hypothesis/``:
+investigated via 23+ hypothesis tests (most now in the ``exfat-raw`` package):
 
 | Trigger | Corruptions | Source |
 |---|---|---|
@@ -270,24 +271,13 @@ This is critical for timezone correctness.
 
 
 
-### `test_debug_raw_btime.py` (debug tests)
-
-- **test_01**: dd write/read at `100000 * 512` (51 MB). Uses `sync` only (no `drop_caches`).
-- **test_05**: writes test pattern in `setUpClass` (before any FS modifications) to
-  avoid kernel read-only remount. Uses 25 MB offset (`50000 * 512`).
-- **test_06**: compares decoded mtime with `read_exfat_mtime_raw()` instead of
-  `os.path.getmtime()` — bypasses the kernel exFAT UTC offset bug.
-- **test_07**: batch `_fix_exfat_raw` on all 12 files with raw-block readback verification.
-
 ### CI workflows
 
 Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
 
 | Scope | What it runs | ~Duration |
 |---|---|---|
-| `debug` | `test_debug_raw_btime` (7 tests) | 30s |
 | `unit` | `test.test_unit` (28 tests) | 5s |
-| `cluster` | `test_cluster_coherence` | 45s |
 | `full` | GUI correction + timezone integration | 90s |
 
 ## Mount strategy pattern
