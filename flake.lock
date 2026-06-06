@@ -58,11 +58,36 @@
         "type": "github"
       }
     },
+    "pyexiftool-nix": {
+      "inputs": {
+        "flake-utils": [
+          "flake-utils"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780762602,
+        "narHash": "sha256-K8PXqWlcmPKiA4w0899W6pBUMqK7T5Slm1ylu9Rd9ds=",
+        "owner": "MBanucu",
+        "repo": "pyexiftool-nix",
+        "rev": "573589eebd4c74a073598500f6797fdf1963a43d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "MBanucu",
+        "ref": "main",
+        "repo": "pyexiftool-nix",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "exfat-raw": "exfat-raw",
         "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "pyexiftool-nix": "pyexiftool-nix"
       }
     },
     "systems": {

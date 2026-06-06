@@ -21,7 +21,8 @@ version = "0.1.0"
 description = "Correct timestamps of GoPro media files with wrong camera clock"
 requires-python = ">=3.10"
 dependencies = [
-    "pyexiftool",
+    "pyexiftool @ git+https://github.com/MBanucu/pyexiftool.git@ef015c4c98e14313ef16d9dddc9970819f5b4080",
+    "exfat-raw",
 ]
 
 [project.scripts]

@@ -9,9 +9,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
+    pyexiftool-nix = {
+      url = "github:MBanucu/pyexiftool-nix/main";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, exfat-raw }:
+  outputs = { self, nixpkgs, flake-utils, exfat-raw, pyexiftool-nix }:
     let
       eachSystem = flake-utils.lib.eachDefaultSystem;
       nixosSystem = "x86_64-linux";
@@ -30,7 +35,7 @@
       };
 
       nixosTestDeps = with nixosPkgs; [ exiftool e2fsprogs exfat libfaketime xvfb sudo ];
-      nixosTestPython = nixosPkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
+      nixosTestPython = nixosPkgs.python3.withPackages (ps: [ ps.tkinter pyexiftool-nix.packages.${nixosSystem}.pyexiftool ]);
       nixosTestErSp = exfat-raw.lib.sitePackages nixosSystem;
 
       nixosTest = nixosPkgs.testers.nixosTest {
@@ -108,8 +113,9 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         deps = with pkgs; [ exiftool e2fsprogs exfat libfaketime xvfb ];
-        python = pkgs.python3.withPackages (ps: [ ps.tkinter ps.pyexiftool ]);
-        test-python = pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage ps.pyexiftool ]);
+        pyexiftool = pyexiftool-nix.packages.${system}.pyexiftool;
+        python = pkgs.python3.withPackages (ps: [ ps.tkinter pyexiftool ]);
+        test-python = pkgs.python3.withPackages (ps: [ ps.tkinter ps.coverage pyexiftool ]);
         src = pkgs.lib.cleanSource ./.;
         er_sp = exfat-raw.lib.sitePackages system;
       in {

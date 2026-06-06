@@ -3,26 +3,42 @@
 Connects to the shared ``ExifToolServer`` by default
 (``connect='auto'``).  Only the server itself uses
 ``ExifToolSession(connect=None)`` for direct PyExifTool access.
-
-Usage::
-
-    # Connects to shared server (auto-spawned if not running):
-    with ExifToolSession() as session:
-        embedded, gps = session.read_tags_batch(files)[path]
-        ok = session.write_embedded_batch(pairs)
-
-    # Direct mode — only used inside the server process:
-    with ExifToolSession(connect=None) as session:
-        ...
 """
 
 import json as _json
 import os
 import re
+import socket
+import tempfile
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from exiftool import ExifToolHelper
+from exiftool.client import ExifToolClient
+from exiftool.server import find_server, spawn_server
+from exiftool.exceptions import ExifToolConnectionError
+
+from options import EXIFTOOL_SERVER_PORT_FILE
+
+
+_PORT_FILE = os.path.join(tempfile.gettempdir(), EXIFTOOL_SERVER_PORT_FILE)
+
+
+def _ensure_server(port_file: str) -> int:
+    """Find or auto-spawn the ExifTool server. Returns its port."""
+    port = find_server(port_file=port_file)
+    if port is not None:
+        return port
+
+    import fcntl
+    lock_file = port_file + '.client.lock'
+    with open(lock_file, 'w') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        port = find_server(port_file=port_file)
+        if port is not None:
+            return port
+        return spawn_server(port_file=port_file, singleton=True)
 
 
 def _parse_dt(val: str) -> datetime | None:
@@ -38,7 +54,6 @@ def _parse_dt(val: str) -> datetime | None:
         return None
     try:
         offset = timedelta()
-        # Match optional space then +HH:MM or -HH:MM at end
         m = re.search(r'\s*([+-])(\d{2}):(\d{2})\s*$', val)
         if m:
             sign = 1 if m.group(1) == '+' else -1
@@ -47,7 +62,6 @@ def _parse_dt(val: str) -> datetime | None:
             val = val[:m.start()]
         elif val.endswith('Z'):
             val = val[:-1].strip()
-        # Strip trailing whitespace
         val = val.strip()
         if '.' in val:
             main, frac = val.split('.')
@@ -64,14 +78,16 @@ def _parse_dt(val: str) -> datetime | None:
 class ExifToolSession:
     """Persistent exiftool session.
 
-    Must be used as a context manager::
+    Usage::
 
         with ExifToolSession() as session:
-            ...
+            embedded, gps = session.read_tags_batch(files)[path]
 
     When *connect* is ``"auto"``, delegates to a shared ``ExifToolServer``
-    running as a background process.  The server is auto-spawned if not
-    running.
+    running as a background process (auto-spawned if not running).
+
+    When *connect* is ``None``, starts a private exiftool subprocess
+    directly (used internally by the server process).
     """
 
     def __init__(self, helper: ExifToolHelper | None = None,
@@ -81,12 +97,17 @@ class ExifToolSession:
             self._client = None
             self._et = helper
         elif connect == 'auto':
-            from exiftool_client import ExifToolClient
-            self._client = ExifToolClient(port_file=port_file)
+            pf = port_file or _PORT_FILE
+            port = _ensure_server(pf)
+            self._client = ExifToolClient(host='127.0.0.1', port=port)
             self._et = None
         else:
             self._client = None
             self._et = ExifToolHelper()
+
+    @property
+    def _executor(self):
+        return self._client if self._client is not None else self._et
 
     def __enter__(self):
         if self._et is not None:
@@ -96,16 +117,12 @@ class ExifToolSession:
     def __exit__(self, *args):
         if self._et is not None:
             self._et.__exit__(*args)
-        # Client mode: don't shut down the server — other
-        # clients may be using it.
 
     # ── Availability ──────────────────────────────────────────────────────
 
     def available(self) -> bool:
-        if self._client is not None:
-            return self._client.available()
         try:
-            self._et.execute('-ver')
+            self._executor.execute('-ver')
             return True
         except Exception:
             return False
@@ -114,10 +131,8 @@ class ExifToolSession:
 
     def read_gps_time(self, filepath: str | Path) -> datetime | None:
         """Read the first ``GPSDateTime`` from *filepath*."""
-        if self._client is not None:
-            return self._client.read_gps_time(filepath)
-        result = self._et.execute('-ee', '-s3', '-GPSDateTime',
-                                   str(filepath))
+        result = self._executor.execute(
+            '-ee', '-s3', '-GPSDateTime', str(filepath))
         if not result.strip():
             return None
         line = result.strip().splitlines()[0].strip()
@@ -126,8 +141,6 @@ class ExifToolSession:
     def read_embedded(self, filepath: str | Path,
                       use_qt_utc: bool = True) -> datetime | None:
         """Read embedded time from a single file."""
-        if self._client is not None:
-            return self._client.read_embedded(filepath, use_qt_utc)
         ext = Path(filepath).suffix.lower()
         tags_label = (['-QuickTime:CreateDate', '-QuickTime:MediaCreateDate']
                       if ext in ('.mp4', '.lrv')
@@ -136,7 +149,7 @@ class ExifToolSession:
         if use_qt_utc:
             args += ['-api', 'QuickTimeUTC=1']
         args += tags_label + [str(filepath)]
-        raw = self._et.execute(*args)
+        raw = self._executor.execute(*args)
         return self._parse_single_embedded(raw, ext)
 
     def _parse_single_embedded(self, raw: str, ext: str) -> datetime | None:
@@ -168,12 +181,10 @@ class ExifToolSession:
         self, filepaths: list[Path]
     ) -> dict[Path, tuple[datetime | None, datetime | None]]:
         """Read embedded + GPS time for all *filepaths* in one call."""
-        if self._client is not None:
-            return self._client.read_tags_batch(filepaths)
         if not filepaths:
             return {}
 
-        raw = self._et.execute(
+        raw = self._executor.execute(
             '-json', '-ee',
             '-QuickTime:CreateDate', '-QuickTime:MediaCreateDate',
             '-EXIF:DateTimeOriginal', '-GPSDateTime',
@@ -218,12 +229,10 @@ class ExifToolSession:
         self, filepaths: list[Path]
     ) -> dict[Path, float | None]:
         """Read ``GPSHPositioningError`` for all *filepaths*."""
-        if self._client is not None:
-            return self._client.read_gps_accuracy_batch(filepaths)
         if not filepaths:
             return {}
 
-        raw = self._et.execute(
+        raw = self._executor.execute(
             '-json', '-ee', '-GPSHPositioningError',
             *[str(p) for p in filepaths],
         )
@@ -256,8 +265,6 @@ class ExifToolSession:
 
     def write_embedded(self, path: Path, dt: datetime) -> bool:
         """Write embedded metadata to a single file."""
-        if self._client is not None:
-            return self._client.write_embedded(path, dt)
         ext = path.suffix.lower()
         fmt = dt.strftime('%Y:%m:%d %H:%M:%S')
         fmt_creation = dt.strftime('%Y:%m:%d %H:%M:%S+00:00')
@@ -290,7 +297,7 @@ class ExifToolSession:
             ]
 
         try:
-            self._et.execute('-overwrite_original', *tags, str(path))
+            self._executor.execute('-overwrite_original', *tags, str(path))
             return True
         except Exception:
             return False
@@ -298,16 +305,7 @@ class ExifToolSession:
     def write_embedded_batch(
         self, pairs: list[tuple[Path, datetime]]
     ) -> bool:
-        """Write embedded times for all *pairs*.
-
-        When connected via the server, the request is sent over TCP and
-        serialized by the server's single-threaded accept loop.  In
-        direct mode (``connect=None``) — only used by the server itself
-        — we iterate over pairs without additional locking, since the
-        server already handles one request at a time.
-        """
-        if self._client is not None:
-            return self._client.write_embedded_batch(pairs)
+        """Write embedded times for all *pairs*."""
         ok = True
         for path, dt in pairs:
             if not self.write_embedded(path, dt):
@@ -318,12 +316,11 @@ class ExifToolSession:
 
     def dump_full_json(self, filepaths: list[Path]) -> str | None:
         """Full exiftool JSON array for a list of files (history log)."""
-        if self._client is not None:
-            return self._client.dump_full_json(filepaths)
         if not filepaths:
             return None
-        raw = self._et.execute('-json', '-G', '-a', '--short',
-                                *[str(p) for p in filepaths])
+        raw = self._executor.execute(
+            '-json', '-G', '-a', '--short',
+            *[str(p) for p in filepaths])
         if raw.strip():
             return raw
         return None
@@ -331,12 +328,10 @@ class ExifToolSession:
     def dump_tags_json(self, filepaths: list[Path],
                        tags: list[str]) -> str | None:
         """Read specific tags in JSON format (raw output string)."""
-        if self._client is not None:
-            return self._client.dump_tags_json(filepaths, tags)
         if not filepaths:
             return None
         args = ['-json'] + tags + [str(p) for p in filepaths]
-        raw = self._et.execute(*args)
+        raw = self._executor.execute(*args)
         if raw.strip():
             return raw
         return None
