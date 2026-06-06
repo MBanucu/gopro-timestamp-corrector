@@ -6,7 +6,7 @@
 # All deps via Nix flakes; no system Python packages needed.
 nix run .#gui          # launch GUI
 nix run . -- --help    # CLI
-nix run .#server            # start ExifTool TCP server (auto-spawned on demand)
+# ExifTool TCP server is auto-spawned on demand
 nix run .#test              # full test suite (parallel, coverage)
 nix run .#test -- test_datepicker  # single module (omit test. prefix)
 nix run .#test -- test_analysis test_gps  # multiple specific modules
@@ -30,8 +30,7 @@ nix develop            # dev shell with exiftool, e2fsprogs, etc.
 | Layer | Directory | Entrypoint |
 |---|---|---|
 | CLI orchestrator | `src/` | `correct_timestamps.py` |
-| ExifTool session | `src/` | `exiftool_session.py` — delegates to shared TCP server by default |
-| ExifTool server | `src/` | `exiftool_server.py` — TCP server (the only direct PyExifTool user); `exiftool_client.py` — TCP client |
+| ExifTool session | `src/` | `exiftool_session.py` — delegates to upstream pyexiftool TCP server |
 | Plan / Planner | `src/` | `plan.py` — `Planner`, `CorrectionPlan`, `PlanBuilder`, `Instruction` |
 | GUI app | `src/gui/` | `app.py` |
 | GUI steps | `src/gui/steps/` | `directory.py`, `review.py`, `plan.py`, `run.py` |
@@ -47,7 +46,7 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
 
 ## Code conventions
 
-- No `pyproject.toml` — pure stdlib except `pyexiftool` external dep (PyExifTool on PyPI).
+- `pyproject.toml` pins `pyexiftool` (git dep, `MBanucu/pyexiftool@ef015c4`) and `exfat-raw` (PyPI).
 - Module granularity is fine (one class per file common for widgets).
 - `options.py` is the single source of truth for strategy/btime/format constants.
 - `src/gui/time_selector.py` uses `StringVar` (not `IntVar`) for spinbox variables.
@@ -71,87 +70,17 @@ All internal times carry `tzinfo=timezone.utc`; display-layer DST via `zoneinfo`
 
 ## ExifTool server / client
 
-`src/exiftool_server.py` provides a shared TCP server that wraps a single
-`ExifToolSession` and exposes its API via JSON-RPC over `127.0.0.1`.
-`src/exiftool_client.py` provides the client half; `ExifToolSession()` now
-defaults to `connect='auto'` and delegates to the client transparently.
-Only the server itself uses `ExifToolSession(connect=None)` for direct access.
+Server/client support comes from the upstream `MBanucu/pyexiftool` fork at
+`ef015c4` (v0.6.0, `feat/exiftool-server` branch).  `ExifToolSession()`
+defaults to `connect='auto'` and delegates to `exiftool.client.ExifToolClient`,
+which transparently connects to (or auto-spawns) a shared TCP server.
 
-### Lifecycle
+The project's own `src/exiftool_server.py`, `src/exiftool_client.py`,
+`src/exiftool_protocol.py` and their tests were removed — all subsumed by
+the upstream library.
 
-- **Auto-spawn**: When `ExifToolSession()` is created (or
-  `ExifToolClient()` directly), it first tries to connect to an existing server.
-  If none is found, it spawns one as a background subprocess via
-  `exiftool_server.spawn_server()`.  The caller blocks up to 5 s waiting for
-  the server to become ready.  Concurrent callers are serialised with a
-  **double-checked lock** (``fcntl.flock`` on ``{port_file}.client.lock``)
-  so only one caller ever enters the spawn path.
-- **Auto-shutdown**: The server tracks time since the last completed request.
-  A watchdog thread checks every `max(1s, timeout/4)` seconds.  If idle exceeds
-  the timeout (default 60 s), the server shuts down gracefully.
-- **Port file**: The server writes `{tempdir}/gopro-exiftool-server.json`
-  containing its TCP port and PID.  The client discovers the server by reading
-  this file.  On shutdown the file is deleted.
-
-### PID election (single instance guarantee)
-
-When a new server instance starts, it opens the port file and acquires an
-exclusive `fcntl.flock`.  Under the lock it reads the current winner and
-decides:
-
-| Condition | Result |
-|---|---|
-| No port file or stale | New server claims the file and starts |
-| Existing server alive, new PID > old PID | New server exits |
-| Existing server alive, new PID < old PID | New server sends `shutdown` to the old one, then takes over |
-
-Because the lock is held for the entire read-compare-write cycle, there is
-no race window (unlike the previous `O_CREAT | O_EXCL` retry loop).  Log
-messages include ``%H:%M:%S.%f`` timestamps via the module-level ``_log()``
-function.
-
-### Protocol
-
-Newline-delimited JSON over TCP (inspired by JSON-RPC 2.0):
-
-```json
-{"id": 1, "method": "read_tags_batch", "params": {"filepaths": [...]}}
-{"id": 1, "result": {"/path/GH010001.MP4": ["2026-05-14T14:52:00+00:00", null]}}
-```
-
-| Method | Server handler | Delegates to |
-|---|---|---|
-| `ping` | `_method_ping` | — returns `"pong"` |
-| `status` | `_method_status` | returns port, pid, uptime, timeout |
-| `available` | `_method_available` | `session.available()` |
-| `read_gps_time` | `_method_read_gps_time` | `session.read_gps_time()` |
-| `read_embedded` | `_method_read_embedded` | `session.read_embedded()` |
-| `read_tags_batch` | `_method_read_tags_batch` | `session.read_tags_batch()` |
-| `read_gps_accuracy_batch` | `_method_read_gps_accuracy_batch` | `session.read_gps_accuracy_batch()` |
-| `write_embedded` | `_method_write_embedded` | `session.write_embedded()` |
-| `write_embedded_batch` | `_method_write_embedded_batch` | `session.write_embedded_batch()` |
-| `dump_full_json` | `_method_dump_full_json` | `session.dump_full_json()` |
-| `dump_tags_json` | `_method_dump_tags_json` | `session.dump_tags_json()` |
-| `shutdown` | `_method_shutdown` | stops the server loop |
-
-### Single-server serialization
-
-All exiftool writes go through a **single server process** whose accept
-loop is single-threaded — each request is fully handled before the next
-is accepted.  This eliminates write concurrency entirely across all
-CLI/GUI invocations.  The old `fcntl.flock` cross-process lock has been
-removed as redundant.
-
-### Key files
-
-| File | Role |
-|---|---|---|
-| `src/exiftool_server.py` | `ExifToolServer` class, `spawn_server()`, `_takeover_or_exit()` |
-| `src/exiftool_client.py` | `ExifToolClient` with same API as `ExifToolSession` |
-| `src/exiftool_session.py` | `ExifToolSession()` delegation (defaults to `connect='auto'`) |
-| `src/options.py` | `EXIFTOOL_SERVER_PORT_FILE`, `EXIFTOOL_SERVER_LOCK_FILE`, `EXIFTOOL_SERVER_IDLE_TIMEOUT` |
-| `test/test_exiftool_server.py` | 14 tests: protocol, auto-spawn, idle, client, session (isolated port files per class) |
-| `test/test_pid_election.py` | 2 tests: sequential and concurrent PID election |
+Key file: `src/exiftool_session.py` — uses inheritance + `_executor` property
+to unify `ExifToolHelper` (direct) and `ExifToolClient` (server) backends.
 
 ## exFAT raw block write & cache coherence
 
@@ -273,12 +202,13 @@ This is critical for timezone correctness.
 
 ### CI workflows
 
-Single `ci` workflow with a job matrix (`debug`, `unit`, `cluster`, `full`):
+Single `ci` workflow with a 3-scope matrix:
 
-| Scope | What it runs | ~Duration |
-|---|---|---|
-| `unit` | `test.test_unit` (28 tests) | 5s |
-| `full` | GUI correction + timezone integration | 90s |
+| Scope | OS | What it runs | ~Duration |
+|---|---|---|---|
+| `unit` | ubuntu | 15 modules — all non-loop unit + GUI tests | 30s |
+| `integration` | ubuntu | 4 loop-device modules (strategy, img, btime_gui_correction, full_auto_integration) | 2m |
+| `macos` | macos | 8 non-GUI modules | 1m |
 
 ## Mount strategy pattern
 
