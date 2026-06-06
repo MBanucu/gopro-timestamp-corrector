@@ -197,25 +197,6 @@
           '';
         };
 
-        packages.server = pkgs.stdenvNoCC.mkDerivation {
-          name = "gopro-time-correction-server";
-          inherit src;
-          dontBuild = true;
-          installPhase = ''
-            mkdir -p $out/bin $out/lib
-            cp src/*.py $out/lib/
-            python_lib="$out/lib"
-            python_bin="${python}/bin/python3"
-            cat > $out/bin/gopro-exiftool-server << WRAPPER
-        #!${pkgs.bash}/bin/bash
-        export PATH="${pkgs.lib.makeBinPath deps}:\$PATH"
-        export PYTHONPATH="$python_lib:${er_sp}:\$PYTHONPATH"
-        exec $python_bin "$python_lib/exiftool_server.py" "\$@"
-        WRAPPER
-            chmod +x $out/bin/gopro-exiftool-server
-          '';
-        };
-
         packages.default = self.packages.${system}.cli;
 
         apps.default = {
@@ -231,11 +212,6 @@
         apps.test = {
           type = "app";
           program = "${self.packages.${system}.test}/bin/run-tests";
-        };
-
-        apps.server = {
-          type = "app";
-          program = "${self.packages.${system}.server}/bin/gopro-exiftool-server";
         };
       })) // {
         checks.${nixosSystem}.nixos-test = nixosTest;
