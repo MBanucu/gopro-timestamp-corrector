@@ -1,0 +1,9 @@
+[submodule "sdk"]
+	path = sdk
+	url = https://github.com/MBanucu/gopro-timestamp-sdk.git
+[submodule "gui"]
+	path = gui
+	url = https://github.com/MBanucu/gopro-timestamp-gui.git
+[submodule "cli"]
+	path = cli
+	url = https://github.com/MBanucu/gopro-timestamp-cli.git

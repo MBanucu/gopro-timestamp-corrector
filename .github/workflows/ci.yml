@@ -7,102 +7,67 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    strategy:
-      matrix:
-        scope: [unit, integration, macos]
-        include:
-          - scope: unit
-            os: ubuntu-latest
-          - scope: integration
-            os: ubuntu-latest
-          - scope: macos
-            os: macos-latest
-    runs-on: ${{ matrix.os }}
+  test-sdk:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: Install Ubuntu system deps
-        if: matrix.os == 'ubuntu-latest'
+      - name: Install system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq exiftool xvfb exfat-fuse faketime
-
-      - name: Install macOS system deps
-        if: matrix.os == 'macos-latest'
-        run: brew install exiftool
-
-      - name: Install project
-        run: pip install -e .
-
-      - name: Verify install
+          sudo apt-get install -y -qq exiftool exfat-fuse faketime
+      - name: Install SDK
+        run: pip install -e ./sdk
+      - name: Run SDK tests
         run: |
-          correct-gopro-timestamps --help
-          python -c 'import exiftool_session; print("exiftool_session OK")'
-          python -c 'import gui.app; print("gui.app OK")'
-          correct-gopro-timestamps --check . || true
+          cd sdk && python -m unittest discover -s test -v
 
+  test-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq exiftool exfat-fuse
+      - name: Install SDK + CLI
+        run: |
+          pip install -e ./sdk
+          pip install -e ./cli
+      - name: Verify CLI
+        run: correct-gopro-timestamps --help
+
+  test-gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq exiftool xvfb exfat-fuse
       - name: Start Xvfb
-        if: matrix.os == 'ubuntu-latest'
         run: |
-          export DISPLAY=:99
           Xvfb :99 -screen 0 1024x768x24 &>/dev/null &
           sleep 1
-          python -c 'import tkinter as tk; r=tk.Tk(); r.withdraw(); r.destroy(); print("Tkinter OK")'
-
-      - name: Run unit tests
-        if: matrix.scope == 'unit'
+      - name: Install SDK + GUI
+        run: |
+          pip install -e ./sdk
+          pip install -e ./gui
+      - name: Verify GUI
         env:
-          PYTHONPATH: test
           DISPLAY: :99
-        run: |
-          python -m unittest -v \
-            test.test_unit \
-            test.test_analysis \
-            test.test_gps \
-            test.test_history \
-            test.test_preview \
-            test.test_dst_fold \
-            test.test_common_prefix \
-            test.test_proposals \
-            test.test_autocomplete \
-            test.test_btime \
-            test.test_datepicker \
-            test.test_editor \
-            test.test_file_table \
-            test.test_calibration_panel \
-            test.test_gui_structure
-
-      - name: Run integration tests
-        if: matrix.scope == 'integration'
-        env:
-          PYTHONPATH: test
-          DISPLAY: :99
-        run: |
-          FAILED=0
-          python -m unittest -v test.test_strategy || FAILED=1
-          python -m unittest -v test.test_img || FAILED=1
-          python -m unittest -v test.test_btime_gui_correction || \
-            (echo "=== Retry test_btime_gui_correction ===" && \
-             python -m unittest -v test.test_btime_gui_correction) || FAILED=1
-          python -m unittest -v test.test_full_auto_integration || FAILED=1
-          exit $FAILED
-
-      - name: Run macOS tests
-        if: matrix.scope == 'macos'
-        env:
-          PYTHONPATH: test
-        run: |
-          python -m unittest -v \
-            test.test_analysis \
-            test.test_gps \
-            test.test_history \
-            test.test_preview \
-            test.test_dst_fold \
-            test.test_common_prefix \
-            test.test_proposals \
-            test.test_autocomplete
+        run: python -c 'from gopro_gui import app; print("GUI OK")'
